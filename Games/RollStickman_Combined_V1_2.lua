@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R28
+-- Roll A Stickman Combined Auto V1.2 R29
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R28 starting; waiting for game to load")
+print("[RAS] R29 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -319,7 +319,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R28  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R29  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -1285,19 +1285,30 @@ local function closeModal(key)
     return fire(key, child(modalPanel(), {"Close"}), "X", 1)
 end
 local function moreMenu()
-    local menu = get({"Frame", "Hud", "MoreMenu", "Rows"})
-    if visible(menu) then return menu end
-    if fire("moon.more", get({"Frame", "Hud", "UtilMore"}), nil, 1) then
-        task.wait(0.4)
-    end
-    return visible(menu) and menu or nil
+    local function rows() return get({"Frame", "Hud", "MoreMenu", "Rows"}) end
+    if visible(rows()) then return rows() end
+    if not fire("moon.more", get({"Frame", "Hud", "UtilMore"}), nil, 1) then return nil end
+    local deadline = os.clock() + 4
+    repeat
+        task.wait(0.2)
+        -- Resolve again: the menu can be created/replaced after clicking More.
+        local menu = rows()
+        if visible(menu) then return menu end
+    until not alive or os.clock() >= deadline
+    log("MORE menu unavailable after opening UtilMore")
 end
 local function openPotions()
     if modalTitle() == "POTIONS" then return true end
     if modalOpen() then return false end
     local menu = moreMenu()
     if not menu then return false end
-    if not fire("moon.potions", child(menu, {"potions"}), "POTIONS", 2) then
+    local entry = child(menu, {"potions"})
+    if not ready(entry) then
+        for _, obj in ipairs(menu:GetDescendants()) do
+            if ready(obj) and buttonText(obj) == "POTIONS" then entry = obj; break end
+        end
+    end
+    if not fire("moon.potions", entry, "POTIONS", 2) then
         return false
     end
     local deadline = os.clock() + 4
@@ -1649,7 +1660,7 @@ local function moonTick(version)
     cardUI.diagnose("CYCLE_CHECK")
     local petVersion = versions.pet
     local function active() return validMoon(version) and potionUI.cycleValid() end
-    potionUI.cycle = {serial = confirmed.serial, key = currentKey, cardsDispatched = false, cardsFinished = false}
+    potionUI.cycle = {serial = confirmed.serial, key = currentKey, cardsDispatched = false, cardsFinished = false, potionPending = false}
     if potionUI.potionEvent ~= confirmed.serial then
         potionUI.potionEvent = confirmed.serial
         potionUI.potionUsed = {}
@@ -1663,15 +1674,19 @@ local function moonTick(version)
             if selected and openPotions() then
                 for _, id in ipairs({"luck", "haste", "gild"}) do
                     if not active() then break end
-                    if potionConfig.selected[id] then usePotion(id) end
+                    if potionConfig.selected[id] and not usePotion(id) then potionUI.cycle.potionPending = true end
                 end
                 potionUI.closeCycleWindow()
-            elseif selected then cardUI.diagnose("POTION_PAGE_UNAVAILABLE") end
+            elseif selected then
+                potionUI.cycle.potionPending = true
+                cardUI.diagnose("POTION_PAGE_UNAVAILABLE", "More > Potions not ready")
+            end
         end
+        if potionUI.cycle.potionPending then return end
         -- Resolve the required potion before temporarily changing pets.
         if cardMatch and cardSelection.requireLuck and active() and not cardUI.checkLuck(version) then return end
         if modalTitle() == "POTIONS" and not potionUI.closeCycleWindow() then return end
-        if flags.pet and active() and versions.pet == petVersion then
+        if cardMatch and flags.pet and active() and versions.pet == petVersion then
             log("CYCLE prepare Luck Pet")
             if not petUI.ensureRole("luck", currentKey, function()
                 return active() and flags.pet and versions.pet == petVersion
@@ -1685,7 +1700,7 @@ local function moonTick(version)
                 log("CYCLE Open Card")
                 potionUI.cycle.cardsFinished = openOwnedCards(version) == true
             else log("CYCLE Open Card skipped: configured conditions are not met") end
-        else cardUI.diagnose("CARD_DISABLED_OR_MOON_EXPIRED") end
+        else cardUI.diagnose(not cardMatch and "MOON_NOT_SELECTED" or "CARD_DISABLED_OR_MOON_EXPIRED") end
     end)
     if not ok then cardUI.diagnose("CYCLE_ERROR", tostring(errorText)) end
     local closed = potionUI.closeCycleWindow()
@@ -1699,8 +1714,9 @@ local function moonTick(version)
     if alive and not modalOpen() then
         fire("cycle.back.battle", get({"Frame", "Nav", "Row", "endless"}), nil, 1)
     end
-    local retry = cardMatch and flags.cards and not potionUI.cycle.cardsFinished
-        and not potionUI.cycle.cardsDispatched and active()
+    local retry = active() and (potionUI.cycle.potionPending
+        or (cardMatch and flags.cards and not potionUI.cycle.cardsFinished
+        and not potionUI.cycle.cardsDispatched))
     potionUI.completedEvent = not retry and versions.moon == version and confirmed.serial or nil
     potionUI.cardRetryAt = retry and (os.clock() + 30) or nil
     if retry then cardUI.diagnose("RETRY_PENDING", "Retry in 30s; no repeated potions") end
@@ -2523,7 +2539,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R28 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R29 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -2871,7 +2887,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R28 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R29 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
