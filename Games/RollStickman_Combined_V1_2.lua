@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R24
+-- Roll A Stickman Combined Auto V1.2 R25
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R24 starting; waiting for game to load")
+print("[RAS] R25 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -319,7 +319,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R24  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R25  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -1312,12 +1312,25 @@ local function potionStatus(id)
     local row = child(modalPanel(), {"Content", "Inner", id})
     local obj = child(row, {"Status"})
     local value = visible(obj) and textOf(obj) or ""
+    if value == "" and modalTitle() == "POTIONS" and row then
+        local parts = {}
+        for _, node in ipairs(row:GetDescendants()) do
+            local text = visible(node) and textOf(node) or ""
+            if text:find("IN STASH", 1, true) or text:find(" LEFT", 1, true) then
+                table.insert(parts, text)
+            end
+        end
+        value = table.concat(parts, " | ")
+    end
     if value ~= "" then rememberStatus(id .. "Potion", value) end
     return value
 end
 local function usePotion(id)
     if not flags.moon or not potionConfig.selected[id] then return true end
     if moonUsed[id] then return true end
+    local function report(reason)
+        cardUI.diagnose("POTION_" .. id:upper() .. "_" .. reason, "status=" .. potionStatus(id))
+    end
     if modalTitle() ~= "POTIONS" then return false end
     local statusBefore = potionStatus(id)
     -- Status may be "452 in stash" or "15m 58s left · 451 in stash".
@@ -1328,16 +1341,22 @@ local function usePotion(id)
         return true
     end
     if count == 0 then
+        report("EMPTY")
         log(potionNames[id] .. " empty; skipped")
         moonUsed[id] = true
         return true
     end
     if not count then
+        report("STATUS_UNREADABLE")
         log(potionNames[id] .. " stock unreadable; waiting")
         return false
     end
     local drink = child(modalPanel(), {"Content", "Inner", id, "Drink"})
-    if not fire("moon.drink." .. id, drink, "DRINK", 2) then return false end
+    if not fire("moon.drink." .. id, drink, "DRINK", 2) then
+        report("DRINK_UNAVAILABLE")
+        return false
+    end
+    report("DRINK_PRESSED")
     -- Mark before observing; a delayed UI update must never spend twice.
     moonUsed[id] = true
     local deadline = os.clock() + 4
@@ -1427,6 +1446,10 @@ function cardUI.diagnose(reason, detail)
         .. " | reason=" .. reason .. " | " .. tostring(detail or "")
         .. " | Moon=" .. key .. " | event=" .. tostring(confirmed and confirmed.serial)
         .. " | remaining=" .. tostring(confirmed and math.max(0, math.floor(confirmed.untilTime - now)) or 0)
+        .. " | potionEnabled=" .. tostring(flags.moon)
+        .. " | potionMoonSelected=" .. tostring(potionConfig.moons[key] == true)
+        .. " | luckSelected=" .. tostring(potionConfig.selected.luck)
+        .. " | luckStatus=" .. cachedStatus("luckPotion")
         .. " | cardsEnabled=" .. tostring(flags.cards)
         .. " | moonSelected=" .. tostring(potionConfig.cardMoons[key] == true)
         .. " | requireLuck=" .. tostring(cardSelection.requireLuck)
@@ -1578,11 +1601,14 @@ local function moonTick(version)
     local petVersion = versions.pet
     local function active() return validMoon(version) and potionUI.cycleValid() end
     potionUI.cycle = {serial = confirmed.serial, key = currentKey, cardsDispatched = false, cardsFinished = false}
-    moonUsed, moonCardsDone = {}, false
+    if potionUI.potionEvent ~= confirmed.serial then
+        potionUI.potionEvent = confirmed.serial
+        potionUI.potionUsed = {}
+    end
+    moonUsed, moonCardsDone = potionUI.potionUsed, false
     log("CYCLE START | " .. currentKey .. " | event=" .. confirmed.serial)
     local ok, errorText = pcall(function()
-        if potionMatch and active() and potionUI.potionsAttemptedEvent ~= confirmed.serial then
-            potionUI.potionsAttemptedEvent = confirmed.serial
+        if potionMatch and active() then
             local selected = false
             for _, id in ipairs({"luck", "haste", "gild"}) do if potionConfig.selected[id] then selected = true end end
             if selected and openPotions() then
@@ -1591,8 +1617,10 @@ local function moonTick(version)
                     if potionConfig.selected[id] then usePotion(id) end
                 end
                 potionUI.closeCycleWindow()
-            elseif selected then log("CYCLE potion step unavailable; checking remaining conditions") end
+            elseif selected then cardUI.diagnose("POTION_PAGE_UNAVAILABLE") end
         end
+        -- Resolve the required potion before temporarily changing pets.
+        if cardMatch and cardSelection.requireLuck and active() and not cardUI.checkLuck(version) then return end
         if flags.pet and active() and versions.pet == petVersion then
             log("CYCLE prepare Luck Pet")
             if not petUI.ensureRole("luck", currentKey, function()
@@ -2174,6 +2202,9 @@ function cardUI.ready(version, currentKey)
             return false
         end
     end
+    return cardUI.checkLuck(version)
+end
+function cardUI.checkLuck(version)
     if cardSelection.requireLuck and not cardUI.luckActive() then
         if modalTitle() == "POTIONS" then
             potionStatus("luck")
@@ -2184,7 +2215,7 @@ function cardUI.ready(version, currentKey)
                 if modalTitle() == "POTIONS" then closeModal("cards.buff.check.close") end
             end
         end
-        if not cardUI.luckActive() then cardUI.diagnose("LUCK_POTION_UNCONFIRMED"); note("Open Card waiting: Luck Potion must be active"); return false end
+        if not cardUI.luckActive() then cardUI.diagnose("LUCK_POTION_UNCONFIRMED", "Inspect luckStatus, potionEnabled, potionMoonSelected and luckSelected"); note("Open Card waiting: Luck Potion must be active"); return false end
     end
     return validMoon(version)
 end
@@ -2440,7 +2471,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R24 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R25 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -2788,7 +2819,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R24 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R25 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
