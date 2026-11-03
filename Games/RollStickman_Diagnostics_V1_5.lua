@@ -1,7 +1,7 @@
--- Roll A Stickman Diagnostics V1.5 R4 | Aura watch
--- PlaceId 115068315659966. Compatible with Combined V1.2 R10 tabs/minimize.
+-- Roll A Stickman Diagnostics V1.5 R5 | Aura watch
+-- PlaceId 115068315659966. Compatible with Combined V1.2 R15 Potion/Open Card.
 -- Reads the active Moon from MOONS > Now.Title. Never buys, drinks or opens cards.
--- When the main AURORA BOOST switch is OFF, only opens/closes MOONS to inspect.
+-- Only opens/closes MOONS when both Potion and Open Card automation are OFF.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -190,10 +190,11 @@ local function mainBoostOn()
     local scriptGui = pg:FindFirstChild("RollStickman_Combined_V1_2")
     if not scriptGui or not scriptGui.Enabled then return false end
     local flag = scriptGui:GetAttribute("Flag_moon")
-    if type(flag) == "boolean" then return flag end
+    local cards = scriptGui:GetAttribute("Flag_cards")
+    if type(flag) == "boolean" or type(cards) == "boolean" then return flag == true or cards == true end
     local panelObj = scriptGui and scriptGui:FindFirstChild("Panel")
     local toggle = panelObj and panelObj:FindFirstChild("MoonToggle")
-    return toggle ~= nil and plain(toggle):upper() == "AURORA BOOST: ON"
+    return toggle ~= nil and (plain(toggle):upper() == "AURORA BOOST: ON" or plain(toggle):upper() == "USE POTION: ON")
 end
 local function activeMoon()
     if modal() ~= "MOONS" then return nil end
@@ -278,7 +279,7 @@ local function observe()
             if kind == "AURORA MOON" then
                 line("HIGHEST AURA: Aurora Moon detected")
                 if not mainBoostOn() then
-                    line("AURORA BOOST switch is OFF; combined script will not use potions/cards")
+                    line("Potion and Open Card switches are OFF; combined script will not use potions/cards")
                 end
             end
             snapshot("AURA START")
@@ -375,7 +376,7 @@ gui.Destroying:Connect(function()
     if logConnection then logConnection:Disconnect() end
 end)
 
-line("Diagnostics V1.5 R4 | PlaceId=" .. tostring(game.PlaceId))
+line("Diagnostics V1.5 R5 | PlaceId=" .. tostring(game.PlaceId))
 line("ACTIVE SKY is read only from MOONS > Now.Title; shop labels are ignored")
 line("Watches Aura, potion/card counts and [RAS] logs; no gameplay purchases")
 snapshot("INITIAL")
