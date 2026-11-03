@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R13
+-- Roll A Stickman Combined Auto V1.2 R14
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R13 starting; waiting for game to load")
+print("[RAS] R14 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -27,7 +27,8 @@ local SETTINGS_FILE = "RollStickman_Combined_V1_2_settings.json"
 local SETTINGS_KEY = "RollStickman_Combined_V1_2_settings"
 local settingKeys = {"level", "raid", "dungeon", "expedition", "moon", "antiAfk"}
 local potionNames = {luck = "Luck Potion", haste = "Haste Potion", gild = "Gilded Potion"}
-local potionConfig = {when = "Aurora", available = {"Aurora"}, selected = {luck = true, haste = true, gild = true}}
+-- These seven names are confirmed by the user's in-game MOONS screenshot.
+local potionConfig = {when = "Aurora", available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, selected = {luck = true, haste = true, gild = true}}
 local function moonIdentity(value, allowShort)
     if type(value) ~= "string" then return nil end
     local name = value:gsub("<[^>]*>", ""):upper():gsub("%s+", " ")
@@ -73,8 +74,8 @@ local function cleanSettings(value)
     end
     local source = type(value.potion) == "table" and value.potion or {}
     local selections = type(source.selected) == "table" and source.selected or {}
-    local potion = {when = moonCaption(moonIdentity(source.when, true) or "AURORA"), available = {"Aurora"}, selected = {}}
-    local known = {AURORA = true}
+    local potion = {when = moonCaption(moonIdentity(source.when, true) or "AURORA"), available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, selected = {}}
+    local known = {NORMAL = true, SILVER = true, HARVEST = true, BLUE = true, ECLIPSE = true, STARFALL = true, AURORA = true}
     for _, value in ipairs(type(source.available) == "table" and source.available or {}) do
         local key = moonIdentity(value, true)
         if key and not known[key] then
@@ -239,7 +240,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R13  ·  ALT", 8, 27)
+local title = label("Title", "ROLL A STICKMAN  |  R14  ·  ALT", 8, 27)
 title.Size = UDim2.fromOffset(258, 27)
 title.TextSize = 12
 title.Active = true
@@ -1285,6 +1286,14 @@ local function paintPotionChoices()
     end
 end
 paintPotionChoices()
+function potionUI.sortChoices()
+    local order = {NORMAL = 1, SILVER = 2, HARVEST = 3, BLUE = 4, ECLIPSE = 5, STARFALL = 6, AURORA = 1000}
+    table.sort(potionConfig.available, function(a, b)
+        local ra = order[moonIdentity(a, true)] or 900
+        local rb = order[moonIdentity(b, true)] or 900
+        return ra == rb and a < b or ra < rb
+    end)
+end
 function potionUI.discover()
     local known = {}
     for _, name in ipairs(potionConfig.available) do known[moonIdentity(name, true)] = true end
@@ -1324,13 +1333,14 @@ function potionUI.discover()
         end
     end
     if added > 0 then
-        table.sort(potionConfig.available)
+        potionUI.sortChoices()
         settingsStorage = writeSettings(flags)
         log("Moon choices discovered from game UI: " .. table.concat(potionConfig.available, ", "))
     end
     return added
 end
 function potionUI.rebuild()
+    potionUI.sortChoices()
     for _, entry in ipairs(potionUI.entries) do entry:Destroy() end
     potionUI.entries = {}
     for i, name in ipairs(potionConfig.available) do
@@ -1360,6 +1370,16 @@ function potionUI.rebuild()
         end)
     end
     potionUI.option.CanvasSize = UDim2.fromOffset(0, #potionUI.entries * 31 + 6)
+    -- Show all seven confirmed choices; longer lists remain scrollable.
+    local height = math.min(223, #potionUI.entries * 31 + 6)
+    potionUI.option.Size = UDim2.fromOffset(336, height)
+    local selected = 1
+    for i, name in ipairs(potionConfig.available) do
+        if name == potionConfig.when then selected = i; break end
+    end
+    local maximum = math.max(0, #potionUI.entries * 31 + 6 - height)
+    local focus = math.clamp((selected - 1) * 31 - math.floor(height / 2), 0, maximum)
+    potionUI.option.CanvasPosition = Vector2.new(0, focus)
 end
 potionUI.discover()
 potionUI.rebuild()
@@ -1524,7 +1544,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R13 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R14 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
