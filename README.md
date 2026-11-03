@@ -1,14 +1,17 @@
 # My-Roblox-Hub
 
-## Roll A Stickman — V1.2 R10
+## Roll A Stickman — V1.2 R11
 
 PlaceId: `115068315659966`
 
 - สคริปต์หลัก: [Games/RollStickman_Combined_V1_2.lua](Games/RollStickman_Combined_V1_2.lua)
 - Loader: [Loader.lua](Loader.lua)
-- ระบบ: RAID, Dungeon ทุกประเภท, Expeditions, Level Up, Aurora Boost และ ANTI AFK
+- ระบบ: RAID, Dungeon ทุกประเภท, Expeditions, Level Up, Use Potion When และ ANTI AFK
 - UI แบ่งเป็น Team / Fight / Potion / Status ลากได้ มีปุ่มย่อ/ขยาย และคีย์ลัด Alt
-- Team: Level Up; Fight: RAID / Dungeon / Expeditions; Potion: Aurora Boost และสต็อกยา
+- Team: Level Up; Fight: RAID / Dungeon / Expeditions; Potion: Use Potion When และสต็อกยา
+- Potion: เปิด USE POTION เลือก Aurora จาก dropdown แล้วติ๊ก Luck Potion / Haste Potion / Gilded Potion ตามที่ต้องการ
+- ใช้เฉพาะยาที่ติ๊กไว้และยังไม่ active; การเปิดการ์ดที่มีอยู่จะทำต่อหลังขั้นตอนยาตามเดิม
+- จำเงื่อนไขและ checkbox ของยาเมื่อรันใหม่; ค่าเดิมที่ยังไม่เคยเลือกจะเริ่มด้วยยาทั้ง 3 ชนิด
 - Status: Luck, Aura ที่ยืนยันล่าสุด, พลังทีม, เวฟ, Rolls, Auto Roll, ตั๋วดันเจี้ยน, เวลาเช็กครั้งถัดไป, การ์ด และสต็อกยา
 - ค่า Status อัปเดตประมาณทุกวินาที; ค่า UI ที่ซ่อนอยู่แสดง last seen พร้อมอายุข้อมูล
 - Aura ยืนยันจาก MOONS > Now.Title เมื่อหน้าต่างถูกอ่าน; ไม่ใช้ชื่อ Aura จากร้านค้า
