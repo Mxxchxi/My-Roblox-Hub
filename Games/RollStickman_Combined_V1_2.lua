@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R23
+-- Roll A Stickman Combined Auto V1.2 R24
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R23 starting; waiting for game to load")
+print("[RAS] R24 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -319,7 +319,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R23  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R24  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -466,7 +466,7 @@ end
 pageLabel("Open Card", "CardHint", "Uses its own Moon selection. Opens owned items only.", 342, 22).TextSize = 10
 local petUI = {targets = {}, nextCheck = 0, scanRequested = false, catalog = {}, nextPlayAt = 0}
 pageLabel("Pet", "PetHeading", "PET  /  BOOST CONDITIONS", 90, 20)
-pageLabel("Pet", "PetLuckLabel", "Pet check: after Open Card only", 151, 18)
+pageLabel("Pet", "PetLuckLabel", "Pet Luck before cards; restore after cards", 151, 18)
 
 for _, spec in ipairs({{"petLuckMoons", "PetLuckWhen", 171, 201}}) do
     local target = {field = spec[1], tab = "Pet", entries = {}, maxHeight = spec[1] == "petLuckMoons" and 143 or 91}
@@ -493,7 +493,7 @@ for _, control in pairs(petUI.every) do
 end
 for _, target in ipairs(petUI.targets) do target.button.Visible = false end
 petUI.schedule = pageLabel("Pet", "PetPlaySchedule", "Next play pet check: ready", 281, 20)
-petUI.help = pageLabel("Pet", "PetHelp", "Pet checks run only after card-opening requests finish. No pre-card or timed Pet visits. Manual scans remain available.", 305, 37)
+petUI.help = pageLabel("Pet", "PetHelp", "Selected Moon: Potion > Luck Pet > eligible cards > restore previous pets > battle. AUTO PET must be ON.", 305, 37)
 petUI.help.TextSize = 11
 petUI.scan = pageItem("Pet", button("ScanPet", "SCAN PET STATS", 12, 349, 164, 32))
 petUI.capture = pageItem("Pet", button("CapturePet", "CAPTURE (3s)", 184, 349, 164, 32))
@@ -1593,6 +1593,15 @@ local function moonTick(version)
                 potionUI.closeCycleWindow()
             elseif selected then log("CYCLE potion step unavailable; checking remaining conditions") end
         end
+        if flags.pet and active() and versions.pet == petVersion then
+            log("CYCLE prepare Luck Pet")
+            if not petUI.ensureRole("luck", currentKey, function()
+                return active() and flags.pet and versions.pet == petVersion
+            end) then
+                cardUI.diagnose("PET_PREPARE_FAILED")
+                return
+            end
+        end
         if cardMatch and flags.cards and active() then
             if cardUI.ready(version, currentKey) and active() then
                 log("CYCLE Open Card")
@@ -1602,13 +1611,11 @@ local function moonTick(version)
     end)
     if not ok then cardUI.diagnose("CYCLE_ERROR", tostring(errorText)) end
     local closed = potionUI.closeCycleWindow()
-    if closed and alive and flags.pet and potionConfig.petPlayEnabled
-        and potionUI.cycle.cardsDispatched and versions.pet == petVersion then
-        log("CYCLE post-card Pet check: Rolls Pet")
-        local restored = petUI.ensureRole("play", currentKey, function()
+    if closed and alive and flags.pet and versions.pet == petVersion and potionUI.cycle.petRestore then
+        local restoreOk, restored = pcall(petUI.restoreCycle, function()
             return alive and flags.pet and versions.pet == petVersion
         end)
-        if not restored then log("CYCLE Rolls Pet restore unconfirmed") end
+        cardUI.diagnose(restoreOk and restored and "PET_RESTORED" or "PET_RESTORE_UNCONFIRMED")
     end
     potionUI.closeCycleWindow()
     if alive and not modalOpen() then
@@ -1618,7 +1625,7 @@ local function moonTick(version)
         and not potionUI.cycle.cardsDispatched and active()
     potionUI.completedEvent = not retry and versions.moon == version and confirmed.serial or nil
     potionUI.cardRetryAt = retry and (os.clock() + 30) or nil
-    if retry then cardUI.diagnose("RETRY_PENDING", "Retry in 30s; no repeated potions or Pet navigation") end
+    if retry then cardUI.diagnose("RETRY_PENDING", "Retry in 30s; no repeated potions") end
     potionUI.cycle = nil
     log("CYCLE FINISHED | " .. currentKey .. " | cards UI closed=" .. tostring(modalTitle() ~= "CARD PACKS"))
 end
@@ -2030,6 +2037,15 @@ function petUI.ensureRole(role, key, check)
         if #items == 0 or not petUI.scanCatalog(items, check, false) or not check() then return false end
         local best = petUI.best(items, role)
         if not best then log("No verified " .. role .. " pet found"); return false end
+        if role == "luck" and potionUI.cycle and not potionUI.cycle.petRestore then
+            local snapshot = {before = {}, boosted = best.item.id}
+            for _, item in ipairs(items) do
+                if visible(child(item.button, {"Tag"})) and textOf(child(item.button, {"Tag"})) == "ON" then
+                    snapshot.before[item.id] = true
+                end
+            end
+            potionUI.cycle.petRestore = snapshot
+        end
         if not petUI.apply(best, role, check) then return false end
         petUI.applied = {role = role, id = best.item.id, moon = key, at = os.clock()}
         if role == "play" then
@@ -2044,6 +2060,41 @@ function petUI.ensureRole(role, key, check)
     end
     if not ok then log("Pet " .. role .. " step error: " .. tostring(result)); return false end
     return result == true
+end
+function petUI.restoreCycle(check)
+    local snapshot = potionUI.cycle and potionUI.cycle.petRestore
+    if not snapshot or not check() or not petUI.openPage(check) then return false end
+    local items = petUI.owned()
+    local function tagged(item)
+        return visible(child(item.button, {"Tag"})) and textOf(child(item.button, {"Tag"})) == "ON"
+    end
+    -- Remove only the Luck pet this cycle added. Never toggle a pre-existing pet.
+    for _, item in ipairs(items) do
+        if item.id == snapshot.boosted and not snapshot.before[item.id] and tagged(item) then
+            local record, equip, caption = petUI.openDetail(item, check)
+            if not record or caption ~= "UNEQUIP" or not check() then return false end
+            if not fire("pet.restore.remove." .. item.id, equip, "UNEQUIP", 2) then return false end
+            local deadline = os.clock() + 6
+            repeat task.wait(0.3) until not tagged(item) or not check() or os.clock() >= deadline
+            petUI.closeDetail(item, function() return alive end)
+            if tagged(item) or not check() then return false end
+        end
+    end
+    for _, item in ipairs(items) do
+        if snapshot.before[item.id] and not tagged(item) then
+            local record = petUI.catalog[item.id]
+            local role = record and (record.luck > 0 and "luck" or record.play > 0 and "play")
+            if not role or not petUI.apply({item=item, record=record}, role, check) then return false end
+        end
+    end
+    local found = {}
+    for _, item in ipairs(petUI.owned()) do
+        if tagged(item) then found[item.id] = true end
+    end
+    for id in pairs(snapshot.before) do if not found[id] then return false end end
+    if not snapshot.before[snapshot.boosted] and found[snapshot.boosted] then return false end
+    petUI.applied = nil
+    return true
 end
 function petUI.tick(version, manual)
     local function check() return alive and versions.pet == version and (manual or flags.pet) end
@@ -2389,7 +2440,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R23 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R24 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -2673,7 +2724,7 @@ local function refreshStatus(now)
     neonUI.sky.Text = statusCache.aura and cachedStatus("aura") or "No confirmed Moon yet. Press SYNC to inspect."
     neonUI.timer.Text = "Sky countdown: " .. cachedStatus("moonTimer")
     petUI.schedule.Text = flags.pet and potionConfig.petPlayEnabled
-        and "Pet: waiting for card opening to finish" or "Post-card Pet check: OFF"
+        and "Pet: Luck before cards, restore after cards" or "Pet cycle: OFF"
     local confirmed = potionUI.confirmed
     local left = confirmed and math.max(0, math.ceil(confirmed.untilTime - now)) or 0
     neonUI.moonPolicy.Text = left > 0 and ("Moon confirmed; next inspection in " .. left .. "s. No repeated window while the countdown is valid.")
@@ -2737,7 +2788,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R23 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R24 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
