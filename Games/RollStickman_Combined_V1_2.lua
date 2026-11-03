@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R26
+-- Roll A Stickman Combined Auto V1.2 R27
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R26 starting; waiting for game to load")
+print("[RAS] R27 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -319,7 +319,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R26  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R27  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -1300,7 +1300,8 @@ local function openPotions()
     if not fire("moon.potions", child(menu, {"potions"}), "POTIONS", 2) then
         return false
     end
-    task.wait(0.7)
+    local deadline = os.clock() + 4
+    repeat task.wait(0.2) until modalTitle() == "POTIONS" or not alive or os.clock() >= deadline
     return modalTitle() == "POTIONS"
 end
 local function numeric(value)
@@ -1520,6 +1521,10 @@ local function openOwnedCardsWorker(version)
         local deadline = os.clock() + 9
         repeat
             task.wait(0.5)
+            if modalTitle() == "YOUR HAUL" then
+                if not potionUI.closeCycleWindow() then return false end
+                if not cardRunValid() or not openCardPacks() then return false end
+            end
             count = cardCount()
         until (count and count < before) or os.clock() >= deadline
         if not cardRunValid() then return false end
@@ -1570,6 +1575,10 @@ local function openOwnedCardsWorker(version)
         cardUI.recordOpen(snapshot)
             attempts = attempts + 1
             task.wait(2.2)
+            if modalTitle() == "YOUR HAUL" then
+                if not potionUI.closeCycleWindow() then return false end
+                if not cardRunValid() or not openCardPacks() then return false end
+            end
             local afterSub = child(child(modalPanel(), {"Content", "Inner",
                 "Packs", id, "Open"}), {"Face", "Sub"})
             local after = numeric(textOf(afterSub):match("([%d,]+)%s+OWNED"))
@@ -1585,13 +1594,16 @@ local function openOwnedCardsWorker(version)
 end
 local function openOwnedCards(version)
     local ok, result = pcall(openOwnedCardsWorker, version)
-    if alive and modalTitle() == "CARD PACKS" then potionUI.closeCycleWindow() end
+    if alive and (modalTitle() == "CARD PACKS" or modalTitle() == "YOUR HAUL") then potionUI.closeCycleWindow() end
     if not ok then cardUI.diagnose("WORKER_ERROR", tostring(result)); return false end
     cardUI.diagnose(result and "WORKER_FINISHED" or "WORKER_STOPPED", "dispatched=" .. tostring(potionUI.cycle and potionUI.cycle.cardsDispatched))
     return result
 end
 local function moonTick(version)
     if not validMoon(version) then return end
+    if flags.cards and modalTitle() == "YOUR HAUL" then
+        if not potionUI.closeCycleWindow() then return end
+    end
     if modalOpen() and modalTitle() ~= "MOONS" then
         if flags.cards then cardUI.diagnose("BLOCKING_WINDOW") end
         nextMoon = os.clock() + 3; return end
@@ -1635,6 +1647,7 @@ local function moonTick(version)
         end
         -- Resolve the required potion before temporarily changing pets.
         if cardMatch and cardSelection.requireLuck and active() and not cardUI.checkLuck(version) then return end
+        if modalTitle() == "POTIONS" and not potionUI.closeCycleWindow() then return end
         if flags.pet and active() and versions.pet == petVersion then
             log("CYCLE prepare Luck Pet")
             if not petUI.ensureRole("luck", currentKey, function()
@@ -1811,7 +1824,7 @@ function potionUI.closeCycleWindow()
     if title == "PET" and petUI.lastDetail and petUI.detail(petUI.lastDetail) then
         return petUI.closeDetail(petUI.lastDetail, function() return alive end)
     end
-    if title ~= "CARD PACKS" and title ~= "POTIONS" and title ~= "MOONS" then return not modalOpen() end
+    if title ~= "YOUR HAUL" and title ~= "CARD PACKS" and title ~= "POTIONS" and title ~= "MOONS" then return not modalOpen() end
     local deadline = os.clock() + 4
     repeat
         closeModal("cycle.close." .. title)
@@ -2216,7 +2229,9 @@ function cardUI.ready(version, currentKey)
             return false
         end
     end
-    return cardUI.checkLuck(version)
+    local confirmed = cardUI.checkLuck(version)
+    if modalTitle() == "POTIONS" and not potionUI.closeCycleWindow() then return false end
+    return confirmed
 end
 function cardUI.checkLuck(version)
     if cardSelection.requireLuck and not cardUI.luckActive() then
@@ -2485,7 +2500,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R26 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R27 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -2833,7 +2848,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R26 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R27 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
