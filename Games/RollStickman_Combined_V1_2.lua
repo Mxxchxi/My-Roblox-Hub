@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R20
+-- Roll A Stickman Combined Auto V1.2 R21
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R20 starting; waiting for game to load")
+print("[RAS] R21 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -28,7 +28,7 @@ local SETTINGS_KEY = "RollStickman_Combined_V1_2_settings"
 local settingKeys = {"level", "raid", "dungeon", "expedition", "moon", "cards", "pet", "antiAfk"}
 local potionNames = {luck = "Luck Potion", haste = "Haste Potion", gild = "Gilded Potion"}
 -- These seven names are confirmed by the user's in-game MOONS screenshot.
-local potionConfig = {when = "Aurora", moons = {AURORA = true}, petLuckMoons = {AURORA = true}, petPlayEveryMinutes = 5, petPlayEnabled = true, moonInspectMinutes = 5, moonHudOnly = false, webhookEnabled = false, webhookUrl = "", available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, multipliers = {NORMAL = 1, SILVER = 1.5, AURORA = 12}, selected = {luck = true, haste = true, gild = true}}
+local potionConfig = {when = "Aurora", moons = {AURORA = true}, cardMoons = {AURORA = true}, petLuckMoons = {AURORA = true}, petPlayEveryMinutes = 5, petPlayEnabled = true, moonInspectMinutes = 5, moonHudOnly = false, webhookEnabled = false, webhookUrl = "", available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, multipliers = {NORMAL = 1, SILVER = 1.5, AURORA = 12}, selected = {luck = true, haste = true, gild = true}}
 local cardSelection = {loose = true, pouch = true, crate = true, chest = true, requireLuck = true, requirePet = true}
 local function minutes(value, fallback)
     local number = tonumber(value)
@@ -109,6 +109,7 @@ local function cleanSettings(value)
         end
     end
     potion.moons = moonSet(source.moons, {[moonIdentity(potion.when, true)] = true})
+    potion.cardMoons = moonSet(source.cardMoons, potion.moons)
     potion.petLuckMoons = moonSet(source.petLuckMoons, {AURORA = true})
     potion.petPlayEveryMinutes = minutes(source.petPlayEveryMinutes, 5)
     potion.petPlayEnabled = source.petPlayEnabled ~= false
@@ -116,7 +117,7 @@ local function cleanSettings(value)
         potion.petPlayEnabled = next(moonSet(source.petPlayMoons, {})) ~= nil
     end
     potion.moonInspectMinutes = minutes(source.moonInspectMinutes, 5)
-    potion.moonHudOnly = source.moonHudOnly == true
+    potion.moonHudOnly = false
     potion.webhookUrl = validWebhook(source.webhookUrl)
     potion.webhookEnabled = source.webhookEnabled == true and potion.webhookUrl ~= ""
     for name, amount in pairs(type(source.multipliers) == "table" and source.multipliers or {}) do
@@ -179,7 +180,7 @@ local function writeSettings(current)
     saved.potion.moonHudOnly = potionConfig.moonHudOnly
     saved.potion.webhookUrl = validWebhook(potionConfig.webhookUrl)
     saved.potion.webhookEnabled = potionConfig.webhookEnabled
-    for _, field in ipairs({"moons", "petLuckMoons"}) do
+    for _, field in ipairs({"moons", "cardMoons", "petLuckMoons"}) do
         saved.potion[field] = moonSet(potionConfig[field], {})
     end
     for key, amount in pairs(potionConfig.multipliers) do saved.potion.multipliers[key] = amount end
@@ -318,7 +319,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R20  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R21  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -440,17 +441,29 @@ end
 pageLabel("Potion", "PotionHint", "x? = press SYNC to read the Moon luck multiplier.", 328, 20).TextSize = 10
 pageLabel("Open Card", "CardHeading", "OPEN CARD  /  OWNED ITEMS", 90, 20)
 local cardUI = {checks = {}, openReports = {}, names = {loose = "Reward Cards", pouch = "Pouch", crate = "Crate", chest = "Chest"}}
-cardUI.condition = pageLabel("Open Card", "CardCondition", "When: follows Use Potion When", 152, 23)
-cardUI.stock = pageLabel("Open Card", "CardStock", "Reward Cards: not observed", 177, 28)
+cardUI.condition = pageItem("Open Card", button("CardWhen", "Open Card When: Aurora   v", 12, 152, 336, 30))
+cardUI.option = Instance.new("ScrollingFrame")
+cardUI.option.Name = "CardWhenList"
+cardUI.option.Position = UDim2.fromOffset(12, 184)
+cardUI.option.Size = UDim2.fromOffset(336, 158)
+cardUI.option.BackgroundColor3 = theme.card
+cardUI.option.BorderSizePixel = 0
+cardUI.option.ScrollBarThickness = 5
+cardUI.option.CanvasSize = UDim2.new()
+cardUI.option.ZIndex = 30
+cardUI.option.Visible = false
+pageItem("Open Card", cardUI.option)
+cardUI.primary = {field = "cardMoons", tab = "Open Card", button = cardUI.condition, list = cardUI.option, entries = {}, maxHeight = 223}
+cardUI.stock = pageLabel("Open Card", "CardStock", "Reward Cards: not observed", 188, 28)
 cardUI.stock.TextSize = 11
-cardUI.requireLuck = pageItem("Open Card", button("CardRequireLuck", "[x] Require active Luck Potion", 12, 208, 336, 24))
-cardUI.requirePet = pageItem("Open Card", button("CardRequirePet", "[x] Require active Pet Luck", 12, 236, 336, 24))
+cardUI.requireLuck = pageItem("Open Card", button("CardRequireLuck", "[x] Require active Luck Potion", 12, 222, 336, 24))
+cardUI.requirePet = pageItem("Open Card", button("CardRequirePet", "[x] Require active Pet Luck", 12, 250, 336, 24))
 for i, id in ipairs({"loose", "pouch", "crate", "chest"}) do
     cardUI.checks[id] = pageItem("Open Card", button("CardCheck" .. id,
-        "[x]  " .. cardUI.names[id], 12 + ((i - 1) % 2) * 172, 268 + math.floor((i - 1) / 2) * 28, 164, 24))
+        "[x]  " .. cardUI.names[id], 12 + ((i - 1) % 2) * 172, 282 + math.floor((i - 1) / 2) * 28, 164, 24))
     cardUI.checks[id].TextXAlignment = Enum.TextXAlignment.Left
 end
-pageLabel("Open Card", "CardHint", "Uses the selected Moon condition. Opens owned items only.", 326, 22).TextSize = 10
+pageLabel("Open Card", "CardHint", "Uses its own Moon selection. Opens owned items only.", 342, 22).TextSize = 10
 local petUI = {targets = {}, nextCheck = 0, scanRequested = false, catalog = {}, nextPlayAt = 0}
 pageLabel("Pet", "PetHeading", "PET  /  BOOST CONDITIONS", 90, 20)
 pageLabel("Pet", "PetLuckLabel", "Boost luck pet when", 151, 18)
@@ -476,7 +489,7 @@ petUI.playToggle = pageItem("Pet", button("PetPlayToggle", "[x] Boost cards from
 pageLabel("Pet", "PetPlayLabel", "Every X minutes (1-120)", 228, 18)
 petUI.every = neonUI.minuteControls("Pet", "PetPlay", 250)
 petUI.schedule = pageLabel("Pet", "PetPlaySchedule", "Next play pet check: ready", 281, 20)
-petUI.help = pageLabel("Pet", "PetHelp", "Luck Moon conditions take priority. Timed play checks wait during Aurora or a selected Luck Moon.", 305, 37)
+petUI.help = pageLabel("Pet", "PetHelp", "Selected Moon cycle: potions > Luck Pet > eligible cards > Rolls Pet > battle. The play timer also runs between cycles.", 305, 37)
 petUI.help.TextSize = 11
 petUI.scan = pageItem("Pet", button("ScanPet", "SCAN PET STATS", 12, 349, 164, 32))
 petUI.capture = pageItem("Pet", button("CapturePet", "CAPTURE (3s)", 184, 349, 164, 32))
@@ -537,11 +550,11 @@ neonUI.sky = pageLabel("Moon", "MoonSky", "No confirmed Moon yet. Press SYNC to 
 neonUI.sky.TextSize = 16
 neonUI.sky.TextColor3 = theme.text
 neonUI.timer = pageLabel("Moon", "MoonTimer", "Sky countdown: not observed", 185, 22)
-neonUI.hudOnly = pageItem("Moon", button("MoonHudOnly", "[ ] HUD ONLY - never auto-open MOONS", 12, 211, 336, 28))
-pageLabel("Moon", "MoonIntervalLabel", "Inspect unknown Moon every X minutes (1-120)", 244, 18)
+neonUI.tracker = pageLabel("Moon", "MoonTracking", "COUNTDOWN TRACKING: unknown / expired Moon is inspected automatically", 211, 28)
+pageLabel("Moon", "MoonIntervalLabel", "Retry after a failed Moon read: minutes (1-120)", 244, 18)
 neonUI.moonEvery = neonUI.minuteControls("Moon", "MoonInspect", 267)
 neonUI.moonSync = pageItem("Moon", button("MoonSync", "SYNC MOON NOW", 12, 306, 336, 30))
-neonUI.moonPolicy = pageLabel("Moon", "MoonPolicy", "Verified HUD icons need no window. Unknown or ambiguous icons require SYNC or timed inspection.", 343, 61)
+neonUI.moonPolicy = pageLabel("Moon", "MoonPolicy", "Reads the active Moon and remaining time once. Checks again when that time expires or the HUD icon changes.", 343, 61)
 pageLabel("Settings", "SettingsHeading", "SETTINGS  /  SESSION & LOG", 90, 20)
 pageLabel("Settings", "SettingsHint", "Switches, Moon choices and window position save automatically. Alt minimizes this window. RESTORE SWITCHES restores the last STOP ALL selection.", 158, 60)
 neonUI.storage = pageLabel("Settings", "StorageInfo", "Settings storage: starting", 225, 24)
@@ -689,6 +702,7 @@ local function setTab(name)
         neonUI.pageFrames[tab].Visible = tab == name
     end
     potionUI.option.Visible = false
+    cardUI.option.Visible = false
     for _, target in ipairs(petUI.targets) do target.list.Visible = false end
     settingsStorage = writeSettings(flags)
     gui:SetAttribute("ActiveTab", name)
@@ -814,6 +828,7 @@ for key, obj in pairs(toggles) do
         flags[key] = not flags[key]
         versions[key] = versions[key] + 1
         if key == "cards" then versions.moon = versions.moon + 1 end
+        if key == "moon" or key == "cards" then potionUI.completedEvent = nil end
         if key == "pet" then petUI.nextCheck = 0; petUI.applied = nil end
         local title = titles[key]
         obj.Text = title .. (flags[key] and ": ON" or ": OFF")
@@ -1260,8 +1275,6 @@ end
 -- Aurora is read from MOONS > Now.Title. The summoning shop always lists
 -- AURORA MOON, even when the active sky is NORMAL MOON; never use that list.
 local nextMoon = 0
-local moonWasAurora = false
-local moonMatchedKey
 local moonUsed = {}
 local moonCardsDone = false
 local function closeModal(key)
@@ -1392,14 +1405,17 @@ function cardUI.recordOpen(snapshot)
     log(message)
     neonUI.queueWebhook(message)
 end
-local function openOwnedCards(version)
+local function openOwnedCardsWorker(version)
     if not flags.cards or not validMoon(version) then return false end
     if not openCardPacks() then
         note("Aurora: CARD PACKS entry unavailable; retrying")
         return false
     end
     local function cardRunValid()
-        if flags.cards and validMoon(version) then return true end
+        local buffsReady = (not cardSelection.requireLuck or cardUI.luckActive())
+            and (not cardSelection.requirePet or petUI.luckActive())
+        if flags.cards and validMoon(version) and potionUI.cycleValid() and buffsReady then return true end
+        if not buffsReady then log("Open Card stopped: a required Luck Potion / Pet Luck condition expired") end
         if alive and modalTitle() == "CARD PACKS" then closeModal("moon.cards.cancel.close") end
         return false
     end
@@ -1414,7 +1430,7 @@ local function openOwnedCards(version)
     local finalSmallBatch = false
     -- The observed OPEN ALL processed roughly 1.26 million cards per press.
     -- Repeat only after a measured decrease, never while a prior batch is pending.
-    while count > 0 and rounds < 15 and validMoon(version) do
+    while count > 0 and rounds < 120 and cardRunValid() do
         local all = child(modalPanel(), {"Content", "Inner", "Loose",
             "Row", "Open", "All"})
         local caption = buttonText(all)
@@ -1459,8 +1475,8 @@ local function openOwnedCards(version)
     -- Pack buttons may be GET MORE when owned=0. Never press a purchase link.
     for _, id in ipairs({"pouch", "crate", "chest"}) do
         local attempts = 0
-        while validMoon(version) and flags.cards and cardSelection[id] and modalTitle() == "CARD PACKS"
-            and attempts < 120 and os.clock() < nextMoon + 250 do
+        while cardRunValid() and cardSelection[id] and modalTitle() == "CARD PACKS"
+            and attempts < 120 do
             local row = child(modalPanel(), {"Content", "Inner", "Packs", id})
             local open = child(row, {"Open"})
             local sub = child(open, {"Face", "Sub"})
@@ -1492,66 +1508,73 @@ local function openOwnedCards(version)
     note("Open Card attempted; see COPY LOG for counts")
     return true
 end
+local function openOwnedCards(version)
+    local ok, result = pcall(openOwnedCardsWorker, version)
+    if alive and modalTitle() == "CARD PACKS" then potionUI.closeCycleWindow() end
+    if not ok then log("Open Card error: " .. tostring(result)); return false end
+    return result
+end
 local function moonTick(version)
     if not validMoon(version) then return end
-    if modalOpen() and modalTitle() ~= "MOONS" then
-        nextMoon = os.clock() + 8
-        return
-    end
+    if modalOpen() and modalTitle() ~= "MOONS" then nextMoon = os.clock() + 3; return end
     local sky, openedHere = potionUI.resolveSky(version)
-    if not sky then return end
-    if not validMoon(version) then return end
+    if not sky or not validMoon(version) then return end
     rememberStatus("aura", sky)
     local currentKey = moonIdentity(sky, true)
-    local aurora = currentKey and potionConfig.moons[currentKey] == true
-    if not aurora then
-        if moonWasAurora then log("Selected Moon ended: " .. sky) end
-        moonWasAurora, moonCardsDone = false, false
-        moonMatchedKey = nil
-        moonUsed = {}
-        nextMoon = os.clock() + 15
-        if openedHere then closeModal("moon.close") end
-        return
+    local confirmed = potionUI.confirmed
+    nextMoon = math.min(os.clock() + 5, confirmed.untilTime)
+    if openedHere or modalTitle() == "MOONS" then
+        if not potionUI.closeCycleWindow() then return end
     end
-    if not moonWasAurora or moonMatchedKey ~= currentKey then
-        log("ACTIVE MOON confirmed: " .. sky)
-        moonWasAurora = true
-        moonMatchedKey = currentKey
-        moonUsed, moonCardsDone = {}, false
-    end
-    nextMoon = os.clock() + (moonCardsDone and 30 or 12)
-    if openedHere then
-        closeModal("moon.close")
-        task.wait(0.4)
-    end
-    if not validMoon(version) then return end
-    local pending = false
-    for _, id in ipairs({"luck", "haste", "gild"}) do
-        if flags.moon and potionConfig.selected[id] and not moonUsed[id] then pending = true end
-    end
-    if not pending and (not flags.cards or moonCardsDone) then return end
-    if modalOpen() then
-        note(moonCaption(currentKey) .. " active; close MOONS to use selected potions")
-        return
-    end
-    if pending and not openPotions() then
-        note(moonCaption(currentKey) .. " active; POTIONS entry unavailable; retrying")
-        return
-    end
-    for _, id in ipairs({"luck", "haste", "gild"}) do
-        if not validMoon(version) then return end
-        if flags.moon and potionConfig.selected[id] then usePotion(id) end
-    end
-    if modalTitle() == "POTIONS" then closeModal("moon.potions.close") end
-    task.wait(0.5)
-    if not validMoon(version) then return end
-    for _, id in ipairs({"luck", "haste", "gild"}) do
-        if flags.moon and potionConfig.selected[id] and not moonUsed[id] then
-            note(moonCaption(currentKey) .. ": " .. potionNames[id] .. " unavailable; retrying")
-            return
+    local potionMatch = flags.moon and potionConfig.moons[currentKey]
+    local cardMatch = flags.cards and potionConfig.cardMoons[currentKey]
+    if not (potionMatch or cardMatch) or potionUI.completedEvent == confirmed.serial then return end
+    local petVersion = versions.pet
+    local function active() return validMoon(version) and potionUI.cycleValid() end
+    potionUI.cycle = {serial = confirmed.serial, key = currentKey, luckReady = false}
+    moonUsed, moonCardsDone = {}, false
+    log("CYCLE START | " .. currentKey .. " | event=" .. confirmed.serial)
+    local ok, errorText = pcall(function()
+        if potionMatch and active() then
+            local selected = false
+            for _, id in ipairs({"luck", "haste", "gild"}) do if potionConfig.selected[id] then selected = true end end
+            if selected and openPotions() then
+                for _, id in ipairs({"luck", "haste", "gild"}) do
+                    if not active() then break end
+                    if potionConfig.selected[id] then usePotion(id) end
+                end
+                potionUI.closeCycleWindow()
+            elseif selected then log("CYCLE potion step unavailable; checking remaining conditions") end
         end
+        if flags.pet and active() and versions.pet == petVersion then
+            log("CYCLE Luck Pet")
+            potionUI.cycle.luckReady = petUI.ensureRole("luck", currentKey, function()
+                return active() and flags.pet and versions.pet == petVersion
+            end)
+        end
+        if cardMatch and flags.cards and active() then
+            if cardUI.ready(version, currentKey) and active() then
+                log("CYCLE Open Card")
+                openOwnedCards(version)
+            else log("CYCLE Open Card skipped: configured conditions are not met") end
+        else log("CYCLE Open Card skipped: disabled or Moon expired") end
+    end)
+    if not ok then log("CYCLE interrupted: " .. tostring(errorText)) end
+    local closed = potionUI.closeCycleWindow()
+    if closed and alive and flags.pet and versions.pet == petVersion then
+        log("CYCLE restore Rolls Pet")
+        local restored = petUI.ensureRole("play", currentKey, function()
+            return alive and flags.pet and versions.pet == petVersion
+        end)
+        if not restored then log("CYCLE Rolls Pet restore unconfirmed") end
     end
-    if flags.cards and not moonCardsDone and cardUI.ready(version, currentKey) then openOwnedCards(version) end
+    potionUI.closeCycleWindow()
+    if alive and not modalOpen() then
+        fire("cycle.back.battle", get({"Frame", "Nav", "Row", "endless"}), nil, 1)
+    end
+    potionUI.completedEvent = versions.moon == version and confirmed.serial or nil
+    potionUI.cycle = nil
+    log("CYCLE FINISHED | " .. currentKey .. " | cards UI closed=" .. tostring(modalTitle() ~= "CARD PACKS"))
 end
 
 function potionUI.caption(name)
@@ -1567,7 +1590,7 @@ function potionUI.summary(field)
     return #names == 1 and names[1] or (#names .. " Moons selected")
 end
 function potionUI.menus()
-    return {potionUI.primary, petUI.targets[1]}
+    return {potionUI.primary, cardUI.primary, petUI.targets[1]}
 end
 function potionUI.paintMenus()
     for _, target in ipairs(potionUI.menus()) do
@@ -1618,50 +1641,91 @@ function potionUI.icon()
 end
 function potionUI.confirmSky(value)
     local key = moonIdentity(value, true)
-    if not key then return end
+    if not key then return false end
+    local remaining = potionUI.seconds(value)
+    if not remaining then
+        local detail = child(modalPanel(), {"Content", "Inner", "Now", "Sub"})
+        local nextRoll = visible(detail) and statusPlain(detail):lower():match("sky rolls again in%s+(%d+:%d+)")
+        remaining = nextRoll and potionUI.seconds(nextRoll)
+    end
+    if not remaining then
+        local timer = get({"Frame", "Buffs", "Moon", "Pill", "Value"})
+        remaining = visible(timer) and potionUI.seconds(statusPlain(timer))
+    end
+    if not remaining or remaining <= 0 then return false end
     local icon = potionUI.icon()
     if icon then
         if potionUI.iconMap[icon] and potionUI.iconMap[icon] ~= key then potionUI.iconConflicts[icon] = true end
         potionUI.iconMap[icon] = key
     end
-    potionUI.confirmed = {key = key, icon = icon, untilTime = os.clock() + (potionUI.seconds(value) or 0)}
-    potionUI.lastProbeAt = os.clock()
-    potionUI.probeAt = potionUI.lastProbeAt + potionConfig.moonInspectMinutes * 60
+    local previous = potionUI.confirmed
+    local same = previous and previous.key == key and previous.untilTime > os.clock()
+    if not same then
+        potionUI.eventSerial = (potionUI.eventSerial or 0) + 1
+        log("MOON WINDOW | " .. key .. " | remaining=" .. remaining .. "s | event=" .. potionUI.eventSerial)
+    end
+    potionUI.confirmed = {key = key, icon = icon, untilTime = os.clock() + remaining,
+        label = value:gsub("%s*·%s*%d+:%d+%s*$", ""), serial = potionUI.eventSerial}
+    potionUI.lastProbeAt, potionUI.retryAt = os.clock(), 0
+    potionUI.probeAt = potionUI.confirmed.untilTime
+    gui:SetAttribute("MoonKnownUntil", potionUI.confirmed.untilTime)
+    return true
+end
+function potionUI.cachedSky()
+    local value = potionUI.confirmed
+    if not value or value.untilTime <= os.clock() then return nil end
+    local icon = potionUI.icon()
+    if icon and value.icon and icon ~= value.icon then return nil end
+    local left = math.max(0, math.ceil(value.untilTime - os.clock()))
+    return value.label .. string.format(" · %d:%02d", math.floor(left / 60), left % 60)
 end
 function potionUI.resolveSky(version, check)
     if modalTitle() == "MOONS" then
         local obj = child(modalPanel(), {"Content", "Inner", "Now", "Title"})
         local value = visible(obj) and statusPlain(obj) or ""
-        if value ~= "" then potionUI.confirmSky(value); return value, false end
+        if value ~= "" and potionUI.confirmSky(value) then return potionUI.cachedSky(), false end
     end
-    local icon = potionUI.icon()
-    local key = icon and not potionUI.iconConflicts[icon] and potionUI.iconMap[icon]
-    local timer = get({"Frame", "Buffs", "Moon", "Pill", "Value"})
-    local remaining = visible(timer) and potionUI.seconds(statusPlain(timer))
-    local cached = potionUI.confirmed
-    if key and (remaining or (cached and cached.icon == icon and cached.untilTime > os.clock())) then
-        return moonCaption(key), false
-    end
-    if potionConfig.moonHudOnly then
-        nextMoon = os.clock() + 10
-        return nil
-    end
-    if os.clock() < potionUI.probeAt then nextMoon = math.min(os.clock() + 10, potionUI.probeAt); return nil end
-    if modalOpen() then nextMoon = os.clock() + 8; return nil end
-    if not fire("moon.tab", get({"Frame", "Buffs", "Moon"}), nil, 3) then nextMoon = os.clock() + 10; return nil end
+    local cached = potionUI.cachedSky()
+    if cached then return cached, false end
+    if os.clock() < (potionUI.retryAt or 0) then nextMoon = math.min(os.clock() + 5, potionUI.retryAt); return nil end
+    if modalOpen() then nextMoon = os.clock() + 3; return nil end
+    if not fire("moon.tab", get({"Frame", "Buffs", "Moon"}), nil, 3) then nextMoon = os.clock() + 5; return nil end
     potionUI.lastProbeAt = os.clock()
-    potionUI.probeAt = potionUI.lastProbeAt + potionConfig.moonInspectMinutes * 60
     task.wait(0.7)
     local obj = child(modalPanel(), {"Content", "Inner", "Now", "Title"})
     local value = modalTitle() == "MOONS" and visible(obj) and statusPlain(obj) or ""
-    if not (check and check() or (not check and validMoon(version))) or value == "" then
+    local valid = check and check() or (not check and validMoon(version))
+    local confirmed = valid and value ~= "" and potionUI.confirmSky(value)
+    if not confirmed then
         if alive and modalTitle() == "MOONS" then closeModal("moon.cancel.close") end
-        nextMoon = potionUI.probeAt
+        potionUI.retryAt = os.clock() + potionConfig.moonInspectMinutes * 60
+        nextMoon = potionUI.retryAt
+        note("Moon/time read not confirmed; will retry, no boost or cards sent")
         return nil
     end
-    potionUI.confirmSky(value)
     if potionUI.discover() > 0 then potionUI.rebuild() end
-    return value, true
+    return potionUI.cachedSky(), true
+end
+function potionUI.cycleValid()
+    local value, cycle = potionUI.confirmed, potionUI.cycle
+    return not cycle or (value and value.serial == cycle.serial and potionUI.cachedSky() ~= nil)
+end
+function potionUI.closeCycleWindow()
+    if not alive then return false end
+    local title = modalTitle()
+    if title == "PET" and petUI.lastDetail and petUI.detail(petUI.lastDetail) then
+        return petUI.closeDetail(petUI.lastDetail, function() return alive end)
+    end
+    if title ~= "CARD PACKS" and title ~= "POTIONS" and title ~= "MOONS" then return not modalOpen() end
+    local deadline = os.clock() + 4
+    repeat
+        closeModal("cycle.close." .. title)
+        task.wait(0.3)
+        if not modalOpen() then return true end
+        if modalTitle() ~= title then return false end
+    until not alive or os.clock() >= deadline
+    log("CYCLE window close unconfirmed: " .. title)
+    return false
 end
 function petUI.equippedStats()
     local screen = page()
@@ -1733,8 +1797,11 @@ function petUI.nameOf(value)
     return value:gsub("<[^>]*>", ""):gsub("·", "|"):match("^([^|]+)"):gsub("%s+", " "):match("^%s*(.-)%s*$"):upper()
 end
 function petUI.roleFor(key)
-    if key and potionConfig.petLuckMoons[key] then return "luck" end
-    if key and key ~= "AURORA" and potionConfig.petPlayEnabled
+    local confirmed = potionUI.confirmed
+    local finished = confirmed and potionUI.completedEvent == confirmed.serial
+        and (potionConfig.moons[key] or potionConfig.cardMoons[key])
+    if key and not finished and potionConfig.petLuckMoons[key] then return "luck" end
+    if key and (finished or key ~= "AURORA") and potionConfig.petPlayEnabled
         and os.clock() >= petUI.nextPlayAt then return "play" end
 end
 function petUI.pageReady()
@@ -1803,6 +1870,7 @@ end
 function petUI.openDetail(item, check)
     if not check() then return nil end
     local wasOn = visible(child(item.button, {"Tag"})) and textOf(child(item.button, {"Tag"})) == "ON"
+    petUI.lastDetail = item
     if not fire("pet.detail." .. item.id, item.button, nil, 0.5) then return nil end
     local deadline = os.clock() + 4
     local previous
@@ -1908,6 +1976,29 @@ function petUI.apply(best, role, check)
     petUI.closeDetail(best.item, check)
     return false
 end
+function petUI.ensureRole(role, key, check)
+    if not check() or modalOpen() then return false end
+    local ok, result = pcall(function()
+        if not petUI.openPage(check) then return false end
+        local items = petUI.owned()
+        if #items == 0 or not petUI.scanCatalog(items, check, false) or not check() then return false end
+        local best = petUI.best(items, role)
+        if not best then log("No verified " .. role .. " pet found"); return false end
+        if not petUI.apply(best, role, check) then return false end
+        petUI.applied = {role = role, id = best.item.id, moon = key, at = os.clock()}
+        if role == "play" then
+            petUI.lastPlayAt = os.clock()
+            petUI.nextPlayAt = petUI.lastPlayAt + potionConfig.petPlayEveryMinutes * 60
+        end
+        note("Pet ready: " .. best.item.name .. " | " .. best.record.gives)
+        return true
+    end)
+    if alive and modalTitle() == "PET" and petUI.lastDetail and petUI.detail(petUI.lastDetail) then
+        petUI.closeDetail(petUI.lastDetail, function() return alive end)
+    end
+    if not ok then log("Pet " .. role .. " step error: " .. tostring(result)); return false end
+    return result == true
+end
 function petUI.tick(version, manual)
     local function check() return alive and versions.pet == version and (manual or flags.pet) end
     if not check() then return end
@@ -1978,11 +2069,8 @@ function cardUI.luckActive()
     return left and entry.at + left > os.clock() or false
 end
 function cardUI.ready(version, currentKey)
-    local role = flags.pet and petUI.roleFor(currentKey)
-    if role and (not petUI.applied or petUI.applied.role ~= role
-        or petUI.applied.moon ~= currentKey or os.clock() - petUI.applied.at >= 300) then
-        petUI.nextCheck = 0
-        note("Open Card waiting: AUTO PET must confirm the selected pet first")
+    if flags.pet and potionUI.cycle and not potionUI.cycle.luckReady then
+        note("Open Card skipped: Luck Pet was not confirmed")
         return false
     end
     if cardSelection.requirePet and not petUI.luckActive() then
@@ -2008,7 +2096,7 @@ function cardUI.ready(version, currentKey)
 end
 local function paintPotionChoices()
     potionUI.dropdown.Text = "Use Potion When: " .. potionUI.summary("moons") .. "   v"
-    cardUI.condition.Text = "When: " .. potionUI.summary("moons")
+    cardUI.condition.Text = "Open Card When: " .. potionUI.summary("cardMoons") .. "   v"
     for _, target in ipairs(petUI.targets) do target.button.Text = potionUI.summary(target.field) .. "   v" end
     potionUI.paintMenus()
     for _, id in ipairs({"luck", "haste", "gild"}) do
@@ -2105,8 +2193,9 @@ function potionUI.rebuild()
                 if not alive then return end
                 local selected = potionConfig[target.field]
                 selected[key] = not selected[key] or nil
-                if target.field == "moons" then
-                    potionConfig.when = name
+                if target.field == "moons" or target.field == "cardMoons" then
+                    potionUI.completedEvent = nil
+                    if target.field == "moons" then potionConfig.when = name end
                     versions.moon = versions.moon + 1
                     nextMoon = 0
                 else
@@ -2257,7 +2346,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R20 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R21 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -2266,9 +2355,8 @@ function neonUI.paintIntervals()
     petUI.playToggle.Text = (potionConfig.petPlayEnabled and "[x] " or "[ ] ") .. "Boost cards from play"
     petUI.playToggle.BackgroundColor3 = potionConfig.petPlayEnabled and theme.accent or theme.off
     neonUI.moonEvery.box.Text = tostring(potionConfig.moonInspectMinutes)
-    neonUI.hudOnly.Text = (potionConfig.moonHudOnly and "[x] " or "[ ] ") .. "HUD ONLY - never auto-open MOONS"
-    neonUI.hudOnly.BackgroundColor3 = potionConfig.moonHudOnly and theme.accent or theme.off
-    gui:SetAttribute("MoonHudOnly", potionConfig.moonHudOnly)
+    gui:SetAttribute("MoonHudOnly", false)
+    gui:SetAttribute("MoonCountdownTracking", true)
     gui:SetAttribute("MoonInspectMinutes", potionConfig.moonInspectMinutes)
 end
 function neonUI.changeInterval(field, value)
@@ -2280,7 +2368,7 @@ function neonUI.changeInterval(field, value)
             petUI.nextCheck = 0
             versions.pet = versions.pet + 1
         else
-            potionUI.probeAt = potionUI.lastProbeAt and potionUI.lastProbeAt + updated * 60 or 0
+            potionUI.retryAt = potionUI.retryAt and math.min(potionUI.retryAt, os.clock() + updated * 60) or 0
             nextMoon, petUI.nextCheck = 0, 0
             versions.moon, versions.pet = versions.moon + 1, versions.pet + 1
         end
@@ -2301,14 +2389,6 @@ petUI.playToggle.Activated:Connect(function()
     versions.pet = versions.pet + 1
     neonUI.paintIntervals()
     settingsStorage = writeSettings(flags)
-end)
-neonUI.hudOnly.Activated:Connect(function()
-    potionConfig.moonHudOnly = not potionConfig.moonHudOnly
-    nextMoon, petUI.nextCheck = 0, 0
-    versions.moon, versions.pet = versions.moon + 1, versions.pet + 1
-    neonUI.paintIntervals()
-    settingsStorage = writeSettings(flags)
-    note(potionConfig.moonHudOnly and "HUD only: unknown Moon waits for manual SYNC" or "Automatic Moon inspection enabled")
 end)
 neonUI.paintIntervals()
 neonUI.moonSync.Activated:Connect(function()
@@ -2370,6 +2450,7 @@ for _, id in ipairs({"luck", "haste", "gild"}) do
         potionConfig.selected[id] = not potionConfig.selected[id]
         potionUI.option.Visible = false
         versions.moon = versions.moon + 1
+        potionUI.completedEvent = nil
         nextMoon = 0
         paintPotionChoices()
         settingsStorage = writeSettings(flags)
@@ -2390,6 +2471,7 @@ for _, field in ipairs({"requireLuck", "requirePet"}) do
     cardUI[field].Activated:Connect(function()
         cardSelection[field] = not cardSelection[field]
         versions.moon = versions.moon + 1
+        potionUI.completedEvent = nil
         nextMoon = 0
         cardUI.paint()
         settingsStorage = writeSettings(flags)
@@ -2400,6 +2482,7 @@ for _, id in ipairs({"loose", "pouch", "crate", "chest"}) do
     cardUI.checks[id].Activated:Connect(function()
         cardSelection[id] = not cardSelection[id]
         versions.moon = versions.moon + 1
+        potionUI.completedEvent = nil
         moonCardsDone = false
         nextMoon = 0
         cardUI.paint()
@@ -2551,9 +2634,10 @@ local function refreshStatus(now)
         or not potionConfig.petPlayEnabled and "Play pet timer: disabled"
         or (playLeft == 0 and "Play pet check: ready (waits for a non-Luck Moon)"
             or string.format("Next play pet check: %dm %02ds", math.floor(playLeft / 60), playLeft % 60))
-    neonUI.moonPolicy.Text = potionConfig.moonHudOnly
-        and "HUD ONLY: no automatic MOONS window. Unknown or shared icons wait for manual SYNC."
-        or ("Verified HUD icons need no window. Unknown/shared icons: inspect every " .. potionConfig.moonInspectMinutes .. " minutes.")
+    local confirmed = potionUI.confirmed
+    local left = confirmed and math.max(0, math.ceil(confirmed.untilTime - now)) or 0
+    neonUI.moonPolicy.Text = left > 0 and ("Moon confirmed; next inspection in " .. left .. "s. No repeated window while the countdown is valid.")
+        or "Moon unknown / expired: inspect automatically. The minute setting is used only after a failed read."
     neonUI.storage.Text = "Settings storage: " .. settingsStorage .. " | Dungeon recheck: 2 hours"
     put("aura", statusCache.aura and cachedStatus("aura") or "Open MOONS to confirm the active sky")
     if activeTab == "Status" and not minimized and now >= statusNextPowerScan then
@@ -2613,7 +2697,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R20 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R21 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -2652,15 +2736,15 @@ task.spawn(function()
             if not busy and flags.level and not modalOpen() and now >= nextLevel then
                 run("level", levelTick)
             end
+            if not busy and (flags.moon or flags.cards) and not inDungeon() and
+                now >= nextMoon then
+                run("moon", moonTick)
+            end
             if not busy and not inDungeon() and (petUI.scanRequested
                 or flags.pet and now >= petUI.nextCheck) then
                 local manual = petUI.scanRequested
                 petUI.scanRequested = false
                 run("pet", function(version) petUI.tick(version, manual) end)
-            end
-            if not busy and (flags.moon or flags.cards) and not inDungeon() and
-                now >= nextMoon then
-                run("moon", moonTick)
             end
             if not busy and flags.expedition and not blockingDungeonResult
                 and now >= nextExpedition then
