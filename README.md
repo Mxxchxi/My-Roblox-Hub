@@ -1,6 +1,6 @@
 # My-Roblox-Hub
 
-## Roll A Stickman — V1.2 R16
+## Roll A Stickman — V1.2 R17
 
 PlaceId: `115068315659966`
 
@@ -27,7 +27,9 @@ PlaceId: `115068315659966`
 - แท็บ Open Card มี AUTO OPEN CARD และ checkbox แยก Reward Cards / Pouch / Crate / Chest
 - Open Card ใช้ชุด Moon เดียวกับ Use Potion When แต่เปิด/ปิดแยกจาก USE POTION ได้
 - เพิ่ม Require active Luck Potion และ Require active Pet Luck เปิดเป็นค่าเริ่มต้น; ถ้ายังยืนยันบัฟไม่ได้ ระบบจะรอและไม่เปิดการ์ด
-- Luck Potion ใช้เวลาคงเหลือที่อ่านจาก POTIONS; Pet Luck อ่านเฉพาะตัวแสดงบัฟที่กำลังแสดงและมีเวลา/ACTIVE ชัดเจน
+- Luck Potion ใช้เวลาคงเหลือที่อ่านจาก POTIONS
+- Pet Luck รองรับโบนัส Pet ที่สวมอยู่จาก OnHead เช่น EQUIPPED 3/4 · +5% luck · +24.4% rolls from play และยังรองรับบัฟแบบจับเวลา
+- ข้อมูล Pet ที่สวมอยู่มีอายุยืนยัน 5 นาที; เมื่อจำเป็นจะตรวจผ่านปุ่ม PETS ที่ค้นพบจริงใน UI โดยไม่กด EQUIP BEST หรือเลือก Pet แบบสุ่ม
 - เมื่อเปิดทั้งสองระบบ จะใช้ยาที่เลือกก่อนเปิดการ์ด; เปิดเฉพาะรายการที่มีอยู่และไม่กด GET MORE
 - ตั้งค่าจากรุ่นเก่าที่ยังเปิด USE POTION อยู่จะคืนค่า AUTO OPEN CARD เป็น ON เพื่อรักษาพฤติกรรมเดิม; การติดตั้งใหม่เริ่ม OFF
 - จำเงื่อนไขและ checkbox ของยาเมื่อรันใหม่; ค่าเดิมที่ยังไม่เคยเลือกจะเริ่มด้วยยาทั้ง 3 ชนิด
@@ -47,7 +49,11 @@ PlaceId: `115068315659966`
 - เพิ่มแท็บ Pet และ multi-select สองชุด: Boost luck pet when และ Boost card from play (if not Aurora)
 - ชุดที่สองไม่ให้เลือก Aurora
 - ขณะนี้บันทึกเงื่อนไข Pet ได้ แต่ **ยังไม่กดบูสต์ Pet อัตโนมัติ** เพราะยังไม่มีปุ่ม/สถานะจากหน้า Pet จริง
-- เปิด PETS ในเกม แล้วกด Pet > CAPTURE PET UI > COPY LOG และส่งรายงาน เพื่อผูกปุ่มทั้งสองให้ถูกต้อง
+- เปิด PETS ในเกม กด Pet > CAPTURE PET UI (3s) แล้วเลื่อนเมาส์ไปวางบน Pet ให้เห็น tooltip หรือเปิดหน้ารายละเอียด Pet
+- เก็บซ้ำกับ Pet ตัวอื่นได้ ก่อนกด COPY LOG ครั้งเดียว; รายงานรวมทุก capture แยกจาก log ที่จำกัดจำนวนบรรทัด
+- รายงานข้าม Eggs/หน้าซื้อไข่ ย่อ Grid เป็นรายการ Pet และเก็บหน้ารายละเอียด, tooltip, attributes และพาธปุ่มเต็ม
+- ถ้า executor รองรับ writefile จะบันทึก RollStickman_PetUI_Report.txt ให้ด้วย
+- ยังต้องมีค่าสเตตัส Luck/rolls-from-play และปุ่มรายตัวเพื่อผูกการเลือก Pet อัตโนมัติให้ถูกต้อง
 - ถ้า Require active Pet Luck เปิดอยู่และยังยืนยันบัฟไม่ได้ Open Card จะรอ
 
 ## การใช้งาน
