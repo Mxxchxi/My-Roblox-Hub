@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R12
+-- Roll A Stickman Combined Auto V1.2 R13
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R12 starting; waiting for game to load")
+print("[RAS] R13 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -31,9 +31,11 @@ local potionConfig = {when = "Aurora", available = {"Aurora"}, selected = {luck 
 local function moonIdentity(value, allowShort)
     if type(value) ~= "string" then return nil end
     local name = value:gsub("<[^>]*>", ""):upper():gsub("%s+", " ")
-    name = name:match("^([^·|]+)") or name
+    name = name:gsub("·", "|"):gsub("•", "|")
+    name = name:match("^([^|]+)") or name
+    name = name:gsub("^[^A-Z]+", "")
     name = name:gsub("^SUMMON%s+AN?%s+", ""):gsub("^SUMMON%s+", "")
-    name = name:match("^(.-)%s+[X×]%d") or name
+    name = name:match("^(.-)%s+[X×]%s*%d") or name
     name = name:match("^%s*(.-)%s*$")
     local hasMoon = name:match(" MOON$") ~= nil
     name = name:gsub(" MOON$", "")
@@ -237,7 +239,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R12  ·  ALT", 8, 27)
+local title = label("Title", "ROLL A STICKMAN  |  R13  ·  ALT", 8, 27)
 title.Size = UDim2.fromOffset(258, 27)
 title.TextSize = 12
 title.Active = true
@@ -1225,7 +1227,7 @@ local function moonTick(version)
         return
     end
     rememberStatus("aura", statusPlain(nowTitle))
-    local aurora = moonIdentity(sky) == moonIdentity(potionConfig.when, true)
+    local aurora = moonIdentity(sky, true) == moonIdentity(potionConfig.when, true)
     if not aurora then
         if moonWasAurora then log("Selected Moon ended: " .. sky) end
         moonWasAurora, moonCardsDone = false, false
@@ -1289,10 +1291,22 @@ function potionUI.discover()
     local root = pg:FindFirstChild("RollAStickman")
     local header = statusPlain(child(modalPanel(), {"Header", "Title"})):upper()
     local catalogModal = header:find("MOON", 1, true) or header:find("SHOP", 1, true)
+    local currentTitle = header == "MOONS" and child(modalPanel(), {"Content", "Inner", "Now", "Title"})
     local added = 0
     for _, obj in ipairs(root and root:GetDescendants() or {}) do
         local text = statusPlain(obj)
-        local key = moonIdentity(text)
+        local allowShort = obj == currentTitle or text:upper():find("[X×]%s*[%d.,]+%s*LUCK") ~= nil
+        -- Some catalog rows put the Moon name and luck multiplier in separate labels.
+        if not allowShort and (obj.Name == "Title" or obj.Name == "Name")
+            and moonIdentity(text, true) and obj.Parent then
+            for _, sibling in ipairs(obj.Parent:GetDescendants()) do
+                if sibling ~= obj and statusPlain(sibling):upper():find("[X×]%s*[%d.,]+%s*LUCK") then
+                    allowShort = true
+                    break
+                end
+            end
+        end
+        local key = moonIdentity(text, allowShort)
         if key and not known[key] then
             local context = text:upper():match("^SUMMON ") ~= nil
             local ancestor = obj.Parent
@@ -1382,6 +1396,22 @@ function potionUI.inspect()
     if modalTitle() == "MOONS" then
         potionUI.discover()
         potionUI.rebuild()
+        log("MOON DATA | selected=" .. potionConfig.when .. " | choices=" .. table.concat(potionConfig.available, ", "))
+        local root = child(modalPanel(), {"Content", "Inner"})
+        local count = 0
+        for _, obj in ipairs(root and root:GetDescendants() or {}) do
+            local value = statusPlain(obj)
+            if value ~= "" then
+                local parts, parent = {}, obj
+                while parent and parent ~= root do
+                    table.insert(parts, 1, parent.Name)
+                    parent = parent.Parent
+                end
+                log("MOON UI | " .. table.concat(parts, ".") .. " | visible=" .. tostring(visible(obj)) .. " | " .. value:sub(1, 200))
+                count = count + 1
+                if count >= 80 then log("MOON UI report limited to 80 entries"); break end
+            end
+        end
         note("Moon choices: " .. #potionConfig.available .. " found in game UI")
         if openedHere then closeModal("potion.sync.close") end
     else
@@ -1494,7 +1524,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R12 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R13 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
