@@ -1,5 +1,5 @@
--- Roll A Stickman Diagnostics V1.5 R7 | Aura watch
--- PlaceId 115068315659966. Combined V1.2 R18; auto Moon inspection every 5 minutes.
+-- Roll A Stickman Diagnostics V1.5 R8 | Aura watch
+-- PlaceId 115068315659966. Combined V1.2 R19 Neon V2; auto Moon inspection every 5 minutes.
 -- Reads the active Moon from MOONS > Now.Title. Never buys, drinks or opens cards.
 -- Only opens/closes MOONS when Potion, Open Card and Auto Pet automation are OFF.
 
@@ -24,9 +24,9 @@ gui.ResetOnSpawn = false
 gui.DisplayOrder = 300
 local panel = Instance.new("Frame")
 panel.Name = "Panel"
-panel.Position = UDim2.fromOffset(390, 160)
+panel.Position = UDim2.fromOffset(700, 160)
 panel.Size = UDim2.fromOffset(430, 430)
-panel.BackgroundColor3 = Color3.fromRGB(25, 28, 36)
+panel.BackgroundColor3 = Color3.fromRGB(25, 17, 44)
 panel.BorderSizePixel = 0
 panel.Active = true
 panel.Parent = gui
@@ -34,7 +34,7 @@ local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 10)
 corner.Parent = panel
 local outline = Instance.new("UIStroke")
-outline.Color = Color3.fromRGB(77, 85, 112)
+outline.Color = Color3.fromRGB(151, 76, 255)
 outline.Parent = panel
 
 local function button(name, value, x, width)
@@ -43,7 +43,7 @@ local function button(name, value, x, width)
     obj.Text = value
     obj.TextSize = 13
     obj.BorderSizePixel = 0
-    obj.BackgroundColor3 = Color3.fromRGB(59, 66, 84)
+    obj.BackgroundColor3 = Color3.fromRGB(35, 23, 60)
     local round = Instance.new("UICorner")
     round.CornerRadius = UDim.new(0, 7)
     round.Parent = obj
@@ -72,7 +72,7 @@ local dragHandle = Instance.new("TextLabel")
 dragHandle.Name = "DragHandle"
 dragHandle.Position = UDim2.fromOffset(10, 78)
 dragHandle.Size = UDim2.new(1, -20, 0, 22)
-dragHandle.BackgroundColor3 = Color3.fromRGB(43, 48, 67)
+dragHandle.BackgroundColor3 = Color3.fromRGB(35, 23, 60)
 dragHandle.TextColor3 = Color3.fromRGB(229, 224, 250)
 dragHandle.TextSize = 13
 dragHandle.Text = "DIAGNOSTICS  ·  DRAG HERE"
@@ -85,7 +85,7 @@ scroll.Size = UDim2.new(1, -20, 1, -115)
 scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 scroll.CanvasSize = UDim2.new()
 scroll.ScrollBarThickness = 8
-scroll.BackgroundColor3 = Color3.fromRGB(19, 21, 27)
+scroll.BackgroundColor3 = Color3.fromRGB(12, 10, 27)
 scroll.Parent = panel
 local box = Instance.new("TextBox")
 box.Size = UDim2.new(1, -16, 0, 0)
@@ -379,7 +379,7 @@ gui.Destroying:Connect(function()
     if logConnection then logConnection:Disconnect() end
 end)
 
-line("Diagnostics V1.5 R7 | PlaceId=" .. tostring(game.PlaceId))
+line("Diagnostics V1.5 R8 | PlaceId=" .. tostring(game.PlaceId))
 line("ACTIVE SKY is read only from MOONS > Now.Title; shop labels are ignored")
 line("Watches Aura, potion/card counts and [RAS] logs; no gameplay purchases")
 snapshot("INITIAL")
