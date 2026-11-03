@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R18
+-- Roll A Stickman Combined Auto V1.2 R19
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R18 starting; waiting for game to load")
+print("[RAS] R19 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -79,7 +79,7 @@ local function cleanSettings(value)
     local position = type(p) == "table" and type(p.x) == "number"
         and type(p.y) == "number" and {x = p.x, y = p.y} or nil
     local tab = value.activeTab
-    if tab ~= "Team" and tab ~= "Fight" and tab ~= "Potion" and tab ~= "Pet" and tab ~= "Open Card" and tab ~= "Status" then
+    if tab ~= "Team" and tab ~= "Fight" and tab ~= "Potion" and tab ~= "Pet" and tab ~= "Open Card" and tab ~= "Status" and tab ~= "Moon" and tab ~= "Settings" then
         tab = "Fight"
     end
     local source = type(value.potion) == "table" and value.potion or {}
@@ -214,6 +214,8 @@ if previous then
         dungeon = "DungeonToggle", expedition = "ExpeditionToggle",
         moon = "MoonToggle", cards = "CardToggle", pet = "PetToggle", antiAfk = "AntiAfkToggle"}
     for key, name in pairs(names) do
+        local storedFlag = previous:GetAttribute("Flag_" .. key)
+        if type(storedFlag) == "boolean" then previousFlags[key] = storedFlag end
         local obj = previousPanel and previousPanel:FindFirstChild(name)
         if obj and obj:IsA("TextButton") then
             previousFlags[key] = obj.Text:upper():match(":%s*ON$") ~= nil
@@ -226,31 +228,36 @@ local gui = Instance.new("ScreenGui")
 gui.Name = NAME
 gui.ResetOnSpawn = false
 gui.DisplayOrder = 240
-local PANEL_HEIGHT = 600
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui:SetAttribute("UITheme", "Neon V2")
+local PANEL_HEIGHT = 460
+local neonUI = {width = 670, contentWidth = 464, pageFrames = {}, resumeFlags = {}}
 local theme = {
-    base = Color3.fromRGB(18, 22, 32), card = Color3.fromRGB(28, 34, 48),
-    muted = Color3.fromRGB(154, 169, 194), text = Color3.fromRGB(234, 241, 252),
-    accent = Color3.fromRGB(46, 188, 163), off = Color3.fromRGB(43, 51, 70),
+    base = Color3.fromRGB(12, 10, 27), card = Color3.fromRGB(35, 23, 60),
+    muted = Color3.fromRGB(175, 153, 207), text = Color3.fromRGB(245, 235, 255),
+    accent = Color3.fromRGB(151, 76, 255), off = Color3.fromRGB(35, 23, 60),
+    surface = Color3.fromRGB(25, 17, 44),
 }
 local panel = Instance.new("Frame")
 panel.Name = "Panel"
-panel.Size = UDim2.fromOffset(360, PANEL_HEIGHT)
+panel.Size = UDim2.fromOffset(neonUI.width, PANEL_HEIGHT)
 panel.Position = UDim2.fromOffset(12, 160)
 panel.BackgroundColor3 = theme.base
 panel.BorderSizePixel = 0
 panel.Active = true
 panel.Parent = gui
 local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 10)
+corner.CornerRadius = UDim.new(0, 12)
 corner.Parent = panel
 local outline = Instance.new("UIStroke")
-outline.Color = Color3.fromRGB(61, 76, 101)
+outline.Color = theme.accent
+outline.Transparency = 0.45
 outline.Thickness = 1
 outline.Parent = panel
 local header = Instance.new("Frame")
 header.Name = "Header"
-header.Size = UDim2.new(1, 0, 0, 42)
-header.BackgroundColor3 = theme.card
+header.Size = UDim2.new(1, 0, 0, 54)
+header.BackgroundColor3 = theme.base
 header.BorderSizePixel = 0
 header.Parent = panel
 local function label(name, value, y, height)
@@ -284,28 +291,65 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R18  ·  ALT", 8, 27)
-title.Size = UDim2.fromOffset(258, 27)
-title.TextSize = 12
+local title = label("Title", "ROLL A STICKMAN  |  R19  ·  NEON V2", 12, 32)
+title.Size = UDim2.fromOffset(550, 32)
+title.TextSize = 17
 title.Active = true
-local minimizeUI = button("Minimize", "-", 278, 7, 32, 28)
-local closeUI = button("Close", "X", 316, 7, 34, 28)
-local tabPages = {Team = {}, Fight = {}, Potion = {}, Pet = {}, ["Open Card"] = {}, Status = {}}
+local minimizeUI = button("Minimize", "-", 589, 14, 28, 28)
+local closeUI = button("Close", "X", 626, 14, 28, 28)
+local tabPages = {Team = {}, Fight = {}, Potion = {}, Pet = {}, ["Open Card"] = {}, Status = {}, Moon = {}, Settings = {}}
 local tabButtons = {}
-local activeTab = "Fight"
+local activeTab = "Status"
+neonUI.nav = Instance.new("ScrollingFrame")
+neonUI.nav.Name = "Navigation"
+neonUI.nav.Position = UDim2.fromOffset(12, 62)
+neonUI.nav.Size = UDim2.fromOffset(145, 333)
+neonUI.nav.BackgroundColor3 = theme.surface
+neonUI.nav.BorderSizePixel = 0
+neonUI.nav.ScrollBarThickness = 3
+neonUI.nav.CanvasSize = UDim2.fromOffset(0, 344)
+neonUI.nav.Parent = panel
+neonUI.navRound = Instance.new("UICorner")
+neonUI.navRound.CornerRadius = UDim.new(0, 9)
+neonUI.navRound.Parent = neonUI.nav
+neonUI.icons = {Status = "◉", Team = "♟", Fight = "⚔", Potion = "✦", Pet = "◆", ["Open Card"] = "▣", Moon = "☾", Settings = "⚙"}
+for i, tab in ipairs({"Status", "Team", "Fight", "Potion", "Pet", "Open Card", "Moon", "Settings"}) do
+    local container = Instance.new("ScrollingFrame")
+    container.Name = "Page" .. tab
+    container.Position = UDim2.fromOffset(169, 62)
+    container.Size = UDim2.fromOffset(488, 333)
+    container.BackgroundColor3 = theme.surface
+    container.BorderSizePixel = 0
+    container.ScrollBarThickness = 4
+    container.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    container.CanvasSize = UDim2.new()
+    container.Visible = false
+    container.Parent = panel
+    neonUI.pageFrames[tab] = container
+    local rounded = Instance.new("UICorner")
+    rounded.CornerRadius = UDim.new(0, 9)
+    rounded.Parent = container
+    tabButtons[tab] = button("Tab" .. tab, "  " .. neonUI.icons[tab] .. "   " .. tab, 7, 8 + (i - 1) * 41, 131, 36)
+    tabButtons[tab].Parent = neonUI.nav
+    tabButtons[tab].TextSize = 13
+    tabButtons[tab].TextXAlignment = Enum.TextXAlignment.Left
+end
 local function pageItem(tab, obj)
     table.insert(tabPages[tab], obj)
+    local pos, size = obj.Position, obj.Size
+    obj.Position = UDim2.new(pos.X.Scale, math.floor(12 + (pos.X.Offset - 12) * neonUI.contentWidth / 336),
+        pos.Y.Scale, pos.Y.Offset - 78)
+    if size.X.Scale == 0 then
+        obj.Size = UDim2.new(0, math.floor(size.X.Offset * neonUI.contentWidth / 336), size.Y.Scale, size.Y.Offset)
+    end
+    obj.Parent = neonUI.pageFrames[tab]
     return obj
 end
 local function pageLabel(tab, name, value, y, height)
     local obj = pageItem(tab, label(name, value, y, height))
     obj.TextWrapped = true
-    obj.TextColor3 = theme.muted
+    obj.TextColor3 = name:find("Heading") and theme.accent or theme.muted
     return obj
-end
-for i, tab in ipairs({"Team", "Fight", "Potion", "Pet", "Open Card", "Status"}) do
-    tabButtons[tab] = button("Tab" .. tab, tab == "Open Card" and "CARDS" or tab:upper(), 10 + (i - 1) * 58, 53, 52, 30)
-    tabButtons[tab].TextSize = 10
 end
 local toggles = {
     level = pageItem("Team", button("LevelToggle", "LEVEL UP: OFF", 12, 116, 336, 36)),
@@ -315,7 +359,7 @@ local toggles = {
     moon = pageItem("Potion", button("MoonToggle", "USE POTION: OFF", 12, 116, 336, 30)),
     cards = pageItem("Open Card", button("CardToggle", "AUTO OPEN CARD: OFF", 12, 116, 336, 30)),
     pet = pageItem("Pet", button("PetToggle", "AUTO PET: OFF", 12, 116, 336, 30)),
-    antiAfk = pageItem("Status", button("AntiAfkToggle", "ANTI AFK: ON", 12, 116, 336, 36)),
+    antiAfk = pageItem("Settings", button("AntiAfkToggle", "ANTI AFK: ON", 12, 116, 336, 36)),
 }
 pageLabel("Team", "TeamHeading", "TEAM  /  UPGRADES", 90, 20)
 pageLabel("Team", "TeamHint", "LEVEL UP uses LEVEL UP ALL when that game button is visible. Open the team upgrade page to use it.", 165, 70)
@@ -336,7 +380,7 @@ potionUI.option.BorderSizePixel = 0
 potionUI.option.Parent = panel
 pageItem("Potion", potionUI.option)
 potionUI.option.ZIndex = 30
-potionUI.option.BackgroundColor3 = Color3.fromRGB(35, 100, 90)
+potionUI.option.BackgroundColor3 = theme.card
 potionUI.option.Visible = false
 potionUI.primary = {field = "moons", tab = "Potion", button = potionUI.dropdown, list = potionUI.option, entries = {}, maxHeight = 223}
 local potionLabels = {}
@@ -391,8 +435,8 @@ petUI.capture = pageItem("Pet", button("CapturePet", "CAPTURE (3s)", 184, 308, 1
 pageLabel("Status", "StatusHeading", "STATUS  /  LIVE GAME VALUES", 90, 20)
 local statusScroll = Instance.new("ScrollingFrame")
 statusScroll.Name = "StatusPage"
-statusScroll.Position = UDim2.fromOffset(12, 160)
-statusScroll.Size = UDim2.fromOffset(336, 186)
+statusScroll.Position = UDim2.fromOffset(12, 126)
+statusScroll.Size = UDim2.fromOffset(336, 277)
 statusScroll.BackgroundTransparency = 1
 statusScroll.BorderSizePixel = 0
 statusScroll.ScrollBarThickness = 4
@@ -440,26 +484,37 @@ for _, spec in ipairs({
     {"gildPotion", "GILDED POTION"}, {"petLuck", "EQUIPPED PET BONUSES"}, {"runtime", "SESSION / SCHEDULER"},
     {"switches", "ENABLED SYSTEMS"}, {"storage", "SETTINGS STORAGE"},
 }) do statusRow(spec[1], spec[2]) end
-local statusHeader = label("StatusHeader", "ACTIVITY", 360, 18)
-statusHeader.TextColor3 = theme.accent
-local status = label("Status", "Starting...", 381, 40)
-status.TextSize = 12
-status.TextWrapped = true
-local stopButton = button("StopAll", "STOP ALL", 12, 428, 160, 32)
-stopButton.BackgroundColor3 = Color3.fromRGB(139, 56, 72)
-local copyButton = button("CopyLog", "COPY LOG", 180, 428, 168, 32)
-local logHeader = label("LogHeader", "ACTIVITY LOG", 470, 17)
-logHeader.TextColor3 = theme.muted
+pageLabel("Moon", "MoonHeading", "MOON  /  VERIFIED SKY", 90, 24)
+neonUI.sky = pageLabel("Moon", "MoonSky", "No confirmed Moon yet. Press SYNC to inspect.", 126, 58)
+neonUI.sky.TextSize = 16
+neonUI.sky.TextColor3 = theme.text
+neonUI.timer = pageLabel("Moon", "MoonTimer", "Sky countdown: not observed", 190, 24)
+neonUI.moonSync = pageItem("Moon", button("MoonSync", "SYNC MOON NOW", 12, 228, 336, 34))
+pageLabel("Moon", "MoonPolicy", "Automatic inspection: every 5 minutes when the HUD icon is unknown. Verified icons are read without opening MOONS. Manual SYNC is immediate.", 274, 72)
+pageLabel("Settings", "SettingsHeading", "SETTINGS  /  SESSION & LOG", 90, 20)
+pageLabel("Settings", "SettingsHint", "Switches, Moon choices and window position save automatically. Alt minimizes this window. RESTORE SWITCHES restores the last STOP ALL selection.", 158, 60)
+neonUI.storage = pageLabel("Settings", "StorageInfo", "Settings storage: starting", 225, 24)
+local copyButton = pageItem("Settings", button("CopyLog", "COPY LOG / PET REPORT", 12, 258, 336, 32))
+local logHeader = pageLabel("Settings", "LogHeader", "ACTIVITY LOG", 302, 20)
 local scroll = Instance.new("ScrollingFrame")
 scroll.Name = "ActivityLog"
-scroll.Position = UDim2.fromOffset(12, 494)
-scroll.Size = UDim2.new(1, -24, 0, 94)
-scroll.BackgroundColor3 = Color3.fromRGB(13, 16, 24)
+scroll.Position = UDim2.fromOffset(12, 330)
+scroll.Size = UDim2.fromOffset(336, 190)
+scroll.BackgroundColor3 = theme.base
 scroll.BorderSizePixel = 0
 scroll.ScrollBarThickness = 4
 scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 scroll.CanvasSize = UDim2.new()
-scroll.Parent = panel
+pageItem("Settings", scroll)
+local status = label("Status", "Starting...", 396, 14)
+status.Position = UDim2.fromOffset(169, 396)
+status.Size = UDim2.fromOffset(488, 14)
+status.TextSize = 10
+status.TextTruncate = Enum.TextTruncate.AtEnd
+neonUI.resume = button("Resume", "RESTORE SWITCHES", 12, 412, 316, 36)
+neonUI.resume.BackgroundColor3 = theme.accent
+local stopButton = button("StopAll", "STOP ALL", 342, 412, 316, 36)
+stopButton.BackgroundColor3 = theme.card
 local logBox = Instance.new("TextBox")
 logBox.Size = UDim2.new(1, -10, 0, 0)
 logBox.AutomaticSize = Enum.AutomaticSize.Y
@@ -493,7 +548,7 @@ if savedFlags and savedFlags.cards == nil then flags.cards = savedFlags.moon == 
 local function clampPosition(x, y)
     local camera = workspace.CurrentCamera
     local viewport = camera and camera.ViewportSize or Vector2.new(1920, 1080)
-    return math.clamp(x, 0, math.max(0, viewport.X - 360)),
+    return math.clamp(x, 0, math.max(0, viewport.X - neonUI.width)),
         math.clamp(y, 0, math.max(0, viewport.Y - panel.Size.Y.Offset))
 end
 if savedPosition then
@@ -507,7 +562,7 @@ local titles = {level = "LEVEL UP", raid = "RAID", dungeon = "DUNGEON",
 local function paintToggle(key)
     gui:SetAttribute("Flag_" .. key, flags[key] == true)
     toggles[key].BackgroundColor3 = flags[key]
-        and Color3.fromRGB(31, 114, 102) or theme.off
+        and theme.accent or theme.off
     toggles[key].TextColor3 = Color3.fromRGB(255, 255, 255)
 end
 for key, obj in pairs(toggles) do
@@ -562,7 +617,8 @@ local function setTab(name)
     for tab, objects in pairs(tabPages) do
         for _, obj in ipairs(objects) do obj.Visible = tab == name end
         tabButtons[tab].BackgroundColor3 = tab == name and theme.accent or theme.off
-        tabButtons[tab].TextColor3 = tab == name and theme.base or theme.text
+        tabButtons[tab].TextColor3 = theme.text
+        neonUI.pageFrames[tab].Visible = tab == name
     end
     potionUI.option.Visible = false
     for _, target in ipairs(petUI.targets) do target.list.Visible = false end
@@ -572,7 +628,7 @@ end
 for name, tabButton in pairs(tabButtons) do
     tabButton.Activated:Connect(function() setTab(name) end)
 end
-setTab(savedTab or "Fight")
+setTab(savedTab or "Status")
 -- Only fold this panel. The scheduler and enabled switches keep running.
 local foldedVisibility = {}
 local function toggleMinimized()
@@ -589,7 +645,7 @@ local function toggleMinimized()
             end
         end
     end
-    panel.Size = UDim2.fromOffset(360, minimized and 42 or PANEL_HEIGHT)
+    panel.Size = UDim2.fromOffset(neonUI.width, minimized and 54 or PANEL_HEIGHT)
     minimizeUI.Text = minimized and "+" or "-"
     gui:SetAttribute("Minimized", minimized)
     local x, y = clampPosition(panel.Position.X.Offset, panel.Position.Y.Offset)
@@ -698,7 +754,24 @@ for key, obj in pairs(toggles) do
         note(title .. (flags[key] and " enabled" or " disabled"))
     end)
 end
+neonUI.resume.Activated:Connect(function()
+    local restored = 0
+    for key, selected in pairs(neonUI.resumeFlags) do
+        if selected and not flags[key] then
+            flags[key] = true
+            versions[key] = versions[key] + 1
+            toggles[key].Text = titles[key] .. ": ON"
+            paintToggle(key)
+            restored = restored + 1
+        end
+    end
+    settingsStorage = writeSettings(flags)
+    note(restored > 0 and ("Restored " .. restored .. " switch(es)") or "Choose a system switch to start; RESTORE SWITCHES recalls the last STOP ALL")
+end)
 stopButton.Activated:Connect(function()
+    local selected = {}
+    for key, enabled in pairs(flags) do if enabled then selected[key] = true end end
+    if next(selected) then neonUI.resumeFlags = selected end
     for key, obj in pairs(toggles) do
         flags[key] = false
         versions[key] = versions[key] + 1
@@ -717,6 +790,9 @@ copyButton.Activated:Connect(function()
     if type(setclipboard) == "function" and pcall(setclipboard, value) then
         copyButton.Text = "COPIED"
     else
+        if minimized then toggleMinimized() end
+        setTab("Settings")
+        neonUI.pageFrames.Settings.CanvasPosition = Vector2.new(0, 250)
         logBox.Text = value
         logBox:CaptureFocus()
         logBox.CursorPosition = #logBox.Text + 1
@@ -1400,7 +1476,7 @@ function potionUI.paintMenus()
             local selected = potionConfig[target.field][key] == true
             entry.Text = (selected and "[x] " or "[ ] ") .. potionUI.caption(moonCaption(key))
             entry.BackgroundColor3 = selected and theme.accent or theme.off
-            entry.TextColor3 = selected and theme.base or theme.text
+            entry.TextColor3 = theme.text
             if target.field == "petPlayMoons" and key == "AURORA" then
                 entry.Text = "[-] Aurora (excluded)"
                 entry.Active = false
@@ -1830,7 +1906,7 @@ local function paintPotionChoices()
     for _, id in ipairs({"luck", "haste", "gild"}) do
         potionUI.checks[id].Text = (potionConfig.selected[id] and "[x]  " or "[ ]  ") .. potionNames[id]
         potionUI.checks[id].BackgroundColor3 = potionConfig.selected[id]
-            and Color3.fromRGB(31, 92, 84) or theme.off
+            and theme.accent or theme.off
     end
 end
 paintPotionChoices()
@@ -1937,7 +2013,7 @@ function potionUI.rebuild()
         end
         local height = math.min(target.maxHeight, #target.entries * 31 + 6)
         target.list.CanvasSize = UDim2.fromOffset(0, #target.entries * 31 + 6)
-        target.list.Size = UDim2.fromOffset(336, height)
+        target.list.Size = UDim2.fromOffset(neonUI.contentWidth, height)
         local selected = 1
         for i, name in ipairs(potionConfig.available) do
             if potionConfig[target.field][moonIdentity(name, true)] then selected = i; break end
@@ -1961,6 +2037,11 @@ for _, target in ipairs(potionUI.menus()) do
         end
     end)
 end
+neonUI.moonSync.Activated:Connect(function()
+    if not alive then return end
+    potionUI.scanRequested = true
+    note("Manual Moon inspection queued")
+end)
 potionUI.sync.Activated:Connect(function()
     if not alive then return end
     potionUI.option.Visible = false
@@ -2024,7 +2105,7 @@ end
 function cardUI.paint()
     for _, id in ipairs({"loose", "pouch", "crate", "chest"}) do
         cardUI.checks[id].Text = (cardSelection[id] and "[x]  " or "[ ]  ") .. cardUI.names[id]
-        cardUI.checks[id].BackgroundColor3 = cardSelection[id] and Color3.fromRGB(31, 92, 84) or theme.off
+        cardUI.checks[id].BackgroundColor3 = cardSelection[id] and theme.accent or theme.off
     end
     cardUI.requireLuck.Text = (cardSelection.requireLuck and "[x] " or "[ ] ") .. "Require active Luck Potion"
     cardUI.requirePet.Text = (cardSelection.requirePet and "[x] " or "[ ] ") .. "Require active Pet Luck"
@@ -2188,6 +2269,9 @@ local function refreshStatus(now)
         local sky = child(modalPanel(), {"Content", "Inner", "Now", "Title"})
         if visible(sky) then rememberStatus("aura", statusPlain(sky)) end
     end
+    neonUI.sky.Text = statusCache.aura and cachedStatus("aura") or "No confirmed Moon yet. Press SYNC to inspect."
+    neonUI.timer.Text = "Sky countdown: " .. cachedStatus("moonTimer")
+    neonUI.storage.Text = "Settings storage: " .. settingsStorage .. " | Dungeon recheck: 2 hours"
     put("aura", statusCache.aura and cachedStatus("aura") or "Open MOONS to confirm the active sky")
     if activeTab == "Status" and not minimized and now >= statusNextPowerScan then
         statusNextPowerScan = now + 3
@@ -2246,7 +2330,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R18 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R19 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
