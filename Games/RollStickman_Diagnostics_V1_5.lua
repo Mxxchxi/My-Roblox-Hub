@@ -1,5 +1,5 @@
--- Roll A Stickman Diagnostics V1.5 R5 | Aura watch
--- PlaceId 115068315659966. Compatible with Combined V1.2 R15 Potion/Open Card.
+-- Roll A Stickman Diagnostics V1.5 R6 | Aura watch
+-- PlaceId 115068315659966. Combined V1.2 R16; auto Moon inspection every 5 minutes.
 -- Reads the active Moon from MOONS > Now.Title. Never buys, drinks or opens cards.
 -- Only opens/closes MOONS when both Potion and Open Card automation are OFF.
 
@@ -321,7 +321,7 @@ local function autoInspect()
     if now < nextOpen or mainBoostOn() or modal() ~= "(NOT VISIBLE)" then
         return
     end
-    nextOpen = now + 15
+    nextOpen = now + 300
     local moon = path({"Frame", "Buffs", "Moon"})
     if not fireButton(moon) then
         if type(firesignal) ~= "function" and not lastFields.noSignal then
@@ -376,7 +376,7 @@ gui.Destroying:Connect(function()
     if logConnection then logConnection:Disconnect() end
 end)
 
-line("Diagnostics V1.5 R5 | PlaceId=" .. tostring(game.PlaceId))
+line("Diagnostics V1.5 R6 | PlaceId=" .. tostring(game.PlaceId))
 line("ACTIVE SKY is read only from MOONS > Now.Title; shop labels are ignored")
 line("Watches Aura, potion/card counts and [RAS] logs; no gameplay purchases")
 snapshot("INITIAL")
