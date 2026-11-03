@@ -1,13 +1,19 @@
 # My-Roblox-Hub
 
-## Roll A Stickman — V1.2 R18
+## Roll A Stickman — V1.2 R19 · Neon V2
 
 PlaceId: `115068315659966`
 
 - สคริปต์หลัก: [Games/RollStickman_Combined_V1_2.lua](Games/RollStickman_Combined_V1_2.lua)
 - Loader: [Loader.lua](Loader.lua)
 - ระบบ: RAID, Dungeon ทุกประเภท, Expeditions, Level Up, Use Potion When และ ANTI AFK
-- UI แบ่งเป็น Team / Fight / Potion / Pet / Open Card / Status ลากได้ มีปุ่มย่อ/ขยาย และคีย์ลัด Alt
+- UI Neon V2 สีม่วง ขนาด 670×460 ใช้เมนูด้านซ้ายจากต้นแบบ RollAStickman_NeonV2.lua
+- เมนู Status / Team / Fight / Potion / Pet / Open Card / Moon / Settings; ลากได้ มีปุ่มย่อ/ขยาย และคีย์ลัด Alt
+- ใช้ฟังก์ชันจริงจาก R18; ไม่ใช้ตัวเลือก Aurora A/B/C หรือปุ่มสาธิตของต้นแบบ
+- หน้า Moon แสดงชนิดที่ยืนยันล่าสุดและเวลาคงเหลือ พร้อมปุ่ม SYNC MOON NOW; การตรวจอัตโนมัติยังคง 5 นาทีเมื่อระบุไอคอนไม่ได้
+- หน้า Settings รวม ANTI AFK, สถานะการบันทึกค่า, COPY LOG / PET REPORT และ Activity Log ที่เลื่อนได้
+- STOP ALL ปิดทุกสวิตช์; RESTORE SWITCHES คืนเฉพาะสวิตช์ที่เปิดอยู่ก่อน STOP ALL ครั้งล่าสุดในรอบการรันปัจจุบัน
+- Diagnostics R8 เริ่มที่ x=700 เพื่อพ้นหน้าต่างหลักที่เริ่ม x=12 และกว้าง 670; ใช้สีเดียวกันและยังลากย้ายได้
 - Team: Level Up; Fight: RAID / Dungeon / Expeditions; Potion: Use Potion When และสต็อกยา
 - Potion: เปิด USE POTION แล้วเลือก Moon ได้หลายตัวจาก dropdown แบบ checkbox พร้อมเลือก Luck / Haste / Gilded Potion
 - Normal ยืนยันเป็น x1; ตัวคูณที่ทราบเรียงจากน้อยไปมาก
@@ -56,7 +62,7 @@ PlaceId: `115068315659966`
 - หากเกมไม่ยอมสวม หรือข้อมูลไม่ตรง จะบันทึกว่าไม่ยืนยันและให้ Open Card รอ; ไม่ถอด Pet เดิมโดยคาดเดา
 - เมื่อ AUTO PET เปิด Open Card จะรอการยืนยัน Pet ตามเงื่อนไขก่อนเปิดการ์ด แล้วตรวจ Luck Potion / Pet Luck ตาม checkbox ที่ตั้งไว้
 - AUTO PET เริ่ม OFF สำหรับผู้ที่ยังไม่เคยตั้งค่า; จำสวิตช์และตัวเลือกเมื่อรันใหม่
-- Pet ใช้ตัวตรวจ Moon ร่วมกับ Potion / Open Card; Diagnostics R7 จะไม่เปิด MOONS แทรกเมื่อระบบใดระบบหนึ่งเปิดอยู่
+- Pet ใช้ตัวตรวจ Moon ร่วมกับ Potion / Open Card; Diagnostics R8 จะไม่เปิด MOONS แทรกเมื่อระบบใดระบบหนึ่งเปิดอยู่
 - ปุ่ม CAPTURE (3s) ยังใช้เก็บรายละเอียด Pet สำหรับแก้ปัญหาได้; COPY LOG รวมทุก capture และบันทึก RollStickman_PetUI_Report.txt เมื่อ writefile รองรับ
 
 ## การใช้งาน
