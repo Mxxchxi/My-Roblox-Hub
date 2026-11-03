@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R29
+-- Roll A Stickman Combined Auto V1.2 R30
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R29 starting; waiting for game to load")
+print("[RAS] R30 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -319,7 +319,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R29  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R30  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -1535,7 +1535,6 @@ local function openOwnedCardsWorker(version)
         return false
     end
     local count, opened, rounds = initial, 0, 0
-    local finalSmallBatch = false
     -- The observed OPEN ALL processed roughly 1.26 million cards per press.
     -- Repeat only after a measured decrease, never while a prior batch is pending.
     while count > 0 and rounds < 120 and cardRunValid() do
@@ -1570,15 +1569,10 @@ local function openOwnedCardsWorker(version)
         opened = opened + before - count
         log("Reward Cards batch " .. rounds .. ": " .. before .. " -> "
             .. count .. " | measured decrease=" .. opened)
-        -- Press once more after the backlog shrinks below 1,000. Auto Roll
-        -- may add a few new cards while the last batch is processing.
-        if before <= 1000 then finalSmallBatch = true end
-        if count == 0 or opened >= initial or finalSmallBatch then
-            break
-        end
+        if count == 0 then break end
         task.wait(3.5)
     end
-    if count > 0 and opened < initial and not finalSmallBatch then
+    if count > 0 then
         note("Aurora: Reward Cards remain " .. count .. "; retrying")
         return false
     end
@@ -1621,9 +1615,23 @@ local function openOwnedCardsWorker(version)
         end
     end
     if not cardRunValid() then return false end
+    if cardSelection.loose and cardCount() ~= 0 then
+        cardUI.diagnose("CARDS_REMAIN", "Reward Cards not confirmed zero; retry after cooldown")
+        return false
+    end
+    for _, id in ipairs({"pouch", "crate", "chest"}) do
+        if cardSelection[id] then
+            local sub = child(modalPanel(), {"Content", "Inner", "Packs", id, "Open", "Face", "Sub"})
+            local owned = numeric(textOf(sub):match("([%d,]+)%s+OWNED"))
+            if owned ~= 0 then
+                cardUI.diagnose("CARDS_REMAIN", id .. "=" .. tostring(owned or "unknown"))
+                return false
+            end
+        end
+    end
     if modalTitle() == "CARD PACKS" then closeModal("moon.cards.close") end
     moonCardsDone = true
-    note("Open Card attempted; see COPY LOG for counts")
+    note("Selected card inventory confirmed empty")
     return true
 end
 local function openOwnedCards(version)
@@ -1716,7 +1724,7 @@ local function moonTick(version)
     end
     local retry = active() and (potionUI.cycle.potionPending
         or (cardMatch and flags.cards and not potionUI.cycle.cardsFinished
-        and not potionUI.cycle.cardsDispatched))
+        ))
     potionUI.completedEvent = not retry and versions.moon == version and confirmed.serial or nil
     potionUI.cardRetryAt = retry and (os.clock() + 30) or nil
     if retry then cardUI.diagnose("RETRY_PENDING", "Retry in 30s; no repeated potions") end
@@ -2539,7 +2547,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R29 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R30 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -2887,7 +2895,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R29 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R30 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
