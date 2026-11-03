@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R27
+-- Roll A Stickman Combined Auto V1.2 R28
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R27 starting; waiting for game to load")
+print("[RAS] R28 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -319,7 +319,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R27  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R28  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -1443,6 +1443,27 @@ function cardUI.recordOpen(snapshot)
     log(message)
     neonUI.queueWebhook(message)
 end
+-- Compare meaningful diagnostic state, not timestamps/countdowns/cache ages.
+function cardUI.shouldSendDiagnostic(reason, detail, key, event)
+    if cardUI.webhookAuditEvent ~= event then
+        cardUI.webhookAuditEvent = event
+        cardUI.webhookAudit = {}
+    end
+    cardUI.webhookAudit = cardUI.webhookAudit or {}
+    local clean = tostring(detail or ""):gsub("%d+%s*[HhMmSs]", "#")
+        :gsub("%d+:%d+", "#"):gsub("last seen %d+s ago", "last seen #")
+    local parts = {key, clean, modalTitle()}
+    for _, value in ipairs({flags.moon == true, flags.cards == true,
+        potionConfig.moons[key] == true, potionConfig.cardMoons[key] == true,
+        potionConfig.selected.luck == true, cardSelection.requireLuck == true,
+        cardSelection.requirePet == true, cardUI.luckActive() == true, petUI.luckActive() == true}) do
+        table.insert(parts, tostring(value))
+    end
+    local state = table.concat(parts, "|")
+    if cardUI.webhookAudit[reason] == state then return false end
+    cardUI.webhookAudit[reason] = state
+    return true
+end
 -- Bounded, local + webhook diagnostics; never navigates to PETS.
 function cardUI.diagnose(reason, detail)
     local now = os.clock()
@@ -1475,7 +1496,9 @@ function cardUI.diagnose(reason, detail)
         .. " | Cards=" .. cachedStatus("cards") .. " | modal=" .. modalTitle()
     table.insert(cardUI.openReports, message)
     log(message)
-    neonUI.queueWebhook(message)
+    if cardUI.shouldSendDiagnostic(reason, detail, key, confirmed and confirmed.serial) then
+        neonUI.queueWebhook(message)
+    end
 end
 local function openOwnedCardsWorker(version)
     if not flags.cards or not validMoon(version) then return false end
@@ -2500,7 +2523,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R27 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R28 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -2848,7 +2871,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R27 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R28 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
