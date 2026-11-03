@@ -1,6 +1,6 @@
 # My-Roblox-Hub
 
-## Roll A Stickman — V1.2 R11
+## Roll A Stickman — V1.2 R12
 
 PlaceId: `115068315659966`
 
@@ -9,7 +9,10 @@ PlaceId: `115068315659966`
 - ระบบ: RAID, Dungeon ทุกประเภท, Expeditions, Level Up, Use Potion When และ ANTI AFK
 - UI แบ่งเป็น Team / Fight / Potion / Status ลากได้ มีปุ่มย่อ/ขยาย และคีย์ลัด Alt
 - Team: Level Up; Fight: RAID / Dungeon / Expeditions; Potion: Use Potion When และสต็อกยา
-- Potion: เปิด USE POTION เลือก Aurora จาก dropdown แล้วติ๊ก Luck Potion / Haste Potion / Gilded Potion ตามที่ต้องการ
+- Potion: เปิด USE POTION เลือกชนิด Moon/Aura จาก dropdown แล้วติ๊ก Luck Potion / Haste Potion / Gilded Potion ตามที่ต้องการ
+- กด SYNC ในหน้า Potion เพื่ออ่านหน้า MOONS; รายชื่อใน dropdown จะเพิ่มจากหัวข้อ Moon และรายการ Summon ที่อ่านได้จาก UI เกมจริง พร้อมจำรายชื่อที่เคยอ่านได้ไว้
+- รายการ dropdown เลื่อนได้ การอ่านชื่อจากร้านใช้เพื่อสร้างรายการตัวเลือกเท่านั้น; การเริ่มใช้ยายืนยันจาก MOONS > Now.Title ที่กำลังแสดง และต้องตรงชนิดที่เลือก
+- หากยังมีเฉพาะ Aurora ให้เปิดหน้า MOONS แล้วกด SYNC; เกมอาจยังไม่ได้สร้าง UI รายการ Moon อื่นใน client
 - ใช้เฉพาะยาที่ติ๊กไว้และยังไม่ active; การเปิดการ์ดที่มีอยู่จะทำต่อหลังขั้นตอนยาตามเดิม
 - จำเงื่อนไขและ checkbox ของยาเมื่อรันใหม่; ค่าเดิมที่ยังไม่เคยเลือกจะเริ่มด้วยยาทั้ง 3 ชนิด
 - Status: Luck, Aura ที่ยืนยันล่าสุด, พลังทีม, เวฟ, Rolls, Auto Roll, ตั๋วดันเจี้ยน, เวลาเช็กครั้งถัดไป, การ์ด และสต็อกยา
