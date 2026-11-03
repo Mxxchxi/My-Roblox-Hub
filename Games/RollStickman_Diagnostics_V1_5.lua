@@ -1,5 +1,5 @@
--- Roll A Stickman Diagnostics V1.5 R9 | Aura watch
--- PlaceId 115068315659966. Combined V1.2 R20 Neon V2; shares its Moon interval / HUD-only policy.
+-- Roll A Stickman Diagnostics V1.5 R10 | Aura watch
+-- PlaceId 115068315659966. Combined V1.2 R21 Neon V2; follows the confirmed Moon countdown.
 -- Reads the active Moon from MOONS > Now.Title. Never buys, drinks or opens cards.
 -- Only opens/closes MOONS when Potion, Open Card and Auto Pet automation are OFF.
 
@@ -323,10 +323,13 @@ local function autoInspect()
     local now = os.clock()
     local main = pg:FindFirstChild("RollStickman_Combined_V1_2")
     local hudOnly = main and main:GetAttribute("MoonHudOnly") == true
+    local tracking = main and main:GetAttribute("MoonCountdownTracking") == true
+    local knownUntil = main and tonumber(main:GetAttribute("MoonKnownUntil")) or 0
     local minutes = main and main:GetAttribute("MoonInspectMinutes") or 5
     if type(minutes) ~= "number" or minutes ~= minutes then minutes = 5 end
     minutes = math.clamp(math.floor(minutes), 1, 120)
-    if hudOnly or now < lastOpen + minutes * 60 or mainBoostOn() or modal() ~= "(NOT VISIBLE)" then
+    local dueAt = tracking and knownUntil > 0 and knownUntil or lastOpen + minutes * 60
+    if hudOnly or now < dueAt or mainBoostOn() or modal() ~= "(NOT VISIBLE)" then
         return
     end
     lastOpen = now
@@ -340,6 +343,17 @@ local function autoInspect()
     end
     task.wait(0.65)
     observe()
+    if tracking and main then
+        local sky = activeMoon() or ""
+        local minute, second = sky:match("(%d+):(%d+)%s*$")
+        local remaining = minute and tonumber(minute) * 60 + tonumber(second) or 0
+        if remaining <= 0 then
+            local detail = read({"Frame", "Modal", "Window", "Panel", "Content", "Inner", "Now", "Sub"}):lower()
+            minute, second = detail:match("sky rolls again in%s+(%d+):(%d+)")
+            remaining = minute and tonumber(minute) * 60 + tonumber(second) or 0
+        end
+        main:SetAttribute("MoonKnownUntil", remaining > 0 and os.clock() + remaining or 0)
+    end
     if modal() == "MOONS" then
         local panelObj = path({"Frame", "Modal", "Window", "Panel"})
         local closeObj = child(panelObj, {"Close"})
@@ -384,7 +398,7 @@ gui.Destroying:Connect(function()
     if logConnection then logConnection:Disconnect() end
 end)
 
-line("Diagnostics V1.5 R9 | PlaceId=" .. tostring(game.PlaceId))
+line("Diagnostics V1.5 R10 | PlaceId=" .. tostring(game.PlaceId))
 line("ACTIVE SKY is read only from MOONS > Now.Title; shop labels are ignored")
 line("Watches Aura, potion/card counts and [RAS] logs; no gameplay purchases")
 snapshot("INITIAL")
