@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R11
+-- Roll A Stickman Combined Auto V1.2 R12
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R11 starting; waiting for game to load")
+print("[RAS] R12 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -27,7 +27,24 @@ local SETTINGS_FILE = "RollStickman_Combined_V1_2_settings.json"
 local SETTINGS_KEY = "RollStickman_Combined_V1_2_settings"
 local settingKeys = {"level", "raid", "dungeon", "expedition", "moon", "antiAfk"}
 local potionNames = {luck = "Luck Potion", haste = "Haste Potion", gild = "Gilded Potion"}
-local potionConfig = {when = "Aurora", selected = {luck = true, haste = true, gild = true}}
+local potionConfig = {when = "Aurora", available = {"Aurora"}, selected = {luck = true, haste = true, gild = true}}
+local function moonIdentity(value, allowShort)
+    if type(value) ~= "string" then return nil end
+    local name = value:gsub("<[^>]*>", ""):upper():gsub("%s+", " ")
+    name = name:match("^([^·|]+)") or name
+    name = name:gsub("^SUMMON%s+AN?%s+", ""):gsub("^SUMMON%s+", "")
+    name = name:match("^(.-)%s+[X×]%d") or name
+    name = name:match("^%s*(.-)%s*$")
+    local hasMoon = name:match(" MOON$") ~= nil
+    name = name:gsub(" MOON$", "")
+    if #name < 2 or #name > 40 or not name:match("^[A-Z][A-Z '%-]*$") then return nil end
+    if hasMoon or name == "ECLIPSE" or name == "STARFALL" or allowShort then return name end
+end
+local function moonCaption(key)
+    return (key:lower():gsub("%a[%a']*", function(word)
+        return word:sub(1, 1):upper() .. word:sub(2)
+    end))
+end
 local function settingsEnv()
     if type(getgenv) == "function" then
         local ok, env = pcall(getgenv)
@@ -54,7 +71,16 @@ local function cleanSettings(value)
     end
     local source = type(value.potion) == "table" and value.potion or {}
     local selections = type(source.selected) == "table" and source.selected or {}
-    local potion = {when = "Aurora", selected = {}}
+    local potion = {when = moonCaption(moonIdentity(source.when, true) or "AURORA"), available = {"Aurora"}, selected = {}}
+    local known = {AURORA = true}
+    for _, value in ipairs(type(source.available) == "table" and source.available or {}) do
+        local key = moonIdentity(value, true)
+        if key and not known[key] then
+            known[key] = true
+            table.insert(potion.available, moonCaption(key))
+        end
+    end
+    if not known[moonIdentity(potion.when, true)] then table.insert(potion.available, potion.when) end
     for _, id in ipairs({"luck", "haste", "gild"}) do
         potion.selected[id] = selections[id] ~= false
     end
@@ -84,7 +110,8 @@ local settingsPosition
 local settingsTab = "Fight"
 local function writeSettings(current)
     local saved = {placeId = game.PlaceId, flags = {}, activeTab = settingsTab}
-    saved.potion = {when = potionConfig.when, selected = {}}
+    saved.potion = {when = potionConfig.when, available = {}, selected = {}}
+    for _, name in ipairs(potionConfig.available) do table.insert(saved.potion.available, name) end
     for _, id in ipairs({"luck", "haste", "gild"}) do
         saved.potion.selected[id] = potionConfig.selected[id] == true
     end
@@ -210,7 +237,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R11  ·  ALT", 8, 27)
+local title = label("Title", "ROLL A STICKMAN  |  R12  ·  ALT", 8, 27)
 title.Size = UDim2.fromOffset(258, 27)
 title.TextSize = 12
 title.Active = true
@@ -246,9 +273,18 @@ pageLabel("Fight", "FightHeading", "FIGHT  /  AUTOMATION", 90, 20)
 pageLabel("Fight", "DungeonMode", "DUNGEON · ALL TYPES\nNo tickets: check again after 2 hours.", 245, 42)
 local dungeonSchedule = pageLabel("Fight", "DungeonSchedule", "Dungeon check: ready", 300, 38)
 pageLabel("Potion", "PotionHeading", "POTION  /  CONDITIONS", 90, 20)
-local potionUI = {checks = {}}
-potionUI.dropdown = pageItem("Potion", button("PotionWhen", "Use Potion When: Aurora   v", 12, 152, 336, 30))
-potionUI.option = pageItem("Potion", button("PotionWhenAurora", "Aurora", 12, 184, 336, 30))
+local potionUI = {checks = {}, scanRequested = false, entries = {}}
+potionUI.dropdown = pageItem("Potion", button("PotionWhen", "Use Potion When: Aurora   v", 12, 152, 276, 30))
+potionUI.sync = pageItem("Potion", button("PotionSync", "SYNC", 294, 152, 54, 30))
+potionUI.option = Instance.new("ScrollingFrame")
+potionUI.option.Name = "PotionWhenList"
+potionUI.option.Position = UDim2.fromOffset(12, 184)
+potionUI.option.Size = UDim2.fromOffset(336, 158)
+potionUI.option.ScrollBarThickness = 5
+potionUI.option.CanvasSize = UDim2.new()
+potionUI.option.BorderSizePixel = 0
+potionUI.option.Parent = panel
+pageItem("Potion", potionUI.option)
 potionUI.option.ZIndex = 30
 potionUI.option.BackgroundColor3 = Color3.fromRGB(35, 100, 90)
 potionUI.option.Visible = false
@@ -1189,9 +1225,9 @@ local function moonTick(version)
         return
     end
     rememberStatus("aura", statusPlain(nowTitle))
-    local aurora = potionConfig.when == "Aurora" and sky:match("^AURORA MOON") ~= nil
+    local aurora = moonIdentity(sky) == moonIdentity(potionConfig.when, true)
     if not aurora then
-        if moonWasAurora then log("Aurora ended: " .. sky) end
+        if moonWasAurora then log("Selected Moon ended: " .. sky) end
         moonWasAurora, moonCardsDone = false, false
         moonUsed = {}
         nextMoon = os.clock() + 15
@@ -1215,11 +1251,11 @@ local function moonTick(version)
     end
     if moonCardsDone and not pending then return end
     if modalOpen() then
-        note("Aurora active; close MOONS to use selected potions")
+        note(potionConfig.when .. " active; close MOONS to use selected potions")
         return
     end
     if pending and not openPotions() then
-        note("Aurora active; POTIONS entry unavailable; retrying")
+        note(potionConfig.when .. " active; POTIONS entry unavailable; retrying")
         return
     end
     for _, id in ipairs({"luck", "haste", "gild"}) do
@@ -1231,7 +1267,7 @@ local function moonTick(version)
     if not valid("moon", version) then return end
     for _, id in ipairs({"luck", "haste", "gild"}) do
         if potionConfig.selected[id] and not moonUsed[id] then
-            note("Aurora: " .. potionNames[id] .. " unavailable; retrying")
+            note(potionConfig.when .. ": " .. potionNames[id] .. " unavailable; retrying")
             return
         end
     end
@@ -1247,19 +1283,111 @@ local function paintPotionChoices()
     end
 end
 paintPotionChoices()
+function potionUI.discover()
+    local known = {}
+    for _, name in ipairs(potionConfig.available) do known[moonIdentity(name, true)] = true end
+    local root = pg:FindFirstChild("RollAStickman")
+    local header = statusPlain(child(modalPanel(), {"Header", "Title"})):upper()
+    local catalogModal = header:find("MOON", 1, true) or header:find("SHOP", 1, true)
+    local added = 0
+    for _, obj in ipairs(root and root:GetDescendants() or {}) do
+        local text = statusPlain(obj)
+        local key = moonIdentity(text)
+        if key and not known[key] then
+            local context = text:upper():match("^SUMMON ") ~= nil
+            local ancestor = obj.Parent
+            while ancestor and ancestor ~= root and not context do
+                local name = ancestor.Name:lower()
+                context = name:find("moon", 1, true) or name:find("shop", 1, true)
+                    or (catalogModal and ancestor == modalPanel())
+                ancestor = ancestor.Parent
+            end
+            if context then
+                known[key] = true
+                table.insert(potionConfig.available, moonCaption(key))
+                added = added + 1
+            end
+        end
+    end
+    if added > 0 then
+        table.sort(potionConfig.available)
+        settingsStorage = writeSettings(flags)
+        log("Moon choices discovered from game UI: " .. table.concat(potionConfig.available, ", "))
+    end
+    return added
+end
+function potionUI.rebuild()
+    for _, entry in ipairs(potionUI.entries) do entry:Destroy() end
+    potionUI.entries = {}
+    for i, name in ipairs(potionConfig.available) do
+        local entry = Instance.new("TextButton")
+        entry.Name = "MoonOption_" .. moonIdentity(name, true)
+        entry.Position = UDim2.fromOffset(4, (i - 1) * 31 + 3)
+        entry.Size = UDim2.new(1, -14, 0, 28)
+        entry.ZIndex = 31
+        entry.BackgroundColor3 = name == potionConfig.when and theme.accent or theme.off
+        entry.TextColor3 = name == potionConfig.when and theme.base or theme.text
+        entry.BorderSizePixel = 0
+        entry.Font = Enum.Font.GothamMedium
+        entry.TextSize = 12
+        entry.Text = name
+        entry.Parent = potionUI.option
+        table.insert(potionUI.entries, entry)
+        entry.Activated:Connect(function()
+            if not alive then return end
+            potionConfig.when = name
+            potionUI.option.Visible = false
+            versions.moon = versions.moon + 1
+            moonWasAurora = false
+            nextMoon = 0
+            paintPotionChoices()
+            settingsStorage = writeSettings(flags)
+            log("Use Potion When: " .. name)
+        end)
+    end
+    potionUI.option.CanvasSize = UDim2.fromOffset(0, #potionUI.entries * 31 + 6)
+end
+potionUI.discover()
+potionUI.rebuild()
 potionUI.dropdown.Activated:Connect(function()
     if alive and not minimized and activeTab == "Potion" then
+        potionUI.discover()
+        potionUI.rebuild()
         potionUI.option.Visible = not potionUI.option.Visible
     end
 end)
-potionUI.option.Activated:Connect(function()
-    potionConfig.when = "Aurora"
+potionUI.sync.Activated:Connect(function()
+    if not alive then return end
     potionUI.option.Visible = false
-    paintPotionChoices()
-    settingsStorage = writeSettings(flags)
-    nextMoon = 0
-    log("Use Potion When: Aurora")
+    potionUI.scanRequested = true
+    potionUI.sync.Text = "..."
 end)
+function potionUI.inspect()
+    if not alive then return end
+    if inDungeon() then note("Moon list: wait until the dungeon ends, then press SYNC"); return end
+    if modalOpen() and modalTitle() ~= "MOONS" then
+        note("Close the current game window, then press SYNC to read MOONS")
+        return
+    end
+    local openedHere = false
+    if modalTitle() ~= "MOONS" then
+        if not fire("potion.sync.moons", get({"Frame", "Buffs", "Moon"}), nil, 2) then
+            note("Cannot open MOONS; open it manually and press SYNC")
+            return
+        end
+        openedHere = true
+        task.wait(0.8)
+    end
+    if not alive then return end
+    if modalTitle() == "MOONS" then
+        potionUI.discover()
+        potionUI.rebuild()
+        note("Moon choices: " .. #potionConfig.available .. " found in game UI")
+        if openedHere then closeModal("potion.sync.close") end
+    else
+        note("MOONS did not open; press SYNC again when ready")
+    end
+end
 for _, id in ipairs({"luck", "haste", "gild"}) do
     potionUI.checks[id].Activated:Connect(function()
         potionConfig.selected[id] = not potionConfig.selected[id]
@@ -1308,6 +1436,7 @@ local function refreshStatus(now)
     put("battle", sampleStatus("battle", get({"Frame", "Battle", "Stage", "Ribbon", "Title"})))
     put("moonTimer", sampleStatus("moonTimer", get({"Frame", "Buffs", "Moon", "Pill", "Value"})))
     if modalTitle() == "MOONS" then
+        if potionUI.discover() > 0 then potionUI.rebuild() end
         local sky = child(modalPanel(), {"Content", "Inner", "Now", "Title"})
         if visible(sky) then rememberStatus("aura", statusPlain(sky)) end
     end
@@ -1365,7 +1494,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R11 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R12 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -1386,6 +1515,18 @@ task.spawn(function()
             end
             observeDungeon(now)
             local blockingDungeonResult = recoverDungeonModal(now)
+            if not busy and potionUI.scanRequested then
+                potionUI.scanRequested = false
+                busy = true
+                task.spawn(function()
+                    local ok, err = pcall(potionUI.inspect)
+                    busy = false
+                    if alive then
+                        potionUI.sync.Text = "SYNC"
+                        if not ok then note("Moon list error: " .. tostring(err)) end
+                    end
+                end)
+            end
             if flags.raid and not modalOpen() and now >= nextRaid then
                 raidTick()
             end
