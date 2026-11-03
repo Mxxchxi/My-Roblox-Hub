@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R19
+-- Roll A Stickman Combined Auto V1.2 R20
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R19 starting; waiting for game to load")
+print("[RAS] R20 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -28,8 +28,22 @@ local SETTINGS_KEY = "RollStickman_Combined_V1_2_settings"
 local settingKeys = {"level", "raid", "dungeon", "expedition", "moon", "cards", "pet", "antiAfk"}
 local potionNames = {luck = "Luck Potion", haste = "Haste Potion", gild = "Gilded Potion"}
 -- These seven names are confirmed by the user's in-game MOONS screenshot.
-local potionConfig = {when = "Aurora", moons = {AURORA = true}, petLuckMoons = {AURORA = true}, petPlayMoons = {NORMAL = true}, available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, multipliers = {NORMAL = 1, SILVER = 1.5, AURORA = 12}, selected = {luck = true, haste = true, gild = true}}
+local potionConfig = {when = "Aurora", moons = {AURORA = true}, petLuckMoons = {AURORA = true}, petPlayEveryMinutes = 5, petPlayEnabled = true, moonInspectMinutes = 5, moonHudOnly = false, webhookEnabled = false, webhookUrl = "", available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, multipliers = {NORMAL = 1, SILVER = 1.5, AURORA = 12}, selected = {luck = true, haste = true, gild = true}}
 local cardSelection = {loose = true, pouch = true, crate = true, chest = true, requireLuck = true, requirePet = true}
+local function minutes(value, fallback)
+    local number = tonumber(value)
+    if not number or number ~= number or number == math.huge or number == -math.huge then return fallback end
+    return math.clamp(math.floor(number), 1, 120)
+end
+local function validWebhook(value)
+    if type(value) ~= "string" then return "" end
+    local url = value:match("^%s*(.-)%s*$")
+    if #url > 512 then return "" end
+    if url:match("^https://discord%.com/api/webhooks/%d+/[%w_%-]+$")
+        or url:match("^https://discord%.com/api/v%d+/webhooks/%d+/[%w_%-]+$")
+        or url:match("^https://discordapp%.com/api/webhooks/%d+/[%w_%-]+$") then return url end
+    return ""
+end
 local function moonIdentity(value, allowShort)
     if type(value) ~= "string" then return nil end
     local name = value:gsub("<[^>]*>", ""):upper():gsub("%s+", " ")
@@ -96,8 +110,15 @@ local function cleanSettings(value)
     end
     potion.moons = moonSet(source.moons, {[moonIdentity(potion.when, true)] = true})
     potion.petLuckMoons = moonSet(source.petLuckMoons, {AURORA = true})
-    potion.petPlayMoons = moonSet(source.petPlayMoons, {NORMAL = true})
-    potion.petPlayMoons.AURORA = nil
+    potion.petPlayEveryMinutes = minutes(source.petPlayEveryMinutes, 5)
+    potion.petPlayEnabled = source.petPlayEnabled ~= false
+    if source.petPlayEnabled == nil and type(source.petPlayMoons) == "table" then
+        potion.petPlayEnabled = next(moonSet(source.petPlayMoons, {})) ~= nil
+    end
+    potion.moonInspectMinutes = minutes(source.moonInspectMinutes, 5)
+    potion.moonHudOnly = source.moonHudOnly == true
+    potion.webhookUrl = validWebhook(source.webhookUrl)
+    potion.webhookEnabled = source.webhookEnabled == true and potion.webhookUrl ~= ""
     for name, amount in pairs(type(source.multipliers) == "table" and source.multipliers or {}) do
         local key = moonIdentity(name, true)
         if key and type(amount) == "number" and amount > 0 and amount < math.huge then
@@ -152,7 +173,13 @@ local function writeSettings(current)
     for id, record in pairs(potionConfig.petCatalog or {}) do
         saved.potion.petCatalog[id] = {name = record.name, level = record.level, luck = record.luck, play = record.play, gives = record.gives}
     end
-    for _, field in ipairs({"moons", "petLuckMoons", "petPlayMoons"}) do
+    saved.potion.petPlayEveryMinutes = potionConfig.petPlayEveryMinutes
+    saved.potion.petPlayEnabled = potionConfig.petPlayEnabled
+    saved.potion.moonInspectMinutes = potionConfig.moonInspectMinutes
+    saved.potion.moonHudOnly = potionConfig.moonHudOnly
+    saved.potion.webhookUrl = validWebhook(potionConfig.webhookUrl)
+    saved.potion.webhookEnabled = potionConfig.webhookEnabled
+    for _, field in ipairs({"moons", "petLuckMoons"}) do
         saved.potion[field] = moonSet(potionConfig[field], {})
     end
     for key, amount in pairs(potionConfig.multipliers) do saved.potion.multipliers[key] = amount end
@@ -291,7 +318,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R19  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R20  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -351,6 +378,23 @@ local function pageLabel(tab, name, value, y, height)
     obj.TextColor3 = name:find("Heading") and theme.accent or theme.muted
     return obj
 end
+function neonUI.minuteControls(tab, prefix, y)
+    local control = {}
+    control.minus = pageItem(tab, button(prefix .. "Minus", "-", 12, y, 38, 28))
+    control.plus = pageItem(tab, button(prefix .. "Plus", "+", 310, y, 38, 28))
+    control.box = Instance.new("TextBox")
+    control.box.Name = prefix .. "Minutes"
+    control.box.Position = UDim2.fromOffset(56, y)
+    control.box.Size = UDim2.fromOffset(248, 28)
+    control.box.BackgroundColor3 = theme.card
+    control.box.TextColor3 = theme.text
+    control.box.Font = Enum.Font.GothamMedium
+    control.box.TextSize = 13
+    control.box.BorderSizePixel = 0
+    control.box.ClearTextOnFocus = false
+    pageItem(tab, control.box)
+    return control
+end
 local toggles = {
     level = pageItem("Team", button("LevelToggle", "LEVEL UP: OFF", 12, 116, 336, 36)),
     raid = pageItem("Fight", button("RaidToggle", "RAID: OFF", 12, 116, 336, 36)),
@@ -395,7 +439,7 @@ for i, id in ipairs({"luck", "haste", "gild"}) do
 end
 pageLabel("Potion", "PotionHint", "x? = press SYNC to read the Moon luck multiplier.", 328, 20).TextSize = 10
 pageLabel("Open Card", "CardHeading", "OPEN CARD  /  OWNED ITEMS", 90, 20)
-local cardUI = {checks = {}, names = {loose = "Reward Cards", pouch = "Pouch", crate = "Crate", chest = "Chest"}}
+local cardUI = {checks = {}, openReports = {}, names = {loose = "Reward Cards", pouch = "Pouch", crate = "Crate", chest = "Chest"}}
 cardUI.condition = pageLabel("Open Card", "CardCondition", "When: follows Use Potion When", 152, 23)
 cardUI.stock = pageLabel("Open Card", "CardStock", "Reward Cards: not observed", 177, 28)
 cardUI.stock.TextSize = 11
@@ -407,11 +451,11 @@ for i, id in ipairs({"loose", "pouch", "crate", "chest"}) do
     cardUI.checks[id].TextXAlignment = Enum.TextXAlignment.Left
 end
 pageLabel("Open Card", "CardHint", "Uses the selected Moon condition. Opens owned items only.", 326, 22).TextSize = 10
-local petUI = {targets = {}, nextCheck = 0, scanRequested = false, catalog = {}}
+local petUI = {targets = {}, nextCheck = 0, scanRequested = false, catalog = {}, nextPlayAt = 0}
 pageLabel("Pet", "PetHeading", "PET  /  BOOST CONDITIONS", 90, 20)
 pageLabel("Pet", "PetLuckLabel", "Boost luck pet when", 151, 18)
-pageLabel("Pet", "PetPlayLabel", "Boost cards from play (not Aurora)", 203, 18)
-for _, spec in ipairs({{"petLuckMoons", "PetLuckWhen", 171, 201}, {"petPlayMoons", "PetPlayWhen", 223, 253}}) do
+
+for _, spec in ipairs({{"petLuckMoons", "PetLuckWhen", 171, 201}}) do
     local target = {field = spec[1], tab = "Pet", entries = {}, maxHeight = spec[1] == "petLuckMoons" and 143 or 91}
     target.button = pageItem("Pet", button(spec[2], "Select Moons...", 12, spec[3], 336, 30))
     target.list = Instance.new("ScrollingFrame")
@@ -428,10 +472,14 @@ for _, spec in ipairs({{"petLuckMoons", "PetLuckWhen", 171, 201}, {"petPlayMoons
     pageItem("Pet", target.list)
     table.insert(petUI.targets, target)
 end
-petUI.help = pageLabel("Pet", "PetHelp", "AUTO PET reads pet bonuses, then equips the best pet for the selected Moon. Luck takes priority if conditions overlap.", 257, 43)
+petUI.playToggle = pageItem("Pet", button("PetPlayToggle", "[x] Boost cards from play", 12, 203, 336, 22))
+pageLabel("Pet", "PetPlayLabel", "Every X minutes (1-120)", 228, 18)
+petUI.every = neonUI.minuteControls("Pet", "PetPlay", 250)
+petUI.schedule = pageLabel("Pet", "PetPlaySchedule", "Next play pet check: ready", 281, 20)
+petUI.help = pageLabel("Pet", "PetHelp", "Luck Moon conditions take priority. Timed play checks wait during Aurora or a selected Luck Moon.", 305, 37)
 petUI.help.TextSize = 11
-petUI.scan = pageItem("Pet", button("ScanPet", "SCAN PET STATS", 12, 308, 164, 32))
-petUI.capture = pageItem("Pet", button("CapturePet", "CAPTURE (3s)", 184, 308, 164, 32))
+petUI.scan = pageItem("Pet", button("ScanPet", "SCAN PET STATS", 12, 349, 164, 32))
+petUI.capture = pageItem("Pet", button("CapturePet", "CAPTURE (3s)", 184, 349, 164, 32))
 pageLabel("Status", "StatusHeading", "STATUS  /  LIVE GAME VALUES", 90, 20)
 local statusScroll = Instance.new("ScrollingFrame")
 statusScroll.Name = "StatusPage"
@@ -488,17 +536,37 @@ pageLabel("Moon", "MoonHeading", "MOON  /  VERIFIED SKY", 90, 24)
 neonUI.sky = pageLabel("Moon", "MoonSky", "No confirmed Moon yet. Press SYNC to inspect.", 126, 58)
 neonUI.sky.TextSize = 16
 neonUI.sky.TextColor3 = theme.text
-neonUI.timer = pageLabel("Moon", "MoonTimer", "Sky countdown: not observed", 190, 24)
-neonUI.moonSync = pageItem("Moon", button("MoonSync", "SYNC MOON NOW", 12, 228, 336, 34))
-pageLabel("Moon", "MoonPolicy", "Automatic inspection: every 5 minutes when the HUD icon is unknown. Verified icons are read without opening MOONS. Manual SYNC is immediate.", 274, 72)
+neonUI.timer = pageLabel("Moon", "MoonTimer", "Sky countdown: not observed", 185, 22)
+neonUI.hudOnly = pageItem("Moon", button("MoonHudOnly", "[ ] HUD ONLY - never auto-open MOONS", 12, 211, 336, 28))
+pageLabel("Moon", "MoonIntervalLabel", "Inspect unknown Moon every X minutes (1-120)", 244, 18)
+neonUI.moonEvery = neonUI.minuteControls("Moon", "MoonInspect", 267)
+neonUI.moonSync = pageItem("Moon", button("MoonSync", "SYNC MOON NOW", 12, 306, 336, 30))
+neonUI.moonPolicy = pageLabel("Moon", "MoonPolicy", "Verified HUD icons need no window. Unknown or ambiguous icons require SYNC or timed inspection.", 343, 61)
 pageLabel("Settings", "SettingsHeading", "SETTINGS  /  SESSION & LOG", 90, 20)
 pageLabel("Settings", "SettingsHint", "Switches, Moon choices and window position save automatically. Alt minimizes this window. RESTORE SWITCHES restores the last STOP ALL selection.", 158, 60)
 neonUI.storage = pageLabel("Settings", "StorageInfo", "Settings storage: starting", 225, 24)
-local copyButton = pageItem("Settings", button("CopyLog", "COPY LOG / PET REPORT", 12, 258, 336, 32))
-local logHeader = pageLabel("Settings", "LogHeader", "ACTIVITY LOG", 302, 20)
+neonUI.webhook = {queue = {}, running = false, nextSendAt = 0}
+neonUI.webhook.toggle = pageItem("Settings", button("WebhookEnabled", "[ ] Discord webhook: card opens", 12, 258, 336, 28))
+neonUI.webhook.url = Instance.new("TextBox")
+neonUI.webhook.url.Name = "WebhookUrl"
+neonUI.webhook.url.Position = UDim2.fromOffset(12, 294)
+neonUI.webhook.url.Size = UDim2.fromOffset(336, 32)
+neonUI.webhook.url.BackgroundColor3 = theme.card
+neonUI.webhook.url.TextColor3 = theme.text
+neonUI.webhook.url.PlaceholderText = "Paste Discord webhook URL here"
+neonUI.webhook.url.Text = ""
+neonUI.webhook.url.TextSize = 11
+neonUI.webhook.url.Font = Enum.Font.Code
+neonUI.webhook.url.ClearTextOnFocus = false
+neonUI.webhook.url.BorderSizePixel = 0
+pageItem("Settings", neonUI.webhook.url)
+neonUI.webhook.test = pageItem("Settings", button("WebhookTest", "TEST WEBHOOK", 12, 334, 336, 28))
+neonUI.webhook.status = pageLabel("Settings", "WebhookStatus", "Webhook: OFF", 369, 28)
+local copyButton = pageItem("Settings", button("CopyLog", "COPY LOG / PET REPORT", 12, 409, 336, 32))
+local logHeader = pageLabel("Settings", "LogHeader", "ACTIVITY LOG", 453, 20)
 local scroll = Instance.new("ScrollingFrame")
 scroll.Name = "ActivityLog"
-scroll.Position = UDim2.fromOffset(12, 330)
+scroll.Position = UDim2.fromOffset(12, 481)
 scroll.Size = UDim2.fromOffset(336, 190)
 scroll.BackgroundColor3 = theme.base
 scroll.BorderSizePixel = 0
@@ -784,6 +852,9 @@ stopButton.Activated:Connect(function()
 end)
 copyButton.Activated:Connect(function()
     local value = table.concat(logs, "\n")
+    if #cardUI.openReports > 0 then
+        value = value .. "\n\nCARD OPEN REPORT (latest 500 presses)\n" .. table.concat(cardUI.openReports, "\n")
+    end
     if petUI.report and #petUI.report > 0 then
         value = value .. "\n\nFULL PET UI REPORT\n" .. table.concat(petUI.report, "\n")
     end
@@ -792,7 +863,7 @@ copyButton.Activated:Connect(function()
     else
         if minimized then toggleMinimized() end
         setTab("Settings")
-        neonUI.pageFrames.Settings.CanvasPosition = Vector2.new(0, 250)
+        neonUI.pageFrames.Settings.CanvasPosition = Vector2.new(0, scroll.Position.Y.Offset)
         logBox.Text = value
         logBox:CaptureFocus()
         logBox.CursorPosition = #logBox.Text + 1
@@ -1296,6 +1367,31 @@ local function cardCount()
     local digits = textOf(obj):match("^REWARD CARDS%s+([%d,]+)")
     return numeric(digits)
 end
+function cardUI.openSnapshot(kind, stock, batch)
+    local luck = sampleStatus("luck", get({"Frame", "Hud", "Luck", "Pill", "Value"}))
+    local battle = sampleStatus("battleLuck", get({"Frame", "Battle", "Dock", "LuckTab", "Pill", "Value"}))
+    local timer = sampleStatus("moonTimer", get({"Frame", "Buffs", "Moon", "Pill", "Value"}))
+    local aura = cachedStatus("aura")
+    local icon = potionUI.icon()
+    local key = icon and not potionUI.iconConflicts[icon] and potionUI.iconMap[icon]
+    if key then aura = moonCaption(key) .. " | verified HUD icon" end
+    local pets = petUI.equippedStats()
+    return {kind = kind, stock = stock, batch = batch, at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        luck = luck, battleLuck = battle, aura = aura, timer = timer,
+        pets = pets and (pets.text .. " | observed " .. math.floor(os.clock() - pets.at) .. "s ago") or "Not confirmed",
+        potions = "Luck: " .. cachedStatus("luckPotion") .. "; Haste: " .. cachedStatus("hastePotion") .. "; Gilded: " .. cachedStatus("gildPotion")}
+end
+function cardUI.recordOpen(snapshot)
+    local message = "CARD OPEN PRESSED | " .. snapshot.at .. " | " .. snapshot.kind
+        .. " | batch=" .. snapshot.batch .. " | stock=" .. snapshot.stock
+        .. " | Luck HUD=" .. snapshot.luck .. " | Luck battle=" .. snapshot.battleLuck
+        .. " | Moon=" .. snapshot.aura .. " | Sky timer=" .. snapshot.timer
+        .. " | Pet=" .. snapshot.pets .. " | Potions=" .. snapshot.potions
+    table.insert(cardUI.openReports, message)
+    if #cardUI.openReports > 500 then table.remove(cardUI.openReports, 1) end
+    log(message)
+    neonUI.queueWebhook(message)
+end
 local function openOwnedCards(version)
     if not flags.cards or not validMoon(version) then return false end
     if not openCardPacks() then
@@ -1326,7 +1422,9 @@ local function openOwnedCards(version)
             log("Reward Cards OPEN unavailable: " .. caption)
             return false
         end
+        local snapshot = cardUI.openSnapshot("Reward Cards", count, rounds + 1)
         if not fire("moon.cards.all", all, caption, 4) then return false end
+        cardUI.recordOpen(snapshot)
         rounds = rounds + 1
         local before = count
         local deadline = os.clock() + 9
@@ -1376,7 +1474,9 @@ local function openOwnedCards(version)
                 log(id .. " held " .. owned .. "; OPEN unavailable: " .. caption)
                 break
             end
+            local snapshot = cardUI.openSnapshot(cardUI.names[id], owned, attempts + 1)
             if not fire("moon.pack." .. id, open, caption, 2) then break end
+            cardUI.recordOpen(snapshot)
             attempts = attempts + 1
             task.wait(2.2)
             local afterSub = child(child(modalPanel(), {"Content", "Inner",
@@ -1467,7 +1567,7 @@ function potionUI.summary(field)
     return #names == 1 and names[1] or (#names .. " Moons selected")
 end
 function potionUI.menus()
-    return {potionUI.primary, petUI.targets[1], petUI.targets[2]}
+    return {potionUI.primary, petUI.targets[1]}
 end
 function potionUI.paintMenus()
     for _, target in ipairs(potionUI.menus()) do
@@ -1477,10 +1577,6 @@ function potionUI.paintMenus()
             entry.Text = (selected and "[x] " or "[ ] ") .. potionUI.caption(moonCaption(key))
             entry.BackgroundColor3 = selected and theme.accent or theme.off
             entry.TextColor3 = theme.text
-            if target.field == "petPlayMoons" and key == "AURORA" then
-                entry.Text = "[-] Aurora (excluded)"
-                entry.Active = false
-            end
         end
     end
 end
@@ -1529,7 +1625,8 @@ function potionUI.confirmSky(value)
         potionUI.iconMap[icon] = key
     end
     potionUI.confirmed = {key = key, icon = icon, untilTime = os.clock() + (potionUI.seconds(value) or 0)}
-    potionUI.probeAt = os.clock() + 300
+    potionUI.lastProbeAt = os.clock()
+    potionUI.probeAt = potionUI.lastProbeAt + potionConfig.moonInspectMinutes * 60
 end
 function potionUI.resolveSky(version, check)
     if modalTitle() == "MOONS" then
@@ -1545,10 +1642,15 @@ function potionUI.resolveSky(version, check)
     if key and (remaining or (cached and cached.icon == icon and cached.untilTime > os.clock())) then
         return moonCaption(key), false
     end
-    if os.clock() < potionUI.probeAt then nextMoon = potionUI.probeAt; return nil end
+    if potionConfig.moonHudOnly then
+        nextMoon = os.clock() + 10
+        return nil
+    end
+    if os.clock() < potionUI.probeAt then nextMoon = math.min(os.clock() + 10, potionUI.probeAt); return nil end
     if modalOpen() then nextMoon = os.clock() + 8; return nil end
     if not fire("moon.tab", get({"Frame", "Buffs", "Moon"}), nil, 3) then nextMoon = os.clock() + 10; return nil end
-    potionUI.probeAt = os.clock() + 300
+    potionUI.lastProbeAt = os.clock()
+    potionUI.probeAt = potionUI.lastProbeAt + potionConfig.moonInspectMinutes * 60
     task.wait(0.7)
     local obj = child(modalPanel(), {"Content", "Inner", "Now", "Title"})
     local value = modalTitle() == "MOONS" and visible(obj) and statusPlain(obj) or ""
@@ -1632,7 +1734,8 @@ function petUI.nameOf(value)
 end
 function petUI.roleFor(key)
     if key and potionConfig.petLuckMoons[key] then return "luck" end
-    if key and key ~= "AURORA" and potionConfig.petPlayMoons[key] then return "play" end
+    if key and key ~= "AURORA" and potionConfig.petPlayEnabled
+        and os.clock() >= petUI.nextPlayAt then return "play" end
 end
 function petUI.pageReady()
     return visible(child(page(), {"OnHead"}))
@@ -1816,12 +1919,12 @@ function petUI.tick(version, manual)
     local key, role
     if not manual then
         local sky, openedHere = potionUI.resolveSky(version, check)
-        if not sky then petUI.nextCheck = math.max(os.clock() + 10, potionUI.probeAt); return end
+        if not sky then petUI.nextCheck = os.clock() + 10; return end
         key = moonIdentity(sky, true)
         role = petUI.roleFor(key)
         if openedHere and modalTitle() == "MOONS" then closeModal("pet.moon.close"); task.wait(0.3) end
         if not role then return end
-        if petUI.applied and petUI.applied.role == role and os.clock() - petUI.applied.at < 300 then
+        if role == "luck" and petUI.applied and petUI.applied.role == role and os.clock() - petUI.applied.at < 300 then
             petUI.applied.moon = key
             return
         end
@@ -1851,6 +1954,11 @@ function petUI.tick(version, manual)
         if not best then note("No verified pet found for " .. role)
         elseif petUI.apply(best, role, check) then
             petUI.applied = {role = role, id = best.item.id, moon = key, at = os.clock()}
+            if role == "play" then
+                petUI.lastPlayAt = os.clock()
+                petUI.nextPlayAt = petUI.lastPlayAt + potionConfig.petPlayEveryMinutes * 60
+                log("PET PLAY TIMER | confirmed; next check in " .. potionConfig.petPlayEveryMinutes .. " minutes")
+            end
             note("AUTO PET ready: " .. best.item.name .. " | " .. best.record.gives)
         end
     end
@@ -1994,7 +2102,7 @@ function potionUI.rebuild()
             entry.Parent = target.list
             table.insert(target.entries, entry)
             entry.Activated:Connect(function()
-                if not alive or (target.field == "petPlayMoons" and key == "AURORA") then return end
+                if not alive then return end
                 local selected = potionConfig[target.field]
                 selected[key] = not selected[key] or nil
                 if target.field == "moons" then
@@ -2037,6 +2145,172 @@ for _, target in ipairs(potionUI.menus()) do
         end
     end)
 end
+function neonUI.paintWebhook()
+    neonUI.webhook.toggle.Text = (potionConfig.webhookEnabled and "[x] " or "[ ] ") .. "Discord webhook: card opens"
+    neonUI.webhook.toggle.BackgroundColor3 = potionConfig.webhookEnabled and theme.accent or theme.off
+end
+function neonUI.queueWebhook(message, manual)
+    local url = validWebhook(potionConfig.webhookUrl)
+    if url == "" or (not manual and not potionConfig.webhookEnabled) then return false end
+    if #neonUI.webhook.queue >= 50 then
+        if not neonUI.webhook.fullLogged then log("WEBHOOK queue full; local card logs are retained"); neonUI.webhook.fullLogged = true end
+        return false
+    end
+    table.insert(neonUI.webhook.queue, {url = url, manual = manual, content = message:sub(1, 1900), attempts = 0})
+    if neonUI.webhook.running then return true end
+    neonUI.webhook.running = true
+    task.spawn(function()
+        local function waitUntil(deadline)
+            while alive and os.clock() < deadline do task.wait(math.min(1, deadline - os.clock())) end
+        end
+        local ok = pcall(function()
+            while alive and #neonUI.webhook.queue > 0 do
+                waitUntil(neonUI.webhook.nextSendAt)
+                if not alive then break end
+                local job = table.remove(neonUI.webhook.queue, 1)
+                if job.url == validWebhook(potionConfig.webhookUrl) and (job.manual or potionConfig.webhookEnabled) then
+                    local transport = type(request) == "function" and request
+                        or type(http_request) == "function" and http_request
+                        or type(syn) == "table" and type(syn.request) == "function" and syn.request
+                        or type(http) == "table" and type(http.request) == "function" and http.request
+                    if not transport then
+                        neonUI.webhook.status.Text = "Webhook: executor HTTP request unavailable"
+                        log("WEBHOOK unavailable: executor HTTP request missing")
+                        neonUI.webhook.queue = {}
+                        break
+                    end
+                    job.attempts = job.attempts + 1
+                    local sent, response = pcall(transport, {Url = job.url, Method = "POST",
+                        Headers = {["Content-Type"] = "application/json"},
+                        Body = HttpService:JSONEncode({content = job.content, allowed_mentions = {parse = {}}})})
+                    local code = sent and type(response) == "table" and tonumber(response.StatusCode or response.Status) or nil
+                    local headers = {}
+                    for key, value in pairs(sent and type(response) == "table" and type(response.Headers) == "table" and response.Headers or {}) do headers[tostring(key):lower()] = value end
+                    neonUI.webhook.nextSendAt = os.clock() + 0.5
+                    if code and code >= 200 and code < 300 then
+                        neonUI.webhook.status.Text = "Webhook: sent (HTTP " .. code .. ")"
+                        log("WEBHOOK sent | HTTP " .. code)
+                        if tonumber(headers["x-ratelimit-remaining"]) == 0 then
+                            neonUI.webhook.nextSendAt = os.clock() + math.max(0.5, tonumber(headers["x-ratelimit-reset-after"]) or 2)
+                        end
+                    elseif code == 429 then
+                        local decoded, body = pcall(function() return HttpService:JSONDecode(response.Body or "{}") end)
+                        local delay = tonumber(headers["retry-after"]) or (decoded and type(body) == "table" and tonumber(body.retry_after)) or 3
+                        if delay ~= delay or delay == math.huge or delay < 0 then delay = 3 end
+                        neonUI.webhook.nextSendAt = os.clock() + math.max(0.5, delay)
+                        if job.attempts < 3 then
+                            table.insert(neonUI.webhook.queue, 1, job)
+                            neonUI.webhook.status.Text = "Webhook: Discord rate limit; queued"
+                        else
+                            neonUI.webhook.status.Text = "Webhook: retry limit; local card logs retained"
+                        end
+                        log("WEBHOOK rate limited; waiting " .. delay .. "s")
+                    else
+                        neonUI.webhook.status.Text = "Webhook: " .. (code and ("HTTP " .. code) or "transport failed")
+                        log("WEBHOOK failed | " .. (code and ("HTTP " .. code) or "transport error"))
+                        if code == 401 or code == 403 or code == 404 then
+                            potionConfig.webhookEnabled = false
+                            neonUI.webhook.queue = {}
+                            neonUI.paintWebhook()
+                            settingsStorage = writeSettings(flags)
+                        end
+                    end
+                end
+            end
+        end)
+        neonUI.webhook.running = false
+        neonUI.webhook.fullLogged = false
+        if not ok and alive then
+            neonUI.webhook.status.Text = "Webhook: worker error; local card logs retained"
+            log("WEBHOOK worker failed; URL and response details omitted")
+        end
+    end)
+    return true
+end
+function neonUI.saveWebhookUrl()
+    local typed = neonUI.webhook.url.Text
+    local url = validWebhook(typed)
+    if url == "" and typed:match("%S") then
+        potionConfig.webhookEnabled = false
+        neonUI.webhook.queue = {}
+        neonUI.paintWebhook()
+        settingsStorage = writeSettings(flags)
+        neonUI.webhook.status.Text = "Webhook: enter a valid Discord webhook URL"
+        return false
+    end
+    potionConfig.webhookUrl = url
+    if url == "" then potionConfig.webhookEnabled = false end
+    neonUI.paintWebhook()
+    settingsStorage = writeSettings(flags)
+    return url ~= ""
+end
+neonUI.webhook.url.Text = potionConfig.webhookUrl
+neonUI.paintWebhook()
+neonUI.webhook.status.Text = potionConfig.webhookEnabled and "Webhook: ON; card-open reports enabled" or "Webhook: OFF"
+neonUI.webhook.url.FocusLost:Connect(neonUI.saveWebhookUrl)
+neonUI.webhook.toggle.Activated:Connect(function()
+    if potionConfig.webhookEnabled then potionConfig.webhookEnabled = false
+    elseif neonUI.saveWebhookUrl() then potionConfig.webhookEnabled = true end
+    neonUI.paintWebhook()
+    neonUI.webhook.status.Text = potionConfig.webhookEnabled and "Webhook: ON; card-open reports enabled" or "Webhook: OFF"
+    settingsStorage = writeSettings(flags)
+end)
+neonUI.webhook.test.Activated:Connect(function()
+    if neonUI.saveWebhookUrl() then
+        neonUI.queueWebhook("Roll A Stickman R20 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.webhook.status.Text = "Webhook: test queued"
+    end
+end)
+function neonUI.paintIntervals()
+    petUI.every.box.Text = tostring(potionConfig.petPlayEveryMinutes)
+    petUI.playToggle.Text = (potionConfig.petPlayEnabled and "[x] " or "[ ] ") .. "Boost cards from play"
+    petUI.playToggle.BackgroundColor3 = potionConfig.petPlayEnabled and theme.accent or theme.off
+    neonUI.moonEvery.box.Text = tostring(potionConfig.moonInspectMinutes)
+    neonUI.hudOnly.Text = (potionConfig.moonHudOnly and "[x] " or "[ ] ") .. "HUD ONLY - never auto-open MOONS"
+    neonUI.hudOnly.BackgroundColor3 = potionConfig.moonHudOnly and theme.accent or theme.off
+    gui:SetAttribute("MoonHudOnly", potionConfig.moonHudOnly)
+    gui:SetAttribute("MoonInspectMinutes", potionConfig.moonInspectMinutes)
+end
+function neonUI.changeInterval(field, value)
+    local updated = minutes(value, potionConfig[field])
+    if updated ~= potionConfig[field] then
+        potionConfig[field] = updated
+        if field == "petPlayEveryMinutes" then
+            petUI.nextPlayAt = petUI.lastPlayAt and petUI.lastPlayAt + updated * 60 or 0
+            petUI.nextCheck = 0
+            versions.pet = versions.pet + 1
+        else
+            potionUI.probeAt = potionUI.lastProbeAt and potionUI.lastProbeAt + updated * 60 or 0
+            nextMoon, petUI.nextCheck = 0, 0
+            versions.moon, versions.pet = versions.moon + 1, versions.pet + 1
+        end
+        settingsStorage = writeSettings(flags)
+        log(field .. " = " .. updated .. " minutes")
+    end
+    neonUI.paintIntervals()
+end
+for _, spec in ipairs({{petUI.every, "petPlayEveryMinutes"}, {neonUI.moonEvery, "moonInspectMinutes"}}) do
+    local control, field = spec[1], spec[2]
+    control.minus.Activated:Connect(function() neonUI.changeInterval(field, potionConfig[field] - 1) end)
+    control.plus.Activated:Connect(function() neonUI.changeInterval(field, potionConfig[field] + 1) end)
+    control.box.FocusLost:Connect(function() neonUI.changeInterval(field, control.box.Text) end)
+end
+petUI.playToggle.Activated:Connect(function()
+    potionConfig.petPlayEnabled = not potionConfig.petPlayEnabled
+    petUI.nextCheck = 0
+    versions.pet = versions.pet + 1
+    neonUI.paintIntervals()
+    settingsStorage = writeSettings(flags)
+end)
+neonUI.hudOnly.Activated:Connect(function()
+    potionConfig.moonHudOnly = not potionConfig.moonHudOnly
+    nextMoon, petUI.nextCheck = 0, 0
+    versions.moon, versions.pet = versions.moon + 1, versions.pet + 1
+    neonUI.paintIntervals()
+    settingsStorage = writeSettings(flags)
+    note(potionConfig.moonHudOnly and "HUD only: unknown Moon waits for manual SYNC" or "Automatic Moon inspection enabled")
+end)
+neonUI.paintIntervals()
 neonUI.moonSync.Activated:Connect(function()
     if not alive then return end
     potionUI.scanRequested = true
@@ -2084,6 +2358,7 @@ function potionUI.inspect()
                 if count >= 80 then log("MOON UI report limited to 80 entries"); break end
             end
         end
+        nextMoon, petUI.nextCheck = 0, 0
         note("Moon choices: " .. #potionConfig.available .. " found in game UI")
         if openedHere then closeModal("potion.sync.close") end
     else
@@ -2271,6 +2546,14 @@ local function refreshStatus(now)
     end
     neonUI.sky.Text = statusCache.aura and cachedStatus("aura") or "No confirmed Moon yet. Press SYNC to inspect."
     neonUI.timer.Text = "Sky countdown: " .. cachedStatus("moonTimer")
+    local playLeft = math.max(0, math.ceil(petUI.nextPlayAt - now))
+    petUI.schedule.Text = not flags.pet and "Play pet timer: AUTO PET is OFF"
+        or not potionConfig.petPlayEnabled and "Play pet timer: disabled"
+        or (playLeft == 0 and "Play pet check: ready (waits for a non-Luck Moon)"
+            or string.format("Next play pet check: %dm %02ds", math.floor(playLeft / 60), playLeft % 60))
+    neonUI.moonPolicy.Text = potionConfig.moonHudOnly
+        and "HUD ONLY: no automatic MOONS window. Unknown or shared icons wait for manual SYNC."
+        or ("Verified HUD icons need no window. Unknown/shared icons: inspect every " .. potionConfig.moonInspectMinutes .. " minutes.")
     neonUI.storage.Text = "Settings storage: " .. settingsStorage .. " | Dungeon recheck: 2 hours"
     put("aura", statusCache.aura and cachedStatus("aura") or "Open MOONS to confirm the active sky")
     if activeTab == "Status" and not minimized and now >= statusNextPowerScan then
@@ -2330,7 +2613,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R19 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R20 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
