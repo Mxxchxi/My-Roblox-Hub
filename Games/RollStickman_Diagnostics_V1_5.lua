@@ -1,5 +1,5 @@
--- Roll A Stickman Diagnostics V1.5 R8 | Aura watch
--- PlaceId 115068315659966. Combined V1.2 R19 Neon V2; auto Moon inspection every 5 minutes.
+-- Roll A Stickman Diagnostics V1.5 R9 | Aura watch
+-- PlaceId 115068315659966. Combined V1.2 R20 Neon V2; shares its Moon interval / HUD-only policy.
 -- Reads the active Moon from MOONS > Now.Title. Never buys, drinks or opens cards.
 -- Only opens/closes MOONS when Potion, Open Card and Auto Pet automation are OFF.
 
@@ -137,7 +137,7 @@ local seq, started = 0, os.clock()
 local eventAt, eventSerial, lastSky, eventSky = nil, 0, nil, nil
 local checkpoints = {2, 5, 15, 30, 60}
 local checkpointIndex = 1
-local nextOpen, lastHeartbeat = 0, os.clock()
+local lastOpen, lastHeartbeat = -math.huge, os.clock()
 local lastFields = {}
 local logConnection
 
@@ -321,10 +321,15 @@ local function observe()
 end
 local function autoInspect()
     local now = os.clock()
-    if now < nextOpen or mainBoostOn() or modal() ~= "(NOT VISIBLE)" then
+    local main = pg:FindFirstChild("RollStickman_Combined_V1_2")
+    local hudOnly = main and main:GetAttribute("MoonHudOnly") == true
+    local minutes = main and main:GetAttribute("MoonInspectMinutes") or 5
+    if type(minutes) ~= "number" or minutes ~= minutes then minutes = 5 end
+    minutes = math.clamp(math.floor(minutes), 1, 120)
+    if hudOnly or now < lastOpen + minutes * 60 or mainBoostOn() or modal() ~= "(NOT VISIBLE)" then
         return
     end
-    nextOpen = now + 300
+    lastOpen = now
     local moon = path({"Frame", "Buffs", "Moon"})
     if not fireButton(moon) then
         if type(firesignal) ~= "function" and not lastFields.noSignal then
@@ -379,7 +384,7 @@ gui.Destroying:Connect(function()
     if logConnection then logConnection:Disconnect() end
 end)
 
-line("Diagnostics V1.5 R8 | PlaceId=" .. tostring(game.PlaceId))
+line("Diagnostics V1.5 R9 | PlaceId=" .. tostring(game.PlaceId))
 line("ACTIVE SKY is read only from MOONS > Now.Title; shop labels are ignored")
 line("Watches Aura, potion/card counts and [RAS] logs; no gameplay purchases")
 snapshot("INITIAL")
