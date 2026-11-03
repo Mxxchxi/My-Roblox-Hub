@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R17
+-- Roll A Stickman Combined Auto V1.2 R18
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R17 starting; waiting for game to load")
+print("[RAS] R18 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -25,7 +25,7 @@ assert(pg:WaitForChild("RollAStickman", 120), "RollAStickman UI not ready after 
 
 local SETTINGS_FILE = "RollStickman_Combined_V1_2_settings.json"
 local SETTINGS_KEY = "RollStickman_Combined_V1_2_settings"
-local settingKeys = {"level", "raid", "dungeon", "expedition", "moon", "cards", "antiAfk"}
+local settingKeys = {"level", "raid", "dungeon", "expedition", "moon", "cards", "pet", "antiAfk"}
 local potionNames = {luck = "Luck Potion", haste = "Haste Potion", gild = "Gilded Potion"}
 -- These seven names are confirmed by the user's in-game MOONS screenshot.
 local potionConfig = {when = "Aurora", moons = {AURORA = true}, petLuckMoons = {AURORA = true}, petPlayMoons = {NORMAL = true}, available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, multipliers = {NORMAL = 1, SILVER = 1.5, AURORA = 12}, selected = {luck = true, haste = true, gild = true}}
@@ -85,6 +85,15 @@ local function cleanSettings(value)
     local source = type(value.potion) == "table" and value.potion or {}
     local selections = type(source.selected) == "table" and source.selected or {}
     local potion = {when = moonCaption(moonIdentity(source.when, true) or "AURORA"), available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, multipliers = {NORMAL = 1, SILVER = 1.5, AURORA = 12}, selected = {}}
+    potion.petCatalog = {}
+    for id, record in pairs(type(source.petCatalog) == "table" and source.petCatalog or {}) do
+        if type(id) == "string" and id:match("^[%w_]+:%d+$") and type(record) == "table"
+            and type(record.name) == "string" and type(record.level) == "string"
+            and type(record.luck) == "number" and record.luck >= 0 and record.luck < math.huge
+            and type(record.play) == "number" and record.play >= 0 and record.play < math.huge then
+            potion.petCatalog[id] = {name = record.name, level = record.level, luck = record.luck, play = record.play, gives = tostring(record.gives or "")}
+        end
+    end
     potion.moons = moonSet(source.moons, {[moonIdentity(potion.when, true)] = true})
     potion.petLuckMoons = moonSet(source.petLuckMoons, {AURORA = true})
     potion.petPlayMoons = moonSet(source.petPlayMoons, {NORMAL = true})
@@ -139,6 +148,10 @@ local settingsTab = "Fight"
 local function writeSettings(current)
     local saved = {placeId = game.PlaceId, flags = {}, activeTab = settingsTab}
     saved.potion = {when = potionConfig.when, available = {}, multipliers = {}, selected = {}}
+    saved.potion.petCatalog = {}
+    for id, record in pairs(potionConfig.petCatalog or {}) do
+        saved.potion.petCatalog[id] = {name = record.name, level = record.level, luck = record.luck, play = record.play, gives = record.gives}
+    end
     for _, field in ipairs({"moons", "petLuckMoons", "petPlayMoons"}) do
         saved.potion[field] = moonSet(potionConfig[field], {})
     end
@@ -199,7 +212,7 @@ if previous then
     local previousPanel = previous:FindFirstChild("Panel")
     local names = {level = "LevelToggle", raid = "RaidToggle",
         dungeon = "DungeonToggle", expedition = "ExpeditionToggle",
-        moon = "MoonToggle", cards = "CardToggle", antiAfk = "AntiAfkToggle"}
+        moon = "MoonToggle", cards = "CardToggle", pet = "PetToggle", antiAfk = "AntiAfkToggle"}
     for key, name in pairs(names) do
         local obj = previousPanel and previousPanel:FindFirstChild(name)
         if obj and obj:IsA("TextButton") then
@@ -271,7 +284,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R16  ·  ALT", 8, 27)
+local title = label("Title", "ROLL A STICKMAN  |  R18  ·  ALT", 8, 27)
 title.Size = UDim2.fromOffset(258, 27)
 title.TextSize = 12
 title.Active = true
@@ -301,6 +314,7 @@ local toggles = {
     expedition = pageItem("Fight", button("ExpeditionToggle", "EXPEDITIONS: OFF", 12, 200, 336, 36)),
     moon = pageItem("Potion", button("MoonToggle", "USE POTION: OFF", 12, 116, 336, 30)),
     cards = pageItem("Open Card", button("CardToggle", "AUTO OPEN CARD: OFF", 12, 116, 336, 30)),
+    pet = pageItem("Pet", button("PetToggle", "AUTO PET: OFF", 12, 116, 336, 30)),
     antiAfk = pageItem("Status", button("AntiAfkToggle", "ANTI AFK: ON", 12, 116, 336, 36)),
 }
 pageLabel("Team", "TeamHeading", "TEAM  /  UPGRADES", 90, 20)
@@ -349,12 +363,12 @@ for i, id in ipairs({"loose", "pouch", "crate", "chest"}) do
     cardUI.checks[id].TextXAlignment = Enum.TextXAlignment.Left
 end
 pageLabel("Open Card", "CardHint", "Uses the selected Moon condition. Opens owned items only.", 326, 22).TextSize = 10
-local petUI = {targets = {}}
+local petUI = {targets = {}, nextCheck = 0, scanRequested = false, catalog = {}}
 pageLabel("Pet", "PetHeading", "PET  /  BOOST CONDITIONS", 90, 20)
-pageLabel("Pet", "PetLuckLabel", "Boost luck pet when", 113, 20)
-pageLabel("Pet", "PetPlayLabel", "Boost card from play (if not Aurora)", 177, 20)
-for _, spec in ipairs({{"petLuckMoons", "PetLuckWhen", 136, 168}, {"petPlayMoons", "PetPlayWhen", 200, 232}}) do
-    local target = {field = spec[1], tab = "Pet", entries = {}, maxHeight = spec[1] == "petLuckMoons" and 176 or 112}
+pageLabel("Pet", "PetLuckLabel", "Boost luck pet when", 151, 18)
+pageLabel("Pet", "PetPlayLabel", "Boost cards from play (not Aurora)", 203, 18)
+for _, spec in ipairs({{"petLuckMoons", "PetLuckWhen", 171, 201}, {"petPlayMoons", "PetPlayWhen", 223, 253}}) do
+    local target = {field = spec[1], tab = "Pet", entries = {}, maxHeight = spec[1] == "petLuckMoons" and 143 or 91}
     target.button = pageItem("Pet", button(spec[2], "Select Moons...", 12, spec[3], 336, 30))
     target.list = Instance.new("ScrollingFrame")
     target.list.Name = spec[2] .. "List"
@@ -370,8 +384,10 @@ for _, spec in ipairs({{"petLuckMoons", "PetLuckWhen", 136, 168}, {"petPlayMoons
     pageItem("Pet", target.list)
     table.insert(petUI.targets, target)
 end
-petUI.help = pageLabel("Pet", "PetHelp", "Pet actions need individual bonus stats. Press capture, then hover a pet for 3 seconds to show its tooltip; COPY LOG afterwards.", 242, 57)
-petUI.capture = pageItem("Pet", button("CapturePet", "CAPTURE PET UI (3s)", 12, 308, 336, 32))
+petUI.help = pageLabel("Pet", "PetHelp", "AUTO PET reads pet bonuses, then equips the best pet for the selected Moon. Luck takes priority if conditions overlap.", 257, 43)
+petUI.help.TextSize = 11
+petUI.scan = pageItem("Pet", button("ScanPet", "SCAN PET STATS", 12, 308, 164, 32))
+petUI.capture = pageItem("Pet", button("CapturePet", "CAPTURE (3s)", 184, 308, 164, 32))
 pageLabel("Status", "StatusHeading", "STATUS  /  LIVE GAME VALUES", 90, 20)
 local statusScroll = Instance.new("ScrollingFrame")
 statusScroll.Name = "StatusPage"
@@ -462,6 +478,8 @@ local alive = true
 local minimized = false
 local savedFlags, settingsSource, savedPosition, savedTab, savedPotion, savedCards = readSettings()
 if savedPotion then potionConfig = savedPotion end
+potionConfig.petCatalog = potionConfig.petCatalog or {}
+petUI.catalog = potionConfig.petCatalog
 if savedCards then cardSelection = savedCards end
 if not savedFlags and next(previousFlags) then
     savedFlags, settingsSource = previousFlags, "previous UI"
@@ -483,9 +501,9 @@ if savedPosition then
     if ok then panel.Position = UDim2.fromOffset(x, y) end
 end
 settingsPosition = {x = panel.Position.X.Offset, y = panel.Position.Y.Offset}
-local versions = {level = 0, raid = 0, dungeon = 0, expedition = 0, moon = 0, cards = 0, antiAfk = 0}
+local versions = {level = 0, raid = 0, dungeon = 0, expedition = 0, moon = 0, cards = 0, pet = 0, antiAfk = 0}
 local titles = {level = "LEVEL UP", raid = "RAID", dungeon = "DUNGEON",
-    expedition = "EXPEDITIONS", moon = "USE POTION", cards = "AUTO OPEN CARD", antiAfk = "ANTI AFK"}
+    expedition = "EXPEDITIONS", moon = "USE POTION", cards = "AUTO OPEN CARD", pet = "AUTO PET", antiAfk = "ANTI AFK"}
 local function paintToggle(key)
     gui:SetAttribute("Flag_" .. key, flags[key] == true)
     toggles[key].BackgroundColor3 = flags[key]
@@ -672,6 +690,7 @@ for key, obj in pairs(toggles) do
         flags[key] = not flags[key]
         versions[key] = versions[key] + 1
         if key == "cards" then versions.moon = versions.moon + 1 end
+        if key == "pet" then petUI.nextCheck = 0; petUI.applied = nil end
         local title = titles[key]
         obj.Text = title .. (flags[key] and ": ON" or ": OFF")
         paintToggle(key)
@@ -1356,7 +1375,7 @@ local function moonTick(version)
             return
         end
     end
-    if flags.cards and not moonCardsDone and cardUI.ready(version) then openOwnedCards(version) end
+    if flags.cards and not moonCardsDone and cardUI.ready(version, currentKey) then openOwnedCards(version) end
 end
 
 function potionUI.caption(name)
@@ -1436,7 +1455,7 @@ function potionUI.confirmSky(value)
     potionUI.confirmed = {key = key, icon = icon, untilTime = os.clock() + (potionUI.seconds(value) or 0)}
     potionUI.probeAt = os.clock() + 300
 end
-function potionUI.resolveSky(version)
+function potionUI.resolveSky(version, check)
     if modalTitle() == "MOONS" then
         local obj = child(modalPanel(), {"Content", "Inner", "Now", "Title"})
         local value = visible(obj) and statusPlain(obj) or ""
@@ -1457,7 +1476,7 @@ function potionUI.resolveSky(version)
     task.wait(0.7)
     local obj = child(modalPanel(), {"Content", "Inner", "Now", "Title"})
     local value = modalTitle() == "MOONS" and visible(obj) and statusPlain(obj) or ""
-    if not validMoon(version) or value == "" then
+    if not (check and check() or (not check and validMoon(version))) or value == "" then
         if alive and modalTitle() == "MOONS" then closeModal("moon.cancel.close") end
         nextMoon = potionUI.probeAt
         return nil
@@ -1531,13 +1550,257 @@ function petUI.luckActive()
     end
     return false
 end
+-- The PET detail binding below is grounded in the supplied R17 UI report.
+function petUI.nameOf(value)
+    return value:gsub("<[^>]*>", ""):gsub("·", "|"):match("^([^|]+)"):gsub("%s+", " "):match("^%s*(.-)%s*$"):upper()
+end
+function petUI.roleFor(key)
+    if key and potionConfig.petLuckMoons[key] then return "luck" end
+    if key and key ~= "AURORA" and potionConfig.petPlayMoons[key] then return "play" end
+end
+function petUI.pageReady()
+    return visible(child(page(), {"OnHead"}))
+        and statusPlain(child(page(), {"SlotHint"})):lower():find("pet", 1, true) ~= nil
+        and child(page(), {"Grid"}) ~= nil
+end
+function petUI.openPage(check)
+    if petUI.pageReady() then return true, false end
+    if modalOpen() then return false end
+    local root = pg:FindFirstChild("RollAStickman")
+    local function findEntry()
+        for _, obj in ipairs(root and root:GetDescendants() or {}) do
+            if ready(obj) then
+                local name = obj.Name:lower()
+                if buttonText(obj) == "PETS" or name == "pets" or name == "utilpets" then return obj end
+            end
+        end
+    end
+    local entry = findEntry()
+    if not entry then moreMenu(); entry = findEntry() end
+    if not entry or not check() then return false end
+    local back = battleTitle() ~= ""
+    if not fire("pet.auto.open", entry, nil, 3) then return false end
+    local deadline = os.clock() + 4
+    repeat
+        if not check() then return false end
+        if petUI.pageReady() then return true, back end
+        task.wait(0.2)
+    until os.clock() >= deadline
+    return false
+end
+function petUI.owned()
+    local list = {}
+    local grid = child(page(), {"Grid"})
+    for _, obj in ipairs(grid and grid:GetChildren() or {}) do
+        local name = statusPlain(child(obj, {"Name"}))
+        if obj:IsA("GuiButton") and obj.Name:match("^[%w_]+:%d+$") and name ~= "" then
+            table.insert(list, {id = obj.Name, name = petUI.nameOf(name),
+                level = statusPlain(child(obj, {"Level"})), button = obj})
+        end
+    end
+    table.sort(list, function(a, b) return a.id < b.id end)
+    return list
+end
+function petUI.detail(item)
+    if modalTitle() ~= "PET" then return nil end
+    local inner = child(modalPanel(), {"Content", "Inner"})
+    local name = child(inner, {"Name"})
+    local gives = child(inner, {"Gives"})
+    local equip = child(inner, {"Buttons", "Equip"})
+    if not visible(name) or not visible(gives) or not ready(equip) then return nil end
+    if petUI.nameOf(statusPlain(name)) ~= item.name then return nil end
+    local text = statusPlain(gives)
+    if text == "" then return nil end
+    local lower = text:lower()
+    local luck = tonumber(lower:match("%+([%d.]+)%%%s*luck"))
+    local play = tonumber(lower:match("%+([%d.]+)%%%s*rolls from play"))
+    if (lower:find("luck", 1, true) and not luck)
+        or (lower:find("rolls from play", 1, true) and not play) then return nil end
+    local caption = buttonText(equip)
+    if caption ~= "EQUIP" and caption ~= "UNEQUIP" then return nil end
+    return {name = item.name, level = item.level, luck = luck or 0, play = play or 0,
+        gives = text}, equip, caption
+end
+function petUI.openDetail(item, check)
+    if not check() then return nil end
+    local wasOn = visible(child(item.button, {"Tag"})) and textOf(child(item.button, {"Tag"})) == "ON"
+    if not fire("pet.detail." .. item.id, item.button, nil, 0.5) then return nil end
+    local deadline = os.clock() + 4
+    local previous
+    repeat
+        if not check() then return nil end
+        local record, equip, caption = petUI.detail(item)
+        if record then
+            local isOn = visible(child(item.button, {"Tag"})) and textOf(child(item.button, {"Tag"})) == "ON"
+            if isOn ~= wasOn then
+                note("Pet detail click changed equipment unexpectedly; inspection stopped")
+                return nil
+            end
+            local stamp = record.gives .. "|" .. caption
+            if previous == stamp then return record, equip, caption end
+            previous = stamp
+        end
+        task.wait(0.2)
+    until os.clock() >= deadline
+end
+function petUI.closeDetail(item, check)
+    if check() and petUI.detail(item) then
+        if fire("pet.detail.close", child(modalPanel(), {"Close"}), "X", 0.2) then
+            local deadline = os.clock() + 3
+            repeat
+                if not check() or not modalOpen() then return not modalOpen() end
+                task.wait(0.15)
+            until os.clock() >= deadline
+        end
+    end
+    return not modalOpen()
+end
+function petUI.scanCatalog(items, check, force)
+    for i, item in ipairs(items) do
+        if not check() then return false end
+        local saved = petUI.catalog[item.id]
+        if force or not saved or saved.name ~= item.name or saved.level ~= item.level then
+            if modalOpen() then return false end
+            note("Reading pet " .. i .. "/" .. #items .. ": " .. item.name)
+            local record = petUI.openDetail(item, check)
+            if not record then
+                note("Pet stats not confirmed for " .. item.name .. "; no equip sent")
+                return false
+            end
+            petUI.catalog[item.id] = record
+            settingsStorage = writeSettings(flags)
+            log("PET STAT | " .. item.id .. " | " .. record.name .. " | " .. record.gives)
+            if not petUI.closeDetail(item, check) then return false end
+        end
+    end
+    return true
+end
+function petUI.best(items, role)
+    local best, amount
+    for _, item in ipairs(items) do
+        local record = petUI.catalog[item.id]
+        if record and record.name == item.name and record.level == item.level and record[role] > 0 then
+            local on = visible(child(item.button, {"Tag"})) and textOf(child(item.button, {"Tag"})) == "ON"
+            if not best or record[role] > amount
+                or (record[role] == amount and on and not best.on) then
+                best, amount = {item = item, record = record, on = on}, record[role]
+            end
+        end
+    end
+    return best
+end
+function petUI.apply(best, role, check)
+    if modalOpen() or not check() then return false end
+    local record, equip, caption = petUI.openDetail(best.item, check)
+    if not record then return false end
+    petUI.catalog[best.item.id] = record
+    if record[role] <= 0 then petUI.closeDetail(best.item, check); return false end
+    if caption == "UNEQUIP" then
+        local stats = petUI.equippedStats()
+        local tagged = visible(child(best.item.button, {"Tag"})) and textOf(child(best.item.button, {"Tag"})) == "ON"
+        if not stats or stats.count <= 0 or not tagged
+            or (role == "luck" and stats.luck or stats.rolls) < record[role] - 0.01 then
+            note("Pet says equipped but its total bonus is not confirmed; no toggle sent")
+            petUI.closeDetail(best.item, check)
+            return false
+        end
+        log("PET READY | already equipped | " .. best.item.id .. " | " .. record.gives)
+        petUI.closeDetail(best.item, check)
+        return true
+    end
+    if not check() or buttonText(equip) ~= "EQUIP" or not petUI.detail(best.item) then return false end
+    if not fire("pet.equip." .. best.item.id, equip, "EQUIP", 5) then return false end
+    local deadline = os.clock() + 6
+    repeat
+        if not check() then return false end
+        local current, _, state = petUI.detail(best.item)
+        local tagged = visible(child(best.item.button, {"Tag"})) and textOf(child(best.item.button, {"Tag"})) == "ON"
+        if current and state == "UNEQUIP" and tagged then
+            local stats = petUI.equippedStats()
+            if stats and stats.count > 0 and (role == "luck" and stats.luck or stats.rolls) >= record[role] - 0.01 then
+                log("PET EQUIP CONFIRMED | " .. best.item.id .. " | " .. record.gives .. " | " .. stats.text)
+                petUI.closeDetail(best.item, check)
+                return true
+            end
+        end
+        task.wait(0.3)
+    until os.clock() >= deadline
+    note("Pet equip unconfirmed: " .. best.item.name .. "; COPY LOG")
+    petUI.closeDetail(best.item, check)
+    return false
+end
+function petUI.tick(version, manual)
+    local function check() return alive and versions.pet == version and (manual or flags.pet) end
+    if not check() then return end
+    petUI.nextCheck = os.clock() + 30
+    if modalOpen() then
+        note("Close the current game window to allow AUTO PET / pet scanning")
+        return
+    end
+    local key, role
+    if not manual then
+        local sky, openedHere = potionUI.resolveSky(version, check)
+        if not sky then petUI.nextCheck = math.max(os.clock() + 10, potionUI.probeAt); return end
+        key = moonIdentity(sky, true)
+        role = petUI.roleFor(key)
+        if openedHere and modalTitle() == "MOONS" then closeModal("pet.moon.close"); task.wait(0.3) end
+        if not role then return end
+        if petUI.applied and petUI.applied.role == role and os.clock() - petUI.applied.at < 300 then
+            petUI.applied.moon = key
+            return
+        end
+    end
+    local opened, back = petUI.openPage(check)
+    if not opened then note("PETS page unavailable; open PETS and retry"); return end
+    local items = petUI.owned()
+    if #items == 0 then note("No owned pet cards found"); return end
+    local scanned = petUI.scanCatalog(items, check, manual == true)
+    if not scanned or not check() then return end
+    local luckBest, playBest = petUI.best(items, "luck"), petUI.best(items, "play")
+    petUI.help.Text = "Luck: " .. (luckBest and (luckBest.item.name .. " +" .. luckBest.record.luck .. "%") or "none")
+        .. "\nPlay: " .. (playBest and (playBest.item.name .. " +" .. playBest.record.play .. "%") or "none")
+    if manual then
+        note("Pet stats scanned: " .. #items .. "; no equipment changed")
+    else
+        local sky, openedHere = potionUI.resolveSky(version, check)
+        local freshKey = sky and moonIdentity(sky, true)
+        if openedHere and modalTitle() == "MOONS" then closeModal("pet.moon.recheck.close"); task.wait(0.3) end
+        if not check() or not freshKey or petUI.roleFor(freshKey) ~= role then
+            petUI.nextCheck = 0
+            note("Pet stats saved; Moon condition changed before equip, checking again")
+            return
+        end
+        key = freshKey
+        local best = role == "luck" and luckBest or playBest
+        if not best then note("No verified pet found for " .. role)
+        elseif petUI.apply(best, role, check) then
+            petUI.applied = {role = role, id = best.item.id, moon = key, at = os.clock()}
+            note("AUTO PET ready: " .. best.item.name .. " | " .. best.record.gives)
+        end
+    end
+    if check() and back and not modalOpen() then
+        fire("pet.auto.back", get({"Frame", "Nav", "Row", "endless"}), nil, 3)
+    end
+end
+petUI.scan.Activated:Connect(function()
+    petUI.scanRequested = true
+    petUI.nextCheck = 0
+    note("Pet stats scan queued; details are read without Equip/Fuse/Buy clicks")
+end)
 function cardUI.luckActive()
     local entry = statusCache.luckPotion
     if not entry or not entry.value:upper():find("LEFT", 1, true) then return false end
     local left = potionUI.seconds(entry.value:upper():match("^(.-)LEFT") or "")
     return left and entry.at + left > os.clock() or false
 end
-function cardUI.ready(version)
+function cardUI.ready(version, currentKey)
+    local role = flags.pet and petUI.roleFor(currentKey)
+    if role and (not petUI.applied or petUI.applied.role ~= role
+        or petUI.applied.moon ~= currentKey or os.clock() - petUI.applied.at >= 300) then
+        petUI.nextCheck = 0
+        note("Open Card waiting: AUTO PET must confirm the selected pet first")
+        return false
+    end
     if cardSelection.requirePet and not petUI.luckActive() then
         petUI.inspectEquipped(version)
         if not petUI.luckActive() then
@@ -1662,6 +1925,10 @@ function potionUI.rebuild()
                     potionConfig.when = name
                     versions.moon = versions.moon + 1
                     nextMoon = 0
+                else
+                    versions.pet = versions.pet + 1
+                    petUI.nextCheck = 0
+                    petUI.applied = nil
                 end
                 paintPotionChoices()
                 settingsStorage = writeSettings(flags)
@@ -1793,7 +2060,7 @@ petUI.capture.Activated:Connect(function()
     task.delay(3, function()
     petUI.capturePending = false
     if not alive then return end
-    petUI.capture.Text = "CAPTURE PET UI (3s)"
+    petUI.capture.Text = "CAPTURE (3s)"
     petUI.report = petUI.report or {}
     petUI.captureCount = (petUI.captureCount or 0) + 1
     local function pathOf(obj)
@@ -1979,7 +2246,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R17 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R18 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -2012,11 +2279,17 @@ task.spawn(function()
                     end
                 end)
             end
-            if flags.raid and not modalOpen() and now >= nextRaid then
+            if not busy and flags.raid and not modalOpen() and now >= nextRaid then
                 raidTick()
             end
             if not busy and flags.level and not modalOpen() and now >= nextLevel then
                 run("level", levelTick)
+            end
+            if not busy and not inDungeon() and (petUI.scanRequested
+                or flags.pet and now >= petUI.nextCheck) then
+                local manual = petUI.scanRequested
+                petUI.scanRequested = false
+                run("pet", function(version) petUI.tick(version, manual) end)
             end
             if not busy and (flags.moon or flags.cards) and not inDungeon() and
                 now >= nextMoon then
