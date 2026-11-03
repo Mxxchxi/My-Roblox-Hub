@@ -1,13 +1,20 @@
 # My-Roblox-Hub
 
-## Roll A Stickman — V1.2 R9
+## Roll A Stickman — V1.2 R10
 
 PlaceId: `115068315659966`
 
 - สคริปต์หลัก: [Games/RollStickman_Combined_V1_2.lua](Games/RollStickman_Combined_V1_2.lua)
 - Loader: [Loader.lua](Loader.lua)
 - ระบบ: RAID, Dungeon ทุกประเภท, Expeditions, Level Up, Aurora Boost และ ANTI AFK
-- UI ลากได้ มีปุ่มย่อ/ขยาย และคีย์ลัด Alt
+- UI แบ่งเป็น Team / Fight / Potion / Status ลากได้ มีปุ่มย่อ/ขยาย และคีย์ลัด Alt
+- Team: Level Up; Fight: RAID / Dungeon / Expeditions; Potion: Aurora Boost และสต็อกยา
+- Status: Luck, Aura ที่ยืนยันล่าสุด, พลังทีม, เวฟ, Rolls, Auto Roll, ตั๋วดันเจี้ยน, เวลาเช็กครั้งถัดไป, การ์ด และสต็อกยา
+- ค่า Status อัปเดตประมาณทุกวินาที; ค่า UI ที่ซ่อนอยู่แสดง last seen พร้อมอายุข้อมูล
+- Aura ยืนยันจาก MOONS > Now.Title เมื่อหน้าต่างถูกอ่าน; ไม่ใช้ชื่อ Aura จากร้านค้า
+- พลังทีมอ่านเฉพาะช่อง TEAM POWER / TOTAL POWER ที่พบใน UI; ถ้าไม่พบจะระบุ Not found
+- จำแท็บที่เลือกไว้เมื่อรันใหม่
+- Diagnostics ที่รองรับแท็บและการย่อ: [Games/RollStickman_Diagnostics_V1_5.lua](Games/RollStickman_Diagnostics_V1_5.lua)
 - เมื่อ Dungeon ทั้งสองประเภทไม่มีตั๋ว จะตรวจใหม่หลัง 2 ชั่วโมง
 - จำสวิตช์และตำแหน่ง UI ผ่าน readfile/writefile เมื่อ executor รองรับ
 - ANTI AFK เปิดเป็นค่าเริ่มต้นสำหรับการติดตั้งครั้งแรก; สวิตช์อื่นเริ่ม OFF

@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R9
+-- Roll A Stickman Combined Auto V1.2 R10
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R9 starting; waiting for game to load")
+print("[RAS] R10 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -46,7 +46,11 @@ local function cleanSettings(value)
     local p = value.position
     local position = type(p) == "table" and type(p.x) == "number"
         and type(p.y) == "number" and {x = p.x, y = p.y} or nil
-    return cleaned, position
+    local tab = value.activeTab
+    if tab ~= "Team" and tab ~= "Fight" and tab ~= "Potion" and tab ~= "Status" then
+        tab = "Fight"
+    end
+    return cleaned, position, tab
 end
 local function readSettings()
     if type(readfile) == "function" then
@@ -56,21 +60,22 @@ local function readSettings()
                 return HttpService:JSONDecode(content)
             end)
             if valid then
-                local saved, position = cleanSettings(decoded)
-                if saved then return saved, "file", position end
+                local saved, position, tab = cleanSettings(decoded)
+                if saved then return saved, "file", position, tab end
             end
         end
     end
     local env = settingsEnv()
-    local saved, position
+    local saved, position, tab
     if type(env) == "table" then
-        saved, position = cleanSettings(env[SETTINGS_KEY])
+        saved, position, tab = cleanSettings(env[SETTINGS_KEY])
     end
-    return saved, saved and "session" or nil, position
+    return saved, saved and "session" or nil, position, tab
 end
 local settingsPosition
+local settingsTab = "Fight"
 local function writeSettings(current)
-    local saved = {placeId = game.PlaceId, flags = {}}
+    local saved = {placeId = game.PlaceId, flags = {}, activeTab = settingsTab}
     if settingsPosition then saved.position = settingsPosition end
     for _, key in ipairs(settingKeys) do
         saved.flags[key] = current[key] == true
@@ -135,11 +140,17 @@ local gui = Instance.new("ScreenGui")
 gui.Name = NAME
 gui.ResetOnSpawn = false
 gui.DisplayOrder = 240
+local PANEL_HEIGHT = 600
+local theme = {
+    base = Color3.fromRGB(18, 22, 32), card = Color3.fromRGB(28, 34, 48),
+    muted = Color3.fromRGB(154, 169, 194), text = Color3.fromRGB(234, 241, 252),
+    accent = Color3.fromRGB(46, 188, 163), off = Color3.fromRGB(43, 51, 70),
+}
 local panel = Instance.new("Frame")
 panel.Name = "Panel"
-panel.Size = UDim2.fromOffset(360, 526)
+panel.Size = UDim2.fromOffset(360, PANEL_HEIGHT)
 panel.Position = UDim2.fromOffset(12, 160)
-panel.BackgroundColor3 = Color3.fromRGB(25, 28, 36)
+panel.BackgroundColor3 = theme.base
 panel.BorderSizePixel = 0
 panel.Active = true
 panel.Parent = gui
@@ -147,24 +158,25 @@ local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 10)
 corner.Parent = panel
 local outline = Instance.new("UIStroke")
-outline.Color = Color3.fromRGB(77, 85, 112)
+outline.Color = Color3.fromRGB(61, 76, 101)
 outline.Thickness = 1
 outline.Parent = panel
 local header = Instance.new("Frame")
 header.Name = "Header"
 header.Size = UDim2.new(1, 0, 0, 42)
-header.BackgroundColor3 = Color3.fromRGB(43, 48, 67)
+header.BackgroundColor3 = theme.card
 header.BorderSizePixel = 0
 header.Parent = panel
 local function label(name, value, y, height)
     local obj = Instance.new("TextLabel")
     obj.Name = name
-    obj.Position = UDim2.fromOffset(10, y)
-    obj.Size = UDim2.new(1, -20, 0, height)
+    obj.Position = UDim2.fromOffset(12, y)
+    obj.Size = UDim2.new(1, -24, 0, height)
     obj.BackgroundTransparency = 1
-    obj.TextColor3 = Color3.new(1, 1, 1)
+    obj.TextColor3 = theme.text
     obj.TextXAlignment = Enum.TextXAlignment.Left
-    obj.TextSize = 14
+    obj.TextSize = 13
+    obj.Font = Enum.Font.Gotham
     obj.Text = value
     obj.Parent = panel
     return obj
@@ -175,46 +187,128 @@ local function button(name, value, x, y, w, h)
     obj.Position = UDim2.fromOffset(x, y)
     obj.Size = UDim2.fromOffset(w, h)
     obj.Text = value
-    obj.TextSize = 14
+    obj.TextSize = 12
+    obj.Font = Enum.Font.GothamMedium
+    obj.TextColor3 = theme.text
     obj.BorderSizePixel = 0
-    obj.BackgroundColor3 = Color3.fromRGB(59, 66, 84)
+    obj.BackgroundColor3 = theme.off
     local round = Instance.new("UICorner")
     round.CornerRadius = UDim.new(0, 7)
     round.Parent = obj
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R9  ·  ALT", 8, 27)
+local title = label("Title", "ROLL A STICKMAN  |  R10  ·  ALT", 8, 27)
 title.Size = UDim2.fromOffset(258, 27)
 title.TextSize = 12
 title.Active = true
-title.TextColor3 = Color3.fromRGB(239, 235, 255)
 local minimizeUI = button("Minimize", "-", 278, 7, 32, 28)
 local closeUI = button("Close", "X", 316, 7, 34, 28)
+local tabPages = {Team = {}, Fight = {}, Potion = {}, Status = {}}
+local tabButtons = {}
+local activeTab = "Fight"
+local function pageItem(tab, obj)
+    table.insert(tabPages[tab], obj)
+    return obj
+end
+local function pageLabel(tab, name, value, y, height)
+    local obj = pageItem(tab, label(name, value, y, height))
+    obj.TextWrapped = true
+    obj.TextColor3 = theme.muted
+    return obj
+end
+for i, tab in ipairs({"Team", "Fight", "Potion", "Status"}) do
+    tabButtons[tab] = button("Tab" .. tab, tab:upper(), 10 + (i - 1) * 87, 53, 79, 30)
+end
 local toggles = {
-    level = button("LevelToggle", "LEVEL UP: OFF", 10, 53, 340, 34),
-    raid = button("RaidToggle", "RAID: OFF", 10, 93, 340, 34),
-    dungeon = button("DungeonToggle", "DUNGEON: OFF", 10, 133, 340, 34),
-    expedition = button("ExpeditionToggle", "EXPEDITIONS: OFF", 10, 173, 340, 34),
-    moon = button("MoonToggle", "AURORA BOOST: OFF", 10, 213, 340, 34),
-    antiAfk = button("AntiAfkToggle", "ANTI AFK: ON", 10, 253, 340, 34),
+    level = pageItem("Team", button("LevelToggle", "LEVEL UP: OFF", 12, 116, 336, 36)),
+    raid = pageItem("Fight", button("RaidToggle", "RAID: OFF", 12, 116, 336, 36)),
+    dungeon = pageItem("Fight", button("DungeonToggle", "DUNGEON: OFF", 12, 158, 336, 36)),
+    expedition = pageItem("Fight", button("ExpeditionToggle", "EXPEDITIONS: OFF", 12, 200, 336, 36)),
+    moon = pageItem("Potion", button("MoonToggle", "AURORA BOOST: OFF", 12, 116, 336, 36)),
+    antiAfk = pageItem("Status", button("AntiAfkToggle", "ANTI AFK: ON", 12, 116, 336, 36)),
 }
-label("DungeonMode", "DUNGEON  ·  ALL TYPES  ·  CHECK EVERY 2H", 294, 24)
-local statusHeader = label("StatusHeader", "STATUS", 325, 18)
-statusHeader.TextColor3 = Color3.fromRGB(160, 171, 211)
-local status = label("Status", "Starting...", 346, 30)
+pageLabel("Team", "TeamHeading", "TEAM  /  UPGRADES", 90, 20)
+pageLabel("Team", "TeamHint", "LEVEL UP uses LEVEL UP ALL when that game button is visible. Open the team upgrade page to use it.", 165, 70)
+pageLabel("Fight", "FightHeading", "FIGHT  /  AUTOMATION", 90, 20)
+pageLabel("Fight", "DungeonMode", "DUNGEON · ALL TYPES\nNo tickets: check again after 2 hours.", 245, 42)
+local dungeonSchedule = pageLabel("Fight", "DungeonSchedule", "Dungeon check: ready", 300, 38)
+pageLabel("Potion", "PotionHeading", "POTION  /  AURORA BOOST", 90, 20)
+pageLabel("Potion", "PotionHint", "Aurora: use Luck / Haste / Gilded, then open owned cards. Stock is read when POTIONS is visible.", 158, 46)
+local potionLabels = {}
+for i, id in ipairs({"luck", "haste", "gild"}) do
+    potionLabels[id] = pageLabel("Potion", "PotionStock" .. id,
+        id:upper() .. ": not observed", 210 + (i - 1) * 44, 40)
+end
+pageLabel("Status", "StatusHeading", "STATUS  /  LIVE GAME VALUES", 90, 20)
+local statusScroll = Instance.new("ScrollingFrame")
+statusScroll.Name = "StatusPage"
+statusScroll.Position = UDim2.fromOffset(12, 160)
+statusScroll.Size = UDim2.fromOffset(336, 186)
+statusScroll.BackgroundTransparency = 1
+statusScroll.BorderSizePixel = 0
+statusScroll.ScrollBarThickness = 4
+statusScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+statusScroll.CanvasSize = UDim2.new()
+statusScroll.Parent = panel
+pageItem("Status", statusScroll)
+local statusLayout = Instance.new("UIListLayout")
+statusLayout.Padding = UDim.new(0, 6)
+statusLayout.SortOrder = Enum.SortOrder.LayoutOrder
+statusLayout.Parent = statusScroll
+local statusRows = {}
+local function statusRow(key, caption)
+    local row = Instance.new("TextLabel")
+    row.Name = key
+    row.LayoutOrder = #statusRows + 1
+    row.Size = UDim2.new(1, -8, 0, 56)
+    row.BackgroundColor3 = theme.card
+    row.BorderSizePixel = 0
+    row.Font = Enum.Font.Gotham
+    row.TextSize = 12
+    row.TextColor3 = theme.text
+    row.TextWrapped = true
+    row.TextXAlignment = Enum.TextXAlignment.Left
+    row.Text = caption .. "\nNot observed"
+    row.Parent = statusScroll
+    local padding = Instance.new("UIPadding")
+    padding.PaddingLeft = UDim.new(0, 10)
+    padding.PaddingRight = UDim.new(0, 8)
+    padding.Parent = row
+    local round = Instance.new("UICorner")
+    round.CornerRadius = UDim.new(0, 7)
+    round.Parent = row
+    statusRows[key] = {obj = row, caption = caption}
+    table.insert(statusRows, key)
+end
+for _, spec in ipairs({
+    {"luck", "LUCK · HUD"}, {"battleLuck", "LUCK · BATTLE"},
+    {"aura", "AURA · LAST CONFIRMED"}, {"moonTimer", "SKY COUNTDOWN"},
+    {"power", "TEAM POWER"}, {"battle", "BATTLE / STAGE"},
+    {"rolls", "TOTAL ROLLS"}, {"autoRoll", "AUTO ROLL"},
+    {"dungeon", "DUNGEON / TICKETS"}, {"nextDungeon", "NEXT DUNGEON CHECK"},
+    {"expedition", "EXPEDITIONS READY"}, {"cards", "REWARD CARDS"},
+    {"luckPotion", "LUCK POTION"}, {"hastePotion", "HASTE POTION"},
+    {"gildPotion", "GILDED POTION"}, {"runtime", "SESSION / SCHEDULER"},
+    {"switches", "ENABLED SYSTEMS"}, {"storage", "SETTINGS STORAGE"},
+}) do statusRow(spec[1], spec[2]) end
+local statusHeader = label("StatusHeader", "ACTIVITY", 360, 18)
+statusHeader.TextColor3 = theme.accent
+local status = label("Status", "Starting...", 381, 40)
 status.TextSize = 12
 status.TextWrapped = true
-local stopButton = button("StopAll", "STOP ALL", 10, 385, 160, 32)
-stopButton.BackgroundColor3 = Color3.fromRGB(142, 63, 72)
-local copyButton = button("CopyLog", "COPY LOG", 180, 385, 170, 32)
-local logHeader = label("LogHeader", "ACTIVITY LOG", 424, 17)
-logHeader.TextColor3 = Color3.fromRGB(160, 171, 211)
+local stopButton = button("StopAll", "STOP ALL", 12, 428, 160, 32)
+stopButton.BackgroundColor3 = Color3.fromRGB(139, 56, 72)
+local copyButton = button("CopyLog", "COPY LOG", 180, 428, 168, 32)
+local logHeader = label("LogHeader", "ACTIVITY LOG", 470, 17)
+logHeader.TextColor3 = theme.muted
 local scroll = Instance.new("ScrollingFrame")
-scroll.Position = UDim2.fromOffset(10, 445)
-scroll.Size = UDim2.new(1, -20, 0, 71)
-scroll.BackgroundColor3 = Color3.fromRGB(18, 20, 26)
-scroll.ScrollBarThickness = 6
+scroll.Name = "ActivityLog"
+scroll.Position = UDim2.fromOffset(12, 494)
+scroll.Size = UDim2.new(1, -24, 0, 94)
+scroll.BackgroundColor3 = Color3.fromRGB(13, 16, 24)
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 4
 scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 scroll.CanvasSize = UDim2.new()
 scroll.Parent = panel
@@ -222,9 +316,9 @@ local logBox = Instance.new("TextBox")
 logBox.Size = UDim2.new(1, -10, 0, 0)
 logBox.AutomaticSize = Enum.AutomaticSize.Y
 logBox.BackgroundTransparency = 1
-logBox.TextColor3 = Color3.new(1, 1, 1)
+logBox.TextColor3 = theme.muted
 logBox.Font = Enum.Font.Code
-logBox.TextSize = 12
+logBox.TextSize = 11
 logBox.TextWrapped = true
 logBox.MultiLine = true
 logBox.ClearTextOnFocus = false
@@ -232,10 +326,9 @@ logBox.TextXAlignment = Enum.TextXAlignment.Left
 logBox.TextYAlignment = Enum.TextYAlignment.Top
 logBox.Parent = scroll
 gui.Parent = pg
-
 local alive = true
 local minimized = false
-local savedFlags, settingsSource, savedPosition = readSettings()
+local savedFlags, settingsSource, savedPosition, savedTab = readSettings()
 if not savedFlags and next(previousFlags) then
     savedFlags, settingsSource = previousFlags, "previous UI"
 end
@@ -259,8 +352,9 @@ local versions = {level = 0, raid = 0, dungeon = 0, expedition = 0, moon = 0, an
 local titles = {level = "LEVEL UP", raid = "RAID", dungeon = "DUNGEON",
     expedition = "EXPEDITIONS", moon = "AURORA BOOST", antiAfk = "ANTI AFK"}
 local function paintToggle(key)
+    gui:SetAttribute("Flag_" .. key, flags[key] == true)
     toggles[key].BackgroundColor3 = flags[key]
-        and Color3.fromRGB(48, 119, 91) or Color3.fromRGB(59, 66, 84)
+        and Color3.fromRGB(31, 114, 102) or theme.off
     toggles[key].TextColor3 = Color3.fromRGB(255, 255, 255)
 end
 for key, obj in pairs(toggles) do
@@ -309,6 +403,21 @@ local function note(value)
         log(value)
     end
 end
+local function setTab(name)
+    if not alive or minimized or not tabPages[name] then return end
+    activeTab, settingsTab = name, name
+    for tab, objects in pairs(tabPages) do
+        for _, obj in ipairs(objects) do obj.Visible = tab == name end
+        tabButtons[tab].BackgroundColor3 = tab == name and theme.accent or theme.off
+        tabButtons[tab].TextColor3 = tab == name and theme.base or theme.text
+    end
+    settingsStorage = writeSettings(flags)
+    gui:SetAttribute("ActiveTab", name)
+end
+for name, tabButton in pairs(tabButtons) do
+    tabButton.Activated:Connect(function() setTab(name) end)
+end
+setTab(savedTab or "Fight")
 -- Only fold this panel. The scheduler and enabled switches keep running.
 local foldedVisibility = {}
 local function toggleMinimized()
@@ -325,7 +434,7 @@ local function toggleMinimized()
             end
         end
     end
-    panel.Size = UDim2.fromOffset(360, minimized and 42 or 526)
+    panel.Size = UDim2.fromOffset(360, minimized and 42 or PANEL_HEIGHT)
     minimizeUI.Text = minimized and "+" or "-"
     gui:SetAttribute("Minimized", minimized)
     local x, y = clampPosition(panel.Position.X.Offset, panel.Position.Y.Offset)
@@ -509,6 +618,27 @@ local function modalTitle()
     return visible(obj) and textOf(obj) or ""
 end
 local function modalOpen() return visible(modalPanel()) end
+-- Status reads game UI only. Hidden values are explicitly shown as last seen.
+local statusCache = {}
+local function statusPlain(obj)
+    if not obj or not (obj:IsA("TextLabel") or obj:IsA("TextButton")) then return "" end
+    return obj.Text:gsub("<[^>]*>", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
+end
+local function rememberStatus(key, value)
+    if value and value ~= "" then
+        statusCache[key] = {value = value, at = os.clock()}
+    end
+end
+local function cachedStatus(key)
+    local entry = statusCache[key]
+    if not entry then return "Not observed" end
+    return entry.value .. " | last seen " .. math.floor(os.clock() - entry.at) .. "s ago"
+end
+local function sampleStatus(key, obj)
+    local value = visible(obj) and statusPlain(obj) or ""
+    if value ~= "" then rememberStatus(key, value); return value end
+    return cachedStatus(key)
+end
 local function dungeonTypeOnPage()
     local title = child(page(), {"Hero", "Plate", "Title"})
     if not visible(title) then return nil end
@@ -849,7 +979,9 @@ end
 local function potionStatus(id)
     local row = child(modalPanel(), {"Content", "Inner", id})
     local obj = child(row, {"Status"})
-    return visible(obj) and textOf(obj) or ""
+    local value = visible(obj) and textOf(obj) or ""
+    if value ~= "" then rememberStatus(id .. "Potion", value) end
+    return value
 end
 local function usePotion(id)
     if moonUsed[id] then return true end
@@ -915,6 +1047,7 @@ end
 local function cardCount()
     local obj = child(modalPanel(), {"Content", "Inner", "Loose", "Row", "Label"})
     if not visible(obj) then return nil end
+    rememberStatus("cards", statusPlain(obj))
     local digits = textOf(obj):match("^REWARD CARDS%s+([%d,]+)")
     return numeric(digits)
 end
@@ -1028,6 +1161,7 @@ local function moonTick(version)
         end
         return
     end
+    rememberStatus("aura", statusPlain(nowTitle))
     local aurora = sky:match("^AURORA MOON") ~= nil
     if not aurora then
         if moonWasAurora then log("Aurora ended: " .. sky) end
@@ -1072,6 +1206,90 @@ local function moonTick(version)
     openOwnedCards(version)
 end
 
+local statusNextPowerScan = 0
+local function scanTeamPower()
+    -- Accept an explicit team/total-power field, never a random card's POWER.
+    for _, root in pairs({get({"Frame", "Hud"}), get({"Frame", "Battle", "Party"}), page()}) do
+        if root and visible(root) then
+            for _, obj in ipairs(root:GetDescendants()) do
+                if visible(obj) then
+                    local name = obj.Name:lower():gsub("[%s_]", "")
+                    local value = statusPlain(obj)
+                    local upper = value:upper()
+                    if name == "teampower" or name == "totalpower"
+                        or upper:match("^TEAM POWER") or upper:match("^TOTAL POWER") then
+                        if value:find("%d") then return value end
+                        for _, part in ipairs({"Value", "Amount"}) do
+                            local number = child(obj, {part}) or child(obj.Parent, {part})
+                            local found = visible(number) and statusPlain(number) or ""
+                            if found:find("%d") then return found end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+local function refreshStatus(now)
+    local function put(key, value)
+        local row = statusRows[key]
+        if row then row.obj.Text = row.caption .. "\n" .. tostring(value) end
+    end
+    put("luck", sampleStatus("luck", get({"Frame", "Hud", "Luck", "Pill", "Value"})))
+    put("battleLuck", sampleStatus("battleLuck", get({"Frame", "Battle", "Dock", "LuckTab", "Pill", "Value"})))
+    put("rolls", sampleStatus("rolls", get({"Frame", "Hud", "Rolls", "Pill", "Value"})))
+    put("autoRoll", sampleStatus("autoRoll", get({"Frame", "Battle", "Dock", "RollBreath", "Roll", "Face", "Sub"})))
+    put("battle", sampleStatus("battle", get({"Frame", "Battle", "Stage", "Ribbon", "Title"})))
+    put("moonTimer", sampleStatus("moonTimer", get({"Frame", "Buffs", "Moon", "Pill", "Value"})))
+    if modalTitle() == "MOONS" then
+        local sky = child(modalPanel(), {"Content", "Inner", "Now", "Title"})
+        if visible(sky) then rememberStatus("aura", statusPlain(sky)) end
+    end
+    put("aura", statusCache.aura and cachedStatus("aura") or "Open MOONS to confirm the active sky")
+    if activeTab == "Status" and not minimized and now >= statusNextPowerScan then
+        statusNextPowerScan = now + 3
+        rememberStatus("power", scanTeamPower())
+    end
+    put("power", statusCache.power and cachedStatus("power") or "Not found in UI · open the team page")
+    local screen = page()
+    local dungeonTitle = child(screen, {"Hero", "Plate", "Title"})
+    local tickets = child(screen, {"Hero", "Tickets", "R1", "Amount"})
+    if visible(dungeonTitle) and visible(tickets) then
+        rememberStatus("dungeon", statusPlain(dungeonTitle) .. " · " .. statusPlain(tickets))
+    end
+    put("dungeon", inDungeon() and "Dungeon battle in progress" or cachedStatus("dungeon"))
+    local remaining = math.max(0, math.ceil(nextDungeon - now))
+    local schedule = not flags.dungeon and "OFF" or dungeonStarted and "Dungeon running"
+        or remaining == 0 and "Ready" or string.format("%02dh %02dm %02ds",
+        math.floor(remaining / 3600), math.floor(remaining / 60) % 60, remaining % 60)
+    put("nextDungeon", schedule)
+    dungeonSchedule.Text = "Next dungeon check: " .. schedule
+    put("expedition", tostring(expeditionBadgeCount()) .. " (notification badge)")
+    if modalTitle() == "CARD PACKS" then
+        local cards = child(modalPanel(), {"Content", "Inner", "Loose", "Row", "Label"})
+        if visible(cards) then rememberStatus("cards", statusPlain(cards)) end
+    end
+    put("cards", cachedStatus("cards"))
+    for _, id in ipairs({"luck", "haste", "gild"}) do
+        local value
+        if modalTitle() == "POTIONS" then
+            value = sampleStatus(id .. "Potion", child(modalPanel(), {"Content", "Inner", id, "Status"}))
+        else
+            value = cachedStatus(id .. "Potion")
+        end
+        put(id .. "Potion", value)
+        potionLabels[id].Text = potionNames[id]:upper() .. "\n" .. value
+    end
+    put("runtime", string.format("%dm %02ds · %s", math.floor((now - startedAt) / 60),
+        math.floor(now - startedAt) % 60, busy and "Working" or "Waiting"))
+    local enabled = {}
+    for _, key in ipairs(settingKeys) do
+        if flags[key] then table.insert(enabled, titles[key]) end
+    end
+    put("switches", #enabled > 0 and table.concat(enabled, " · ") or "All OFF")
+    put("storage", settingsStorage == "file" and "File · restores across restarts" or "Session only")
+end
+
 local enabledNames = {}
 for _, key in ipairs(settingKeys) do
     if flags[key] then table.insert(enabledNames, titles[key]) end
@@ -1081,7 +1299,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R9 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R10 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -1095,6 +1313,11 @@ task.spawn(function()
     while alive do
         local ok, err = pcall(function()
             local now = os.clock()
+            local statusOk, statusError = pcall(refreshStatus, now)
+            if not statusOk and not statusCache.errorLogged then
+                statusCache.errorLogged = true
+                log("Status display error: " .. tostring(statusError))
+            end
             observeDungeon(now)
             local blockingDungeonResult = recoverDungeonModal(now)
             if flags.raid and not modalOpen() and now >= nextRaid then
