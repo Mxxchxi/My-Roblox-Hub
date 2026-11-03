@@ -1,6 +1,6 @@
 # My-Roblox-Hub
 
-## Roll A Stickman — V1.2 R17
+## Roll A Stickman — V1.2 R18
 
 PlaceId: `115068315659966`
 
@@ -44,17 +44,20 @@ PlaceId: `115068315659966`
 - จำสวิตช์และตำแหน่ง UI ผ่าน readfile/writefile เมื่อ executor รองรับ
 - ANTI AFK เปิดเป็นค่าเริ่มต้นสำหรับการติดตั้งครั้งแรก; สวิตช์อื่นเริ่ม OFF
 
-## Pet — ต้องมีข้อมูล UI เพื่อผูกคำสั่งจริง
+## Pet — AUTO PET
 
-- เพิ่มแท็บ Pet และ multi-select สองชุด: Boost luck pet when และ Boost card from play (if not Aurora)
-- ชุดที่สองไม่ให้เลือก Aurora
-- ขณะนี้บันทึกเงื่อนไข Pet ได้ แต่ **ยังไม่กดบูสต์ Pet อัตโนมัติ** เพราะยังไม่มีปุ่ม/สถานะจากหน้า Pet จริง
-- เปิด PETS ในเกม กด Pet > CAPTURE PET UI (3s) แล้วเลื่อนเมาส์ไปวางบน Pet ให้เห็น tooltip หรือเปิดหน้ารายละเอียด Pet
-- เก็บซ้ำกับ Pet ตัวอื่นได้ ก่อนกด COPY LOG ครั้งเดียว; รายงานรวมทุก capture แยกจาก log ที่จำกัดจำนวนบรรทัด
-- รายงานข้าม Eggs/หน้าซื้อไข่ ย่อ Grid เป็นรายการ Pet และเก็บหน้ารายละเอียด, tooltip, attributes และพาธปุ่มเต็ม
-- ถ้า executor รองรับ writefile จะบันทึก RollStickman_PetUI_Report.txt ให้ด้วย
-- ยังต้องมีค่าสเตตัส Luck/rolls-from-play และปุ่มรายตัวเพื่อผูกการเลือก Pet อัตโนมัติให้ถูกต้อง
-- ถ้า Require active Pet Luck เปิดอยู่และยังยืนยันบัฟไม่ได้ Open Card จะรอ
+- เปิด Pet > AUTO PET เพื่อเลือก Pet ตาม Moon ที่เลือกใน multi-select สองชุด
+- Boost luck pet when เลือก Pet ที่มีโบนัส luck สูงสุด; Boost cards from play เลือกโบนัส rolls from play สูงสุด และไม่ใช้กับ Aurora
+- ถ้าเลือก Moon ซ้ำกันทั้งสองชุด ระบบให้เงื่อนไข Luck มาก่อน
+- ครั้งแรกอ่านค่า Gives จากรายละเอียดของ Pet ที่มีทั้งหมด โดยตรวจชื่อและระดับของการ์ดให้ตรงกันก่อนบันทึก; ไม่เดาค่าจากความหายาก
+- จำค่าสเตตัสที่อ่านได้เมื่อรันใหม่ และอ่านใหม่เมื่อชื่อ/ระดับเปลี่ยน; SCAN PET STATS อ่านใหม่ทุกตัวโดยไม่เปลี่ยนอุปกรณ์
+- ตรวจ EQUIP/UNEQUIP ก่อนทำงาน; หากสวมอยู่แล้วจะไม่กด UNEQUIP รวมถึง Pet ใน Den
+- ยืนยันผล EQUIP จากปุ่มที่เปลี่ยนเป็น UNEQUIP, ป้าย ON และโบนัสรวมใน OnHead ก่อนรายงานว่าสำเร็จ
+- หากเกมไม่ยอมสวม หรือข้อมูลไม่ตรง จะบันทึกว่าไม่ยืนยันและให้ Open Card รอ; ไม่ถอด Pet เดิมโดยคาดเดา
+- เมื่อ AUTO PET เปิด Open Card จะรอการยืนยัน Pet ตามเงื่อนไขก่อนเปิดการ์ด แล้วตรวจ Luck Potion / Pet Luck ตาม checkbox ที่ตั้งไว้
+- AUTO PET เริ่ม OFF สำหรับผู้ที่ยังไม่เคยตั้งค่า; จำสวิตช์และตัวเลือกเมื่อรันใหม่
+- Pet ใช้ตัวตรวจ Moon ร่วมกับ Potion / Open Card; Diagnostics R7 จะไม่เปิด MOONS แทรกเมื่อระบบใดระบบหนึ่งเปิดอยู่
+- ปุ่ม CAPTURE (3s) ยังใช้เก็บรายละเอียด Pet สำหรับแก้ปัญหาได้; COPY LOG รวมทุก capture และบันทึก RollStickman_PetUI_Report.txt เมื่อ writefile รองรับ
 
 ## การใช้งาน
 
