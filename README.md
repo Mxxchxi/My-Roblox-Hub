@@ -1,23 +1,29 @@
 # My-Roblox-Hub
 
-## Roll A Stickman — V1.2 R14
+## Roll A Stickman — V1.2 R15
 
 PlaceId: `115068315659966`
 
 - สคริปต์หลัก: [Games/RollStickman_Combined_V1_2.lua](Games/RollStickman_Combined_V1_2.lua)
 - Loader: [Loader.lua](Loader.lua)
 - ระบบ: RAID, Dungeon ทุกประเภท, Expeditions, Level Up, Use Potion When และ ANTI AFK
-- UI แบ่งเป็น Team / Fight / Potion / Status ลากได้ มีปุ่มย่อ/ขยาย และคีย์ลัด Alt
+- UI แบ่งเป็น Team / Fight / Potion / Open Card / Status ลากได้ มีปุ่มย่อ/ขยาย และคีย์ลัด Alt
 - Team: Level Up; Fight: RAID / Dungeon / Expeditions; Potion: Use Potion When และสต็อกยา
 - Potion: เปิด USE POTION เลือกชนิด Moon/Aura จาก dropdown แล้วติ๊ก Luck Potion / Haste Potion / Gilded Potion ตามที่ต้องการ
-- ชื่อที่ยืนยันจากภาพเกมมีพร้อมใช้: Normal, Silver, Harvest, Blue, Eclipse, Starfall, Aurora โดยเรียง Aurora ไว้ท้ายรายการ
+- ชื่อที่ยืนยันจากภาพเกมมีพร้อมใช้: Normal, Silver, Harvest, Blue, Eclipse, Starfall, Aurora
+- แสดงตัวคูณหลังชื่อ เช่น Silver (x1.5), Aurora (x12) และเรียงค่าที่ทราบจากน้อยไปมาก
+- ตัวคูณที่ยังอ่านไม่ได้แสดง x? อยู่ท้ายรายการ; กด SYNC เพื่ออ่านค่า Luck ของ Moon จากเกมและบันทึกไว้
 - Dropdown แสดงครบ 7 รายการพร้อมกัน; หากมีชื่อเพิ่มจะเลื่อนได้ และเลื่อนไปยังตัวเลือกปัจจุบันเมื่อเปิด
 - กด SYNC ในหน้า Potion เพื่ออ่านหน้า MOONS เพิ่มเติมและจำรายชื่อที่เคยอ่านได้ไว้
 - รายการ dropdown เลื่อนได้ การอ่านชื่อจากร้านใช้เพื่อสร้างรายการตัวเลือกเท่านั้น; การเริ่มใช้ยายืนยันจาก MOONS > Now.Title ที่กำลังแสดง และต้องตรงชนิดที่เลือก
 - รองรับชื่อ Aura ปัจจุบันที่ไม่ลงท้ายด้วย Moon และหัวข้อชื่อสั้นในรายการที่มีค่า Luck แยกอีกช่อง
 - SYNC บันทึก MOON DATA และข้อความ UI จากหน้า MOONS ลง COPY LOG เพื่อระบุชื่อที่ยังขาด
 - หากรายชื่อยังขาด ให้เปิด MOONS แล้วกด SYNC จากนั้นส่ง COPY LOG เพื่อยืนยันชื่อและตำแหน่ง UI จริง
-- ใช้เฉพาะยาที่ติ๊กไว้และยังไม่ active; การเปิดการ์ดที่มีอยู่จะทำต่อหลังขั้นตอนยาตามเดิม
+- ใช้เฉพาะยาที่ติ๊กไว้และยังไม่ active
+- แท็บ Open Card มี AUTO OPEN CARD และ checkbox แยก Reward Cards / Pouch / Crate / Chest
+- Open Card ใช้ Moon เงื่อนไขเดียวกับ Use Potion When แต่เปิด/ปิดแยกจาก USE POTION ได้
+- เมื่อเปิดทั้งสองระบบ จะใช้ยาที่เลือกก่อนเปิดการ์ด; เปิดเฉพาะรายการที่มีอยู่และไม่กด GET MORE
+- ตั้งค่าจากรุ่นเก่าที่ยังเปิด USE POTION อยู่จะคืนค่า AUTO OPEN CARD เป็น ON เพื่อรักษาพฤติกรรมเดิม; การติดตั้งใหม่เริ่ม OFF
 - จำเงื่อนไขและ checkbox ของยาเมื่อรันใหม่; ค่าเดิมที่ยังไม่เคยเลือกจะเริ่มด้วยยาทั้ง 3 ชนิด
 - ถ้าเลือก Starfall ไว้ จะไม่ใช้ยาระหว่าง Aurora; เปลี่ยน dropdown เป็น Aurora เมื่อต้องการเงื่อนไขนั้น
 - Status: Luck, Aura ที่ยืนยันล่าสุด, พลังทีม, เวฟ, Rolls, Auto Roll, ตั๋วดันเจี้ยน, เวลาเช็กครั้งถัดไป, การ์ด และสต็อกยา
