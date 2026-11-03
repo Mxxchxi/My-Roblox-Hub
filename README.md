@@ -1,15 +1,19 @@
 # My-Roblox-Hub
 
-## Roll A Stickman — V1.2 R15
+## Roll A Stickman — V1.2 R16
 
 PlaceId: `115068315659966`
 
 - สคริปต์หลัก: [Games/RollStickman_Combined_V1_2.lua](Games/RollStickman_Combined_V1_2.lua)
 - Loader: [Loader.lua](Loader.lua)
 - ระบบ: RAID, Dungeon ทุกประเภท, Expeditions, Level Up, Use Potion When และ ANTI AFK
-- UI แบ่งเป็น Team / Fight / Potion / Open Card / Status ลากได้ มีปุ่มย่อ/ขยาย และคีย์ลัด Alt
+- UI แบ่งเป็น Team / Fight / Potion / Pet / Open Card / Status ลากได้ มีปุ่มย่อ/ขยาย และคีย์ลัด Alt
 - Team: Level Up; Fight: RAID / Dungeon / Expeditions; Potion: Use Potion When และสต็อกยา
-- Potion: เปิด USE POTION เลือกชนิด Moon/Aura จาก dropdown แล้วติ๊ก Luck Potion / Haste Potion / Gilded Potion ตามที่ต้องการ
+- Potion: เปิด USE POTION แล้วเลือก Moon ได้หลายตัวจาก dropdown แบบ checkbox พร้อมเลือก Luck / Haste / Gilded Potion
+- Normal ยืนยันเป็น x1; ตัวคูณที่ทราบเรียงจากน้อยไปมาก
+- ตรวจ Moon จากไอคอน HUD ที่เคยยืนยันกับ MOONS แล้ว เมื่อไอคอนยังไม่รู้จักจะเปิดตรวจอัตโนมัติไม่ถี่กว่า 300 วินาที
+- ไอคอนที่พบว่าใช้ร่วมกันหลาย Moon จะไม่ใช้ระบุชนิด; ใช้การตรวจหน้า MOONS ทุก 5 นาทีแทน
+- ปุ่ม SYNC เป็นการตรวจตามคำสั่งผู้ใช้ จึงกดได้ทันที
 - ชื่อที่ยืนยันจากภาพเกมมีพร้อมใช้: Normal, Silver, Harvest, Blue, Eclipse, Starfall, Aurora
 - แสดงตัวคูณหลังชื่อ เช่น Silver (x1.5), Aurora (x12) และเรียงค่าที่ทราบจากน้อยไปมาก
 - ตัวคูณที่ยังอ่านไม่ได้แสดง x? อยู่ท้ายรายการ; กด SYNC เพื่ออ่านค่า Luck ของ Moon จากเกมและบันทึกไว้
@@ -21,7 +25,9 @@ PlaceId: `115068315659966`
 - หากรายชื่อยังขาด ให้เปิด MOONS แล้วกด SYNC จากนั้นส่ง COPY LOG เพื่อยืนยันชื่อและตำแหน่ง UI จริง
 - ใช้เฉพาะยาที่ติ๊กไว้และยังไม่ active
 - แท็บ Open Card มี AUTO OPEN CARD และ checkbox แยก Reward Cards / Pouch / Crate / Chest
-- Open Card ใช้ Moon เงื่อนไขเดียวกับ Use Potion When แต่เปิด/ปิดแยกจาก USE POTION ได้
+- Open Card ใช้ชุด Moon เดียวกับ Use Potion When แต่เปิด/ปิดแยกจาก USE POTION ได้
+- เพิ่ม Require active Luck Potion และ Require active Pet Luck เปิดเป็นค่าเริ่มต้น; ถ้ายังยืนยันบัฟไม่ได้ ระบบจะรอและไม่เปิดการ์ด
+- Luck Potion ใช้เวลาคงเหลือที่อ่านจาก POTIONS; Pet Luck อ่านเฉพาะตัวแสดงบัฟที่กำลังแสดงและมีเวลา/ACTIVE ชัดเจน
 - เมื่อเปิดทั้งสองระบบ จะใช้ยาที่เลือกก่อนเปิดการ์ด; เปิดเฉพาะรายการที่มีอยู่และไม่กด GET MORE
 - ตั้งค่าจากรุ่นเก่าที่ยังเปิด USE POTION อยู่จะคืนค่า AUTO OPEN CARD เป็น ON เพื่อรักษาพฤติกรรมเดิม; การติดตั้งใหม่เริ่ม OFF
 - จำเงื่อนไขและ checkbox ของยาเมื่อรันใหม่; ค่าเดิมที่ยังไม่เคยเลือกจะเริ่มด้วยยาทั้ง 3 ชนิด
@@ -35,6 +41,14 @@ PlaceId: `115068315659966`
 - เมื่อ Dungeon ทั้งสองประเภทไม่มีตั๋ว จะตรวจใหม่หลัง 2 ชั่วโมง
 - จำสวิตช์และตำแหน่ง UI ผ่าน readfile/writefile เมื่อ executor รองรับ
 - ANTI AFK เปิดเป็นค่าเริ่มต้นสำหรับการติดตั้งครั้งแรก; สวิตช์อื่นเริ่ม OFF
+
+## Pet — ต้องมีข้อมูล UI เพื่อผูกคำสั่งจริง
+
+- เพิ่มแท็บ Pet และ multi-select สองชุด: Boost luck pet when และ Boost card from play (if not Aurora)
+- ชุดที่สองไม่ให้เลือก Aurora
+- ขณะนี้บันทึกเงื่อนไข Pet ได้ แต่ **ยังไม่กดบูสต์ Pet อัตโนมัติ** เพราะยังไม่มีปุ่ม/สถานะจากหน้า Pet จริง
+- เปิด PETS ในเกม แล้วกด Pet > CAPTURE PET UI > COPY LOG และส่งรายงาน เพื่อผูกปุ่มทั้งสองให้ถูกต้อง
+- ถ้า Require active Pet Luck เปิดอยู่และยังยืนยันบัฟไม่ได้ Open Card จะรอ
 
 ## การใช้งาน
 
