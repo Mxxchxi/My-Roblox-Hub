@@ -1,7 +1,7 @@
--- Roll A Stickman Diagnostics V1.5 R6 | Aura watch
--- PlaceId 115068315659966. Combined V1.2 R16; auto Moon inspection every 5 minutes.
+-- Roll A Stickman Diagnostics V1.5 R7 | Aura watch
+-- PlaceId 115068315659966. Combined V1.2 R18; auto Moon inspection every 5 minutes.
 -- Reads the active Moon from MOONS > Now.Title. Never buys, drinks or opens cards.
--- Only opens/closes MOONS when both Potion and Open Card automation are OFF.
+-- Only opens/closes MOONS when Potion, Open Card and Auto Pet automation are OFF.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -191,7 +191,10 @@ local function mainBoostOn()
     if not scriptGui or not scriptGui.Enabled then return false end
     local flag = scriptGui:GetAttribute("Flag_moon")
     local cards = scriptGui:GetAttribute("Flag_cards")
-    if type(flag) == "boolean" or type(cards) == "boolean" then return flag == true or cards == true end
+    local pet = scriptGui:GetAttribute("Flag_pet")
+    if type(flag) == "boolean" or type(cards) == "boolean" or type(pet) == "boolean" then
+        return flag == true or cards == true or pet == true
+    end
     local panelObj = scriptGui and scriptGui:FindFirstChild("Panel")
     local toggle = panelObj and panelObj:FindFirstChild("MoonToggle")
     return toggle ~= nil and (plain(toggle):upper() == "AURORA BOOST: ON" or plain(toggle):upper() == "USE POTION: ON")
@@ -376,7 +379,7 @@ gui.Destroying:Connect(function()
     if logConnection then logConnection:Disconnect() end
 end)
 
-line("Diagnostics V1.5 R6 | PlaceId=" .. tostring(game.PlaceId))
+line("Diagnostics V1.5 R7 | PlaceId=" .. tostring(game.PlaceId))
 line("ACTIVE SKY is read only from MOONS > Now.Title; shop labels are ignored")
 line("Watches Aura, potion/card counts and [RAS] logs; no gameplay purchases")
 snapshot("INITIAL")
