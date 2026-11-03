@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R14
+-- Roll A Stickman Combined Auto V1.2 R15
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R14 starting; waiting for game to load")
+print("[RAS] R15 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -25,10 +25,11 @@ assert(pg:WaitForChild("RollAStickman", 120), "RollAStickman UI not ready after 
 
 local SETTINGS_FILE = "RollStickman_Combined_V1_2_settings.json"
 local SETTINGS_KEY = "RollStickman_Combined_V1_2_settings"
-local settingKeys = {"level", "raid", "dungeon", "expedition", "moon", "antiAfk"}
+local settingKeys = {"level", "raid", "dungeon", "expedition", "moon", "cards", "antiAfk"}
 local potionNames = {luck = "Luck Potion", haste = "Haste Potion", gild = "Gilded Potion"}
 -- These seven names are confirmed by the user's in-game MOONS screenshot.
-local potionConfig = {when = "Aurora", available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, selected = {luck = true, haste = true, gild = true}}
+local potionConfig = {when = "Aurora", available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, multipliers = {SILVER = 1.5, AURORA = 12}, selected = {luck = true, haste = true, gild = true}}
+local cardSelection = {loose = true, pouch = true, crate = true, chest = true}
 local function moonIdentity(value, allowShort)
     if type(value) ~= "string" then return nil end
     local name = value:gsub("<[^>]*>", ""):upper():gsub("%s+", " ")
@@ -65,16 +66,23 @@ local function cleanSettings(value)
         cleaned[key] = from[key] == true
     end
     if from.antiAfk == nil then cleaned.antiAfk = true end
+    if from.cards == nil then cleaned.cards = from.moon == true end
     local p = value.position
     local position = type(p) == "table" and type(p.x) == "number"
         and type(p.y) == "number" and {x = p.x, y = p.y} or nil
     local tab = value.activeTab
-    if tab ~= "Team" and tab ~= "Fight" and tab ~= "Potion" and tab ~= "Status" then
+    if tab ~= "Team" and tab ~= "Fight" and tab ~= "Potion" and tab ~= "Open Card" and tab ~= "Status" then
         tab = "Fight"
     end
     local source = type(value.potion) == "table" and value.potion or {}
     local selections = type(source.selected) == "table" and source.selected or {}
-    local potion = {when = moonCaption(moonIdentity(source.when, true) or "AURORA"), available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, selected = {}}
+    local potion = {when = moonCaption(moonIdentity(source.when, true) or "AURORA"), available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, multipliers = {SILVER = 1.5, AURORA = 12}, selected = {}}
+    for name, amount in pairs(type(source.multipliers) == "table" and source.multipliers or {}) do
+        local key = moonIdentity(name, true)
+        if key and type(amount) == "number" and amount > 0 and amount < math.huge then
+            potion.multipliers[key] = amount
+        end
+    end
     local known = {NORMAL = true, SILVER = true, HARVEST = true, BLUE = true, ECLIPSE = true, STARFALL = true, AURORA = true}
     for _, value in ipairs(type(source.available) == "table" and source.available or {}) do
         local key = moonIdentity(value, true)
@@ -87,7 +95,10 @@ local function cleanSettings(value)
     for _, id in ipairs({"luck", "haste", "gild"}) do
         potion.selected[id] = selections[id] ~= false
     end
-    return cleaned, position, tab, potion
+    local cardSource = type(value.openCard) == "table" and value.openCard or {}
+    local cards = {}
+    for _, id in ipairs({"loose", "pouch", "crate", "chest"}) do cards[id] = cardSource[id] ~= false end
+    return cleaned, position, tab, potion, cards
 end
 local function readSettings()
     if type(readfile) == "function" then
@@ -97,23 +108,26 @@ local function readSettings()
                 return HttpService:JSONDecode(content)
             end)
             if valid then
-                local saved, position, tab, potion = cleanSettings(decoded)
-                if saved then return saved, "file", position, tab, potion end
+                local saved, position, tab, potion, cards = cleanSettings(decoded)
+                if saved then return saved, "file", position, tab, potion, cards end
             end
         end
     end
     local env = settingsEnv()
-    local saved, position, tab, potion
+    local saved, position, tab, potion, cards
     if type(env) == "table" then
-        saved, position, tab, potion = cleanSettings(env[SETTINGS_KEY])
+        saved, position, tab, potion, cards = cleanSettings(env[SETTINGS_KEY])
     end
-    return saved, saved and "session" or nil, position, tab, potion
+    return saved, saved and "session" or nil, position, tab, potion, cards
 end
 local settingsPosition
 local settingsTab = "Fight"
 local function writeSettings(current)
     local saved = {placeId = game.PlaceId, flags = {}, activeTab = settingsTab}
-    saved.potion = {when = potionConfig.when, available = {}, selected = {}}
+    saved.potion = {when = potionConfig.when, available = {}, multipliers = {}, selected = {}}
+    for key, amount in pairs(potionConfig.multipliers) do saved.potion.multipliers[key] = amount end
+    saved.openCard = {}
+    for key, selected in pairs(cardSelection) do saved.openCard[key] = selected end
     for _, name in ipairs(potionConfig.available) do table.insert(saved.potion.available, name) end
     for _, id in ipairs({"luck", "haste", "gild"}) do
         saved.potion.selected[id] = potionConfig.selected[id] == true
@@ -168,7 +182,7 @@ if previous then
     local previousPanel = previous:FindFirstChild("Panel")
     local names = {level = "LevelToggle", raid = "RaidToggle",
         dungeon = "DungeonToggle", expedition = "ExpeditionToggle",
-        moon = "MoonToggle", antiAfk = "AntiAfkToggle"}
+        moon = "MoonToggle", cards = "CardToggle", antiAfk = "AntiAfkToggle"}
     for key, name in pairs(names) do
         local obj = previousPanel and previousPanel:FindFirstChild(name)
         if obj and obj:IsA("TextButton") then
@@ -240,13 +254,13 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R14  ·  ALT", 8, 27)
+local title = label("Title", "ROLL A STICKMAN  |  R15  ·  ALT", 8, 27)
 title.Size = UDim2.fromOffset(258, 27)
 title.TextSize = 12
 title.Active = true
 local minimizeUI = button("Minimize", "-", 278, 7, 32, 28)
 local closeUI = button("Close", "X", 316, 7, 34, 28)
-local tabPages = {Team = {}, Fight = {}, Potion = {}, Status = {}}
+local tabPages = {Team = {}, Fight = {}, Potion = {}, ["Open Card"] = {}, Status = {}}
 local tabButtons = {}
 local activeTab = "Fight"
 local function pageItem(tab, obj)
@@ -259,8 +273,9 @@ local function pageLabel(tab, name, value, y, height)
     obj.TextColor3 = theme.muted
     return obj
 end
-for i, tab in ipairs({"Team", "Fight", "Potion", "Status"}) do
-    tabButtons[tab] = button("Tab" .. tab, tab:upper(), 10 + (i - 1) * 87, 53, 79, 30)
+for i, tab in ipairs({"Team", "Fight", "Potion", "Open Card", "Status"}) do
+    tabButtons[tab] = button("Tab" .. tab, tab:upper(), 10 + (i - 1) * 69, 53, 64, 30)
+    tabButtons[tab].TextSize = 10
 end
 local toggles = {
     level = pageItem("Team", button("LevelToggle", "LEVEL UP: OFF", 12, 116, 336, 36)),
@@ -268,6 +283,7 @@ local toggles = {
     dungeon = pageItem("Fight", button("DungeonToggle", "DUNGEON: OFF", 12, 158, 336, 36)),
     expedition = pageItem("Fight", button("ExpeditionToggle", "EXPEDITIONS: OFF", 12, 200, 336, 36)),
     moon = pageItem("Potion", button("MoonToggle", "USE POTION: OFF", 12, 116, 336, 30)),
+    cards = pageItem("Open Card", button("CardToggle", "AUTO OPEN CARD: OFF", 12, 116, 336, 30)),
     antiAfk = pageItem("Status", button("AntiAfkToggle", "ANTI AFK: ON", 12, 116, 336, 36)),
 }
 pageLabel("Team", "TeamHeading", "TEAM  /  UPGRADES", 90, 20)
@@ -301,7 +317,18 @@ for i, id in ipairs({"luck", "haste", "gild"}) do
         "Stock: not observed", y + 25, 18)
     potionLabels[id].TextSize = 10
 end
-pageLabel("Potion", "PotionHint", "Checked potions only. Owned cards open afterwards.", 328, 20).TextSize = 10
+pageLabel("Potion", "PotionHint", "x? = press SYNC to read the Moon luck multiplier.", 328, 20).TextSize = 10
+pageLabel("Open Card", "CardHeading", "OPEN CARD  /  OWNED ITEMS", 90, 20)
+local cardUI = {checks = {}, names = {loose = "Reward Cards", pouch = "Pouch", crate = "Crate", chest = "Chest"}}
+cardUI.condition = pageLabel("Open Card", "CardCondition", "When: follows Use Potion When", 152, 23)
+cardUI.stock = pageLabel("Open Card", "CardStock", "Reward Cards: not observed", 177, 28)
+cardUI.stock.TextSize = 11
+for i, id in ipairs({"loose", "pouch", "crate", "chest"}) do
+    cardUI.checks[id] = pageItem("Open Card", button("CardCheck" .. id,
+        "[x]  " .. cardUI.names[id], 12, 211 + (i - 1) * 28, 336, 24))
+    cardUI.checks[id].TextXAlignment = Enum.TextXAlignment.Left
+end
+pageLabel("Open Card", "CardHint", "Uses the selected Moon condition. Opens owned items only.", 326, 22).TextSize = 10
 pageLabel("Status", "StatusHeading", "STATUS  /  LIVE GAME VALUES", 90, 20)
 local statusScroll = Instance.new("ScrollingFrame")
 statusScroll.Name = "StatusPage"
@@ -390,8 +417,9 @@ logBox.Parent = scroll
 gui.Parent = pg
 local alive = true
 local minimized = false
-local savedFlags, settingsSource, savedPosition, savedTab, savedPotion = readSettings()
+local savedFlags, settingsSource, savedPosition, savedTab, savedPotion, savedCards = readSettings()
 if savedPotion then potionConfig = savedPotion end
+if savedCards then cardSelection = savedCards end
 if not savedFlags and next(previousFlags) then
     savedFlags, settingsSource = previousFlags, "previous UI"
 end
@@ -400,6 +428,7 @@ for _, key in ipairs(settingKeys) do
     flags[key] = savedFlags and savedFlags[key] == true or false
 end
 if not savedFlags or savedFlags.antiAfk == nil then flags.antiAfk = true end
+if savedFlags and savedFlags.cards == nil then flags.cards = savedFlags.moon == true end
 local function clampPosition(x, y)
     local camera = workspace.CurrentCamera
     local viewport = camera and camera.ViewportSize or Vector2.new(1920, 1080)
@@ -411,9 +440,9 @@ if savedPosition then
     if ok then panel.Position = UDim2.fromOffset(x, y) end
 end
 settingsPosition = {x = panel.Position.X.Offset, y = panel.Position.Y.Offset}
-local versions = {level = 0, raid = 0, dungeon = 0, expedition = 0, moon = 0, antiAfk = 0}
+local versions = {level = 0, raid = 0, dungeon = 0, expedition = 0, moon = 0, cards = 0, antiAfk = 0}
 local titles = {level = "LEVEL UP", raid = "RAID", dungeon = "DUNGEON",
-    expedition = "EXPEDITIONS", moon = "USE POTION", antiAfk = "ANTI AFK"}
+    expedition = "EXPEDITIONS", moon = "USE POTION", cards = "AUTO OPEN CARD", antiAfk = "ANTI AFK"}
 local function paintToggle(key)
     gui:SetAttribute("Flag_" .. key, flags[key] == true)
     toggles[key].BackgroundColor3 = flags[key]
@@ -569,6 +598,9 @@ end
 local function valid(key, version)
     return alive and flags[key] and versions[key] == version
 end
+local function validMoon(version)
+    return alive and (flags.moon or flags.cards) and versions.moon == version
+end
 local function run(key, operation)
     if busy then return end
     busy = true
@@ -577,6 +609,11 @@ local function run(key, operation)
         local ok, err = pcall(operation, version)
         busy = false
         if not ok then
+            if key == "moon" then
+                flags.cards = false
+                toggles.cards.Text = titles.cards .. ": OFF"
+                paintToggle("cards")
+            end
             flags[key] = false
             versions[key] = versions[key] + 1
             toggles[key].Text = titles[key] .. ": OFF"
@@ -590,6 +627,7 @@ for key, obj in pairs(toggles) do
     obj.Activated:Connect(function()
         flags[key] = not flags[key]
         versions[key] = versions[key] + 1
+        if key == "cards" then versions.moon = versions.moon + 1 end
         local title = titles[key]
         obj.Text = title .. (flags[key] and ": ON" or ": OFF")
         paintToggle(key)
@@ -1046,7 +1084,7 @@ local function potionStatus(id)
     return value
 end
 local function usePotion(id)
-    if not potionConfig.selected[id] then return true end
+    if not flags.moon or not potionConfig.selected[id] then return true end
     if moonUsed[id] then return true end
     if modalTitle() ~= "POTIONS" then return false end
     local statusBefore = potionStatus(id)
@@ -1115,11 +1153,19 @@ local function cardCount()
     return numeric(digits)
 end
 local function openOwnedCards(version)
+    if not flags.cards or not validMoon(version) then return false end
     if not openCardPacks() then
         note("Aurora: CARD PACKS entry unavailable; retrying")
         return false
     end
-    local initial = cardCount()
+    local function cardRunValid()
+        if flags.cards and validMoon(version) then return true end
+        if alive and modalTitle() == "CARD PACKS" then closeModal("moon.cards.cancel.close") end
+        return false
+    end
+    if not cardRunValid() then return false end
+    local initial = 0
+    if cardSelection.loose then initial = cardCount() end
     if initial == nil then
         note("Aurora: Reward Cards count unreadable; retrying")
         return false
@@ -1128,7 +1174,7 @@ local function openOwnedCards(version)
     local finalSmallBatch = false
     -- The observed OPEN ALL processed roughly 1.26 million cards per press.
     -- Repeat only after a measured decrease, never while a prior batch is pending.
-    while count > 0 and rounds < 15 and valid("moon", version) do
+    while count > 0 and rounds < 15 and validMoon(version) do
         local all = child(modalPanel(), {"Content", "Inner", "Loose",
             "Row", "Open", "All"})
         local caption = buttonText(all)
@@ -1144,6 +1190,7 @@ local function openOwnedCards(version)
             task.wait(0.5)
             count = cardCount()
         until (count and count < before) or os.clock() >= deadline
+        if not cardRunValid() then return false end
         if not count or count >= before then
             log("Reward Cards batch unconfirmed: " .. before .. " -> "
                 .. tostring(count or "window closed"))
@@ -1166,11 +1213,11 @@ local function openOwnedCards(version)
     end
     log("Reward Cards backlog: " .. initial .. " -> " .. count
         .. " after " .. rounds .. " batch(es)")
-    if not valid("moon", version) then return false end
+    if not cardRunValid() then return false end
     -- Pack buttons may be GET MORE when owned=0. Never press a purchase link.
     for _, id in ipairs({"pouch", "crate", "chest"}) do
         local attempts = 0
-        while valid("moon", version) and modalTitle() == "CARD PACKS"
+        while validMoon(version) and flags.cards and cardSelection[id] and modalTitle() == "CARD PACKS"
             and attempts < 120 and os.clock() < nextMoon + 250 do
             local row = child(modalPanel(), {"Content", "Inner", "Packs", id})
             local open = child(row, {"Open"})
@@ -1195,14 +1242,14 @@ local function openOwnedCards(version)
             if not after or after >= owned then break end
         end
     end
-    if not valid("moon", version) then return false end
+    if not cardRunValid() then return false end
     if modalTitle() == "CARD PACKS" then closeModal("moon.cards.close") end
     moonCardsDone = true
-    note("Selected potions/card opening attempted; see COPY LOG for counts")
+    note("Open Card attempted; see COPY LOG for counts")
     return true
 end
 local function moonTick(version)
-    if not valid("moon", version) then return end
+    if not validMoon(version) then return end
     if modalOpen() and modalTitle() ~= "MOONS" then
         nextMoon = os.clock() + 8
         return
@@ -1216,7 +1263,7 @@ local function moonTick(version)
         openedHere = true
         task.wait(0.7)
     end
-    if not valid("moon", version) then return end
+    if not validMoon(version) then return end
     local nowTitle = child(modalPanel(), {"Content", "Inner", "Now", "Title"})
     local sky = visible(nowTitle) and textOf(nowTitle) or ""
     if modalTitle() ~= "MOONS" or sky == "" then
@@ -1228,6 +1275,7 @@ local function moonTick(version)
         return
     end
     rememberStatus("aura", statusPlain(nowTitle))
+    if potionUI.discover and potionUI.discover() > 0 then potionUI.rebuild() end
     local aurora = moonIdentity(sky, true) == moonIdentity(potionConfig.when, true)
     if not aurora then
         if moonWasAurora then log("Selected Moon ended: " .. sky) end
@@ -1247,12 +1295,12 @@ local function moonTick(version)
         closeModal("moon.close")
         task.wait(0.4)
     end
-    if not valid("moon", version) then return end
+    if not validMoon(version) then return end
     local pending = false
     for _, id in ipairs({"luck", "haste", "gild"}) do
-        if potionConfig.selected[id] and not moonUsed[id] then pending = true end
+        if flags.moon and potionConfig.selected[id] and not moonUsed[id] then pending = true end
     end
-    if moonCardsDone and not pending then return end
+    if not pending and (not flags.cards or moonCardsDone) then return end
     if modalOpen() then
         note(potionConfig.when .. " active; close MOONS to use selected potions")
         return
@@ -1262,23 +1310,50 @@ local function moonTick(version)
         return
     end
     for _, id in ipairs({"luck", "haste", "gild"}) do
-        if not valid("moon", version) then return end
-        if potionConfig.selected[id] then usePotion(id) end
+        if not validMoon(version) then return end
+        if flags.moon and potionConfig.selected[id] then usePotion(id) end
     end
     if modalTitle() == "POTIONS" then closeModal("moon.potions.close") end
     task.wait(0.5)
-    if not valid("moon", version) then return end
+    if not validMoon(version) then return end
     for _, id in ipairs({"luck", "haste", "gild"}) do
-        if potionConfig.selected[id] and not moonUsed[id] then
+        if flags.moon and potionConfig.selected[id] and not moonUsed[id] then
             note(potionConfig.when .. ": " .. potionNames[id] .. " unavailable; retrying")
             return
         end
     end
-    if not moonCardsDone then openOwnedCards(version) end
+    if flags.cards and not moonCardsDone then openOwnedCards(version) end
 end
 
+function potionUI.caption(name)
+    local amount = potionConfig.multipliers[moonIdentity(name, true)]
+    return name .. " (x" .. (amount and string.format("%g", amount) or "?") .. ")"
+end
+function potionUI.multiplier(text)
+    local value = text:upper():gsub("×", "X"):gsub(",", "")
+    local number = value:match("X%s*(%d+%.?%d*)%s*LUCK")
+        or value:match("LUCK%s*X%s*(%d+%.?%d*)")
+    number = tonumber(number)
+    return number and number > 0 and number < math.huge and number or nil
+end
+function potionUI.readMultiplier(obj)
+    local own = potionUI.multiplier(statusPlain(obj))
+    if own then return own end
+    local found
+    for _, sibling in ipairs(obj.Parent and obj.Parent:GetChildren() or {}) do
+        if sibling ~= obj then
+            local amount = potionUI.multiplier(statusPlain(sibling))
+            if amount then
+                if found and found ~= amount then return nil end
+                found = amount
+            end
+        end
+    end
+    return found
+end
 local function paintPotionChoices()
-    potionUI.dropdown.Text = "Use Potion When: " .. potionConfig.when .. "   v"
+    potionUI.dropdown.Text = "Use Potion When: " .. potionUI.caption(potionConfig.when) .. "   v"
+    cardUI.condition.Text = "When: " .. potionUI.caption(potionConfig.when)
     for _, id in ipairs({"luck", "haste", "gild"}) do
         potionUI.checks[id].Text = (potionConfig.selected[id] and "[x]  " or "[ ]  ") .. potionNames[id]
         potionUI.checks[id].BackgroundColor3 = potionConfig.selected[id]
@@ -1289,6 +1364,9 @@ paintPotionChoices()
 function potionUI.sortChoices()
     local order = {NORMAL = 1, SILVER = 2, HARVEST = 3, BLUE = 4, ECLIPSE = 5, STARFALL = 6, AURORA = 1000}
     table.sort(potionConfig.available, function(a, b)
+        local ma = potionConfig.multipliers[moonIdentity(a, true)] or math.huge
+        local mb = potionConfig.multipliers[moonIdentity(b, true)] or math.huge
+        if ma ~= mb then return ma < mb end
         local ra = order[moonIdentity(a, true)] or 900
         local rb = order[moonIdentity(b, true)] or 900
         return ra == rb and a < b or ra < rb
@@ -1316,7 +1394,7 @@ function potionUI.discover()
             end
         end
         local key = moonIdentity(text, allowShort)
-        if key and not known[key] then
+        if key then
             local context = text:upper():match("^SUMMON ") ~= nil
             local ancestor = obj.Parent
             while ancestor and ancestor ~= root and not context do
@@ -1326,14 +1404,22 @@ function potionUI.discover()
                 ancestor = ancestor.Parent
             end
             if context then
-                known[key] = true
-                table.insert(potionConfig.available, moonCaption(key))
-                added = added + 1
+                if not known[key] then
+                    known[key] = true
+                    table.insert(potionConfig.available, moonCaption(key))
+                    added = added + 1
+                end
+                local amount = potionUI.readMultiplier(obj)
+                if amount and potionConfig.multipliers[key] ~= amount then
+                    potionConfig.multipliers[key] = amount
+                    added = added + 1
+                end
             end
         end
     end
     if added > 0 then
         potionUI.sortChoices()
+        paintPotionChoices()
         settingsStorage = writeSettings(flags)
         log("Moon choices discovered from game UI: " .. table.concat(potionConfig.available, ", "))
     end
@@ -1354,7 +1440,7 @@ function potionUI.rebuild()
         entry.BorderSizePixel = 0
         entry.Font = Enum.Font.GothamMedium
         entry.TextSize = 12
-        entry.Text = name
+        entry.Text = potionUI.caption(name)
         entry.Parent = potionUI.option
         table.insert(potionUI.entries, entry)
         entry.Activated:Connect(function()
@@ -1450,6 +1536,25 @@ for _, id in ipairs({"luck", "haste", "gild"}) do
     end)
 end
 
+function cardUI.paint()
+    for _, id in ipairs({"loose", "pouch", "crate", "chest"}) do
+        cardUI.checks[id].Text = (cardSelection[id] and "[x]  " or "[ ]  ") .. cardUI.names[id]
+        cardUI.checks[id].BackgroundColor3 = cardSelection[id] and Color3.fromRGB(31, 92, 84) or theme.off
+    end
+end
+cardUI.paint()
+for _, id in ipairs({"loose", "pouch", "crate", "chest"}) do
+    cardUI.checks[id].Activated:Connect(function()
+        cardSelection[id] = not cardSelection[id]
+        versions.moon = versions.moon + 1
+        moonCardsDone = false
+        nextMoon = 0
+        cardUI.paint()
+        settingsStorage = writeSettings(flags)
+        log(cardUI.names[id] .. (cardSelection[id] and " selected for Open Card" or " unchecked for Open Card"))
+    end)
+end
+
 local statusNextPowerScan = 0
 local function scanTeamPower()
     -- Accept an explicit team/total-power field, never a random card's POWER.
@@ -1515,6 +1620,7 @@ local function refreshStatus(now)
         if visible(cards) then rememberStatus("cards", statusPlain(cards)) end
     end
     put("cards", cachedStatus("cards"))
+    cardUI.stock.Text = cachedStatus("cards")
     for _, id in ipairs({"luck", "haste", "gild"}) do
         local value
         if modalTitle() == "POTIONS" then
@@ -1544,7 +1650,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R14 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R15 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -1583,7 +1689,7 @@ task.spawn(function()
             if not busy and flags.level and not modalOpen() and now >= nextLevel then
                 run("level", levelTick)
             end
-            if not busy and flags.moon and not inDungeon() and
+            if not busy and (flags.moon or flags.cards) and not inDungeon() and
                 now >= nextMoon then
                 run("moon", moonTick)
             end
