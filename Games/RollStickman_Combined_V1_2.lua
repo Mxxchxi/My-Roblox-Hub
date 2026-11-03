@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R25
+-- Roll A Stickman Combined Auto V1.2 R26
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R25 starting; waiting for game to load")
+print("[RAS] R26 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -319,7 +319,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R25  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R26  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -1386,11 +1386,25 @@ local function openCardPacks()
     if entry then
         fire("moon.cards.menu", entry, buttonText(entry), 2)
     else
-        -- The battle dock has an Open shortcut. Verify the resulting title.
-        local instant = get({"Frame", "Battle", "Dock", "Instant"})
-        if not fire("moon.cards.open", instant, "OPEN", 2) then return false end
+        -- Pet preparation leaves the PETS page active; reveal the battle dock first.
+        if not fire("cards.back.battle", get({"Frame", "Nav", "Row", "endless"}), nil, 1) then
+            cardUI.diagnose("CARD_BATTLE_NAV_UNAVAILABLE")
+            return false
+        end
+        local deadline = os.clock() + 4
+        local instant
+        repeat
+            task.wait(0.2)
+            instant = get({"Frame", "Battle", "Dock", "Instant"})
+        until ready(instant) or os.clock() >= deadline or not alive
+        if not alive or not flags.cards or not potionUI.cycleValid() then return false end
+        if not fire("moon.cards.open", instant, "OPEN", 2) then
+            cardUI.diagnose("CARD_SHORTCUT_UNAVAILABLE", "visible=" .. tostring(visible(instant)) .. " caption=" .. buttonText(instant))
+            return false
+        end
     end
-    task.wait(0.7)
+    local waitUntil = os.clock() + 4
+    repeat task.wait(0.2) until modalTitle() == "CARD PACKS" or os.clock() >= waitUntil or not alive
     if modalTitle() == "CARD PACKS" then return true end
     log("Card Packs entry unconfirmed: " .. modalTitle())
     if modalOpen() then closeModal("moon.cards.wrong.close") end
@@ -2471,7 +2485,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R25 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R26 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -2819,7 +2833,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R25 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R26 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
