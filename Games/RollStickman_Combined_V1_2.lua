@@ -1,0 +1,1163 @@
+-- Roll A Stickman Combined Auto V1.2 R9
+-- UI-driven automation for PlaceId 115068315659966.
+-- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
+-- Auto Execute: add this complete file to your executor's Auto Execute list.
+-- Waiting for game/player/UI readiness is handled below; no remote loader needed.
+
+local startupOk, startupError = xpcall(function()
+
+print("[RAS] R9 starting; waiting for game to load")
+if not game:IsLoaded() then game.Loaded:Wait() end
+if game.PlaceId ~= 115068315659966 then return end
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local player = Players.LocalPlayer
+local playerDeadline = os.clock() + 120
+while not player and os.clock() < playerDeadline do
+    task.wait(0.2)
+    player = Players.LocalPlayer
+end
+assert(player, "LocalPlayer not ready after 120s; run again after joining")
+local pg = player:WaitForChild("PlayerGui", 120)
+assert(pg, "PlayerGui not ready after 120s")
+assert(pg:WaitForChild("RollAStickman", 120), "RollAStickman UI not ready after 120s")
+
+local SETTINGS_FILE = "RollStickman_Combined_V1_2_settings.json"
+local SETTINGS_KEY = "RollStickman_Combined_V1_2_settings"
+local settingKeys = {"level", "raid", "dungeon", "expedition", "moon", "antiAfk"}
+local function settingsEnv()
+    if type(getgenv) == "function" then
+        local ok, env = pcall(getgenv)
+        if ok and type(env) == "table" then return env end
+    end
+    if type(shared) == "table" then return shared end
+    return _G
+end
+local function cleanSettings(value)
+    if type(value) ~= "table" then return nil end
+    if value.placeId and value.placeId ~= game.PlaceId then return nil end
+    local from = type(value.flags) == "table" and value.flags or value
+    local cleaned = {}
+    for _, key in ipairs(settingKeys) do
+        cleaned[key] = from[key] == true
+    end
+    if from.antiAfk == nil then cleaned.antiAfk = true end
+    local p = value.position
+    local position = type(p) == "table" and type(p.x) == "number"
+        and type(p.y) == "number" and {x = p.x, y = p.y} or nil
+    return cleaned, position
+end
+local function readSettings()
+    if type(readfile) == "function" then
+        local ok, content = pcall(readfile, SETTINGS_FILE)
+        if ok and type(content) == "string" then
+            local valid, decoded = pcall(function()
+                return HttpService:JSONDecode(content)
+            end)
+            if valid then
+                local saved, position = cleanSettings(decoded)
+                if saved then return saved, "file", position end
+            end
+        end
+    end
+    local env = settingsEnv()
+    local saved, position
+    if type(env) == "table" then
+        saved, position = cleanSettings(env[SETTINGS_KEY])
+    end
+    return saved, saved and "session" or nil, position
+end
+local settingsPosition
+local function writeSettings(current)
+    local saved = {placeId = game.PlaceId, flags = {}}
+    if settingsPosition then saved.position = settingsPosition end
+    for _, key in ipairs(settingKeys) do
+        saved.flags[key] = current[key] == true
+    end
+    local env = settingsEnv()
+    if type(env) == "table" then env[SETTINGS_KEY] = saved end
+    if type(writefile) ~= "function" then return "session" end
+    local ok = pcall(function()
+        writefile(SETTINGS_FILE, HttpService:JSONEncode(saved))
+    end)
+    return ok and "file" or "session"
+end
+
+local OLD = pg:FindFirstChild("RollStickman_Combined_V1_1")
+if OLD then
+    local stop
+    for _, obj in ipairs(OLD:GetDescendants()) do
+        if obj:IsA("TextButton") and obj.Text:upper():find("STOP ALL", 1, true) then
+            stop = obj
+            break
+        end
+    end
+    if not stop or type(firesignal) ~= "function"
+        or not pcall(firesignal, stop.Activated, nil, 1) then
+        warn("[RAS] Press STOP ALL on V1.1, then run V1.2 again")
+        return
+    end
+    task.wait(0.3)
+    for _, obj in ipairs(OLD:GetDescendants()) do
+        if obj:IsA("TextButton") and
+            (obj.Text:match("^LEVEL UP: ON")
+            or obj.Text:match("^RAID: ON")
+            or obj.Text:match("^DUNGEON: ON")
+            or obj.Text:match("^EXPEDITIONS: ON")
+            or obj.Text:match("^AURORA BOOST: ON")) then
+            warn("[RAS] V1.1 remains ON; press STOP ALL before V1.2")
+            return
+        end
+    end
+    OLD:Destroy()
+end
+local oldRecovery = pg:FindFirstChild("RollStickman_DungeonModalRecovery_V1")
+if oldRecovery then oldRecovery:Destroy() end
+local NAME = "RollStickman_Combined_V1_2"
+local previous = pg:FindFirstChild(NAME)
+local previousFlags = {}
+if previous then
+    local previousPanel = previous:FindFirstChild("Panel")
+    local names = {level = "LevelToggle", raid = "RaidToggle",
+        dungeon = "DungeonToggle", expedition = "ExpeditionToggle",
+        moon = "MoonToggle", antiAfk = "AntiAfkToggle"}
+    for key, name in pairs(names) do
+        local obj = previousPanel and previousPanel:FindFirstChild(name)
+        if obj and obj:IsA("TextButton") then
+            previousFlags[key] = obj.Text:upper():match(":%s*ON$") ~= nil
+        end
+    end
+end
+if previous then previous:Destroy() end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = NAME
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 240
+local panel = Instance.new("Frame")
+panel.Name = "Panel"
+panel.Size = UDim2.fromOffset(360, 526)
+panel.Position = UDim2.fromOffset(12, 160)
+panel.BackgroundColor3 = Color3.fromRGB(25, 28, 36)
+panel.BorderSizePixel = 0
+panel.Active = true
+panel.Parent = gui
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = panel
+local outline = Instance.new("UIStroke")
+outline.Color = Color3.fromRGB(77, 85, 112)
+outline.Thickness = 1
+outline.Parent = panel
+local header = Instance.new("Frame")
+header.Name = "Header"
+header.Size = UDim2.new(1, 0, 0, 42)
+header.BackgroundColor3 = Color3.fromRGB(43, 48, 67)
+header.BorderSizePixel = 0
+header.Parent = panel
+local function label(name, value, y, height)
+    local obj = Instance.new("TextLabel")
+    obj.Name = name
+    obj.Position = UDim2.fromOffset(10, y)
+    obj.Size = UDim2.new(1, -20, 0, height)
+    obj.BackgroundTransparency = 1
+    obj.TextColor3 = Color3.new(1, 1, 1)
+    obj.TextXAlignment = Enum.TextXAlignment.Left
+    obj.TextSize = 14
+    obj.Text = value
+    obj.Parent = panel
+    return obj
+end
+local function button(name, value, x, y, w, h)
+    local obj = Instance.new("TextButton")
+    obj.Name = name
+    obj.Position = UDim2.fromOffset(x, y)
+    obj.Size = UDim2.fromOffset(w, h)
+    obj.Text = value
+    obj.TextSize = 14
+    obj.BorderSizePixel = 0
+    obj.BackgroundColor3 = Color3.fromRGB(59, 66, 84)
+    local round = Instance.new("UICorner")
+    round.CornerRadius = UDim.new(0, 7)
+    round.Parent = obj
+    obj.Parent = panel
+    return obj
+end
+local title = label("Title", "ROLL A STICKMAN  |  R9  ·  ALT", 8, 27)
+title.Size = UDim2.fromOffset(258, 27)
+title.TextSize = 12
+title.Active = true
+title.TextColor3 = Color3.fromRGB(239, 235, 255)
+local minimizeUI = button("Minimize", "-", 278, 7, 32, 28)
+local closeUI = button("Close", "X", 316, 7, 34, 28)
+local toggles = {
+    level = button("LevelToggle", "LEVEL UP: OFF", 10, 53, 340, 34),
+    raid = button("RaidToggle", "RAID: OFF", 10, 93, 340, 34),
+    dungeon = button("DungeonToggle", "DUNGEON: OFF", 10, 133, 340, 34),
+    expedition = button("ExpeditionToggle", "EXPEDITIONS: OFF", 10, 173, 340, 34),
+    moon = button("MoonToggle", "AURORA BOOST: OFF", 10, 213, 340, 34),
+    antiAfk = button("AntiAfkToggle", "ANTI AFK: ON", 10, 253, 340, 34),
+}
+label("DungeonMode", "DUNGEON  ·  ALL TYPES  ·  CHECK EVERY 2H", 294, 24)
+local statusHeader = label("StatusHeader", "STATUS", 325, 18)
+statusHeader.TextColor3 = Color3.fromRGB(160, 171, 211)
+local status = label("Status", "Starting...", 346, 30)
+status.TextSize = 12
+status.TextWrapped = true
+local stopButton = button("StopAll", "STOP ALL", 10, 385, 160, 32)
+stopButton.BackgroundColor3 = Color3.fromRGB(142, 63, 72)
+local copyButton = button("CopyLog", "COPY LOG", 180, 385, 170, 32)
+local logHeader = label("LogHeader", "ACTIVITY LOG", 424, 17)
+logHeader.TextColor3 = Color3.fromRGB(160, 171, 211)
+local scroll = Instance.new("ScrollingFrame")
+scroll.Position = UDim2.fromOffset(10, 445)
+scroll.Size = UDim2.new(1, -20, 0, 71)
+scroll.BackgroundColor3 = Color3.fromRGB(18, 20, 26)
+scroll.ScrollBarThickness = 6
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.CanvasSize = UDim2.new()
+scroll.Parent = panel
+local logBox = Instance.new("TextBox")
+logBox.Size = UDim2.new(1, -10, 0, 0)
+logBox.AutomaticSize = Enum.AutomaticSize.Y
+logBox.BackgroundTransparency = 1
+logBox.TextColor3 = Color3.new(1, 1, 1)
+logBox.Font = Enum.Font.Code
+logBox.TextSize = 12
+logBox.TextWrapped = true
+logBox.MultiLine = true
+logBox.ClearTextOnFocus = false
+logBox.TextXAlignment = Enum.TextXAlignment.Left
+logBox.TextYAlignment = Enum.TextYAlignment.Top
+logBox.Parent = scroll
+gui.Parent = pg
+
+local alive = true
+local minimized = false
+local savedFlags, settingsSource, savedPosition = readSettings()
+if not savedFlags and next(previousFlags) then
+    savedFlags, settingsSource = previousFlags, "previous UI"
+end
+local flags = {}
+for _, key in ipairs(settingKeys) do
+    flags[key] = savedFlags and savedFlags[key] == true or false
+end
+if not savedFlags or savedFlags.antiAfk == nil then flags.antiAfk = true end
+local function clampPosition(x, y)
+    local camera = workspace.CurrentCamera
+    local viewport = camera and camera.ViewportSize or Vector2.new(1920, 1080)
+    return math.clamp(x, 0, math.max(0, viewport.X - 360)),
+        math.clamp(y, 0, math.max(0, viewport.Y - panel.Size.Y.Offset))
+end
+if savedPosition then
+    local ok, x, y = pcall(clampPosition, savedPosition.x, savedPosition.y)
+    if ok then panel.Position = UDim2.fromOffset(x, y) end
+end
+settingsPosition = {x = panel.Position.X.Offset, y = panel.Position.Y.Offset}
+local versions = {level = 0, raid = 0, dungeon = 0, expedition = 0, moon = 0, antiAfk = 0}
+local titles = {level = "LEVEL UP", raid = "RAID", dungeon = "DUNGEON",
+    expedition = "EXPEDITIONS", moon = "AURORA BOOST", antiAfk = "ANTI AFK"}
+local function paintToggle(key)
+    toggles[key].BackgroundColor3 = flags[key]
+        and Color3.fromRGB(48, 119, 91) or Color3.fromRGB(59, 66, 84)
+    toggles[key].TextColor3 = Color3.fromRGB(255, 255, 255)
+end
+for key, obj in pairs(toggles) do
+    obj.Text = titles[key] .. (flags[key] and ": ON" or ": OFF")
+    paintToggle(key)
+end
+local settingsStorage = writeSettings(flags)
+local dragging, dragStart, panelStart = false, nil, nil
+title.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging, dragStart, panelStart = true, input.Position,
+            Vector2.new(panel.Position.X.Offset, panel.Position.Y.Offset)
+    end
+end)
+local dragChanged = UserInputService.InputChanged:Connect(function(input)
+    if not dragging or not dragStart or not panelStart then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseMovement
+        and input.UserInputType ~= Enum.UserInputType.Touch then return end
+    local delta = input.Position - dragStart
+    local x, y = clampPosition(panelStart.X + delta.X, panelStart.Y + delta.Y)
+    panel.Position = UDim2.fromOffset(x, y)
+end)
+local dragEnded = UserInputService.InputEnded:Connect(function(input)
+    if not dragging then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+        settingsPosition = {x = panel.Position.X.Offset, y = panel.Position.Y.Offset}
+        settingsStorage = writeSettings(flags)
+    end
+end)
+local busy = false
+local logs = {}
+local startedAt = os.clock()
+local function log(message)
+    local entry = string.format("[%5.1fs] %s", os.clock() - startedAt, message)
+    table.insert(logs, entry)
+    if #logs > 250 then table.remove(logs, 1) end
+    if alive then logBox.Text = table.concat(logs, "\n") end
+    print("[RAS] " .. entry)
+end
+local function note(value)
+    if alive and status.Text ~= value then
+        status.Text = value
+        log(value)
+    end
+end
+-- Only fold this panel. The scheduler and enabled switches keep running.
+local foldedVisibility = {}
+local function toggleMinimized()
+    if not alive then return end
+    minimized = not minimized
+    for _, obj in ipairs(panel:GetChildren()) do
+        if obj:IsA("GuiObject") and obj ~= header and obj ~= title
+            and obj ~= minimizeUI and obj ~= closeUI then
+            if minimized then
+                foldedVisibility[obj] = obj.Visible
+                obj.Visible = false
+            else
+                obj.Visible = foldedVisibility[obj] ~= false
+            end
+        end
+    end
+    panel.Size = UDim2.fromOffset(360, minimized and 42 or 526)
+    minimizeUI.Text = minimized and "+" or "-"
+    gui:SetAttribute("Minimized", minimized)
+    local x, y = clampPosition(panel.Position.X.Offset, panel.Position.Y.Offset)
+    panel.Position = UDim2.fromOffset(x, y)
+    settingsPosition = {x = x, y = y}
+    settingsStorage = writeSettings(flags)
+    log(minimized and "UI minimized; automation continues" or "UI expanded")
+end
+minimizeUI.Activated:Connect(toggleMinimized)
+local minimizeHotkey = UserInputService.InputBegan:Connect(function(input, processed)
+    if processed or UserInputService:GetFocusedTextBox() then return end
+    if input.KeyCode == Enum.KeyCode.LeftAlt
+        or input.KeyCode == Enum.KeyCode.RightAlt then
+        toggleMinimized()
+    end
+end)
+local function get(parts)
+    local obj = pg:FindFirstChild("RollAStickman")
+    for _, name in ipairs(parts) do
+        obj = obj and obj:FindFirstChild(name)
+    end
+    return obj
+end
+local function child(obj, names)
+    for _, name in ipairs(names) do
+        obj = obj and obj:FindFirstChild(name)
+    end
+    return obj
+end
+local function visible(obj)
+    if not obj then return false end
+    local current = obj
+    while current and current ~= pg do
+        if current:IsA("GuiObject") and not current.Visible then return false end
+        if current:IsA("ScreenGui") and not current.Enabled then return false end
+        current = current.Parent
+    end
+    return current == pg
+end
+local function textOf(obj)
+    if not obj or not (obj:IsA("TextLabel") or obj:IsA("TextButton")) then
+        return ""
+    end
+    return obj.Text:gsub("<[^>]*>", ""):gsub("%s+", " ")
+        :match("^%s*(.-)%s*$"):upper()
+end
+local function buttonText(obj)
+    local face = obj and obj:FindFirstChild("Face")
+    local value = child(face, {"Label"}) or child(obj, {"Label"}) or obj
+    return textOf(value)
+end
+local function ready(obj)
+    return obj and obj:IsA("GuiButton") and obj.Active and visible(obj)
+        and obj.AbsoluteSize.X > 0 and obj.AbsoluteSize.Y > 0
+end
+local lastFire = {}
+local function fire(key, obj, required, cooldown)
+    if not ready(obj) or type(firesignal) ~= "function" then return false end
+    if required and buttonText(obj) ~= required then return false end
+    local now = os.clock()
+    if now - (lastFire[key] or -100) < (cooldown or 2) then return false end
+    local ok, err = pcall(firesignal, obj.Activated, nil, 1)
+    if not ok then note("Button error: " .. tostring(err)); return false end
+    lastFire[key] = now
+    log("CLICK " .. key .. " [" .. buttonText(obj) .. "]")
+    return true
+end
+local function valid(key, version)
+    return alive and flags[key] and versions[key] == version
+end
+local function run(key, operation)
+    if busy then return end
+    busy = true
+    local version = versions[key]
+    task.spawn(function()
+        local ok, err = pcall(operation, version)
+        busy = false
+        if not ok then
+            flags[key] = false
+            versions[key] = versions[key] + 1
+            toggles[key].Text = titles[key] .. ": OFF"
+            paintToggle(key)
+            settingsStorage = writeSettings(flags)
+            note(key .. " error: " .. tostring(err))
+        end
+    end)
+end
+for key, obj in pairs(toggles) do
+    obj.Activated:Connect(function()
+        flags[key] = not flags[key]
+        versions[key] = versions[key] + 1
+        local title = titles[key]
+        obj.Text = title .. (flags[key] and ": ON" or ": OFF")
+        paintToggle(key)
+        settingsStorage = writeSettings(flags)
+        note(title .. (flags[key] and " enabled" or " disabled"))
+    end)
+end
+stopButton.Activated:Connect(function()
+    for key, obj in pairs(toggles) do
+        flags[key] = false
+        versions[key] = versions[key] + 1
+        local title = titles[key]
+        obj.Text = title .. ": OFF"
+        paintToggle(key)
+    end
+    settingsStorage = writeSettings(flags)
+    note("All switches OFF")
+end)
+copyButton.Activated:Connect(function()
+    local value = table.concat(logs, "\n")
+    if type(setclipboard) == "function" and pcall(setclipboard, value) then
+        copyButton.Text = "COPIED"
+    else
+        logBox:CaptureFocus()
+        logBox.CursorPosition = #logBox.Text + 1
+        logBox.SelectionStart = 1
+        copyButton.Text = "PRESS CTRL+C"
+    end
+end)
+closeUI.Activated:Connect(function() gui:Destroy() end)
+local lastIdleAction = -math.huge
+local idleConnection = player.Idled:Connect(function(idleSeconds)
+    if not alive or not flags.antiAfk then return end
+    local now = os.clock()
+    if now - lastIdleAction < 60 then return end
+    lastIdleAction = now
+    local ok, err = pcall(function()
+        local virtualUser = game:GetService("VirtualUser")
+        virtualUser:CaptureController()
+        local camera = workspace.CurrentCamera
+        if camera then
+            virtualUser:ClickButton2(Vector2.new(0, 0), camera.CFrame)
+        else
+            virtualUser:ClickButton2(Vector2.new(0, 0))
+        end
+    end)
+    if ok then
+        log("ANTI AFK input sent | idle=" .. tostring(idleSeconds) .. "s")
+    else
+        flags.antiAfk = false
+        versions.antiAfk = versions.antiAfk + 1
+        toggles.antiAfk.Text = "ANTI AFK: OFF"
+        paintToggle("antiAfk")
+        settingsStorage = writeSettings(flags)
+        note("ANTI AFK unavailable in executor: " .. tostring(err))
+    end
+end)
+gui.Destroying:Connect(function()
+    alive = false
+    dragChanged:Disconnect()
+    dragEnded:Disconnect()
+    minimizeHotkey:Disconnect()
+    idleConnection:Disconnect()
+    for key in pairs(flags) do flags[key] = false end
+end)
+
+local function page() return get({"Frame", "Page", "Column", "Screen"}) end
+local function battleTitle()
+    local obj = get({"Frame", "Battle", "Stage", "Ribbon", "Title"})
+    return visible(obj) and textOf(obj) or ""
+end
+local function waveBattle()
+    return battleTitle():match("^WAVE %d+") ~= nil
+end
+local function inDungeon()
+    local nav = get({"Frame", "Nav", "Row", "dungeon", "Label"})
+    local navText = visible(nav) and textOf(nav) or ""
+    local battle = battleTitle()
+    return navText:match("ROOM %d+/%d+") ~= nil or
+        (battle:find("ROOM %d+/%d+") ~= nil and
+        (battle:find("DEEP HALLS", 1, true) or
+        battle:find("KEY CRYPT", 1, true)) ~= nil)
+end
+local function modalPanel()
+    return get({"Frame", "Modal", "Window", "Panel"})
+end
+local function modalTitle()
+    local panelObj = modalPanel()
+    local obj = child(panelObj, {"Header", "Title"})
+    return visible(obj) and textOf(obj) or ""
+end
+local function modalOpen() return visible(modalPanel()) end
+local function dungeonTypeOnPage()
+    local title = child(page(), {"Hero", "Plate", "Title"})
+    if not visible(title) then return nil end
+    local value = textOf(title)
+    if value:find("DEEP HALLS", 1, true) then return "halls" end
+    if value:find("KEY CRYPT", 1, true) then return "crypt" end
+end
+local function dungeonName(kind)
+    return kind == "halls" and "DEEP HALLS" or "KEY CRYPT"
+end
+local function otherDungeon(kind)
+    return kind == "halls" and "crypt" or "halls"
+end
+local selectedDungeon = "halls"
+local dungeonStarted, dungeonSeen = false, false
+local dungeonSentAt, dungeonReturnedAt = 0, nil
+local nextDungeon = 0
+local DUNGEON_RECHECK_SECONDS = 2 * 60 * 60
+local noTicketsUntil = {halls = 0, crypt = 0}
+local sharedTicketsEmpty = false
+local modalEligibleAt, modalAttempts, modalLastTry = nil, 0, 0
+
+local function observeDungeon(now)
+    if not dungeonStarted then return end
+    if inDungeon() then
+        dungeonSeen = true
+        dungeonReturnedAt = nil
+        return
+    end
+    if dungeonSeen and waveBattle() then
+        dungeonReturnedAt = dungeonReturnedAt or now
+        if now - dungeonReturnedAt >= 5 then
+            dungeonStarted, dungeonSeen = false, false
+            dungeonReturnedAt = nil
+            selectedDungeon = otherDungeon(selectedDungeon)
+            nextDungeon = now + 10
+            note("Dungeon finished. Next: " .. dungeonName(selectedDungeon))
+        end
+    elseif not dungeonSeen and now - dungeonSentAt > 20 then
+        dungeonStarted = false
+        nextDungeon = now + 10
+        note("Dungeon start unconfirmed; retrying")
+    elseif dungeonSeen and now - dungeonSentAt > 900 then
+        dungeonStarted, dungeonSeen = false, false
+        nextDungeon = now + 30
+        note("Dungeon return timeout; waiting")
+    end
+end
+
+-- The V1.1 result modal blocked the next dungeon forever. Close only dungeon
+-- modals while Endless is visible and Dungeon automation is ON.
+local function recoverDungeonModal(now)
+    local title = modalTitle()
+    local eligible = flags.dungeon and waveBattle() and not dungeonStarted
+        and (title == "THE DEEP HALLS" or title == "THE KEY CRYPT")
+    if not eligible then
+        modalEligibleAt, modalAttempts = nil, 0
+        return false
+    end
+    modalEligibleAt = modalEligibleAt or now
+    if now - modalEligibleAt < 12 then return true end
+    if modalAttempts >= 3 then
+        note("Dungeon result X failed; close it manually")
+        return true
+    end
+    if now - modalLastTry < 20 then return true end
+    local close = child(modalPanel(), {"Close"})
+    if fire("dungeon.result.close", close, "X", 10) then
+        modalAttempts = modalAttempts + 1
+        modalLastTry = now
+        note("Closing " .. title .. " result")
+    end
+    return true
+end
+
+local function returnToBattle()
+    local endless = get({"Frame", "Nav", "Row", "endless"})
+    if fire("dungeon.back", endless, nil, 3) then
+        log("Returned to battle while dungeon tickets are empty")
+        return true
+    end
+    note("Cannot return to battle; inspect ENDLESS tab")
+    return false
+end
+
+local function runDungeon(version)
+    if not valid("dungeon", version) then return end
+    if not dungeonTypeOnPage() then
+        local tab = get({"Frame", "Nav", "Row", "dungeon"})
+        if not fire("dungeon.tab", tab, nil, 3) then
+            nextDungeon = os.clock() + 10
+            return
+        end
+        task.wait(1)
+    end
+    if not valid("dungeon", version) then return end
+    local screen = page()
+    if not screen or not visible(screen) then
+        nextDungeon = os.clock() + 10
+        note("Dungeon page unavailable; retrying")
+        return
+    end
+    if sharedTicketsEmpty then
+        -- Both types previously showed 0/5. Check the current ticket counter
+        -- without switching selectors; this leaves the battle page free for RAID.
+        local ticket = child(screen, {"Hero", "Tickets", "R1", "Amount"})
+        local value = visible(ticket) and textOf(ticket) or ""
+        local count = tonumber(value:match("^(%d+)%s*/"))
+        if count == nil or count == 0 then
+            nextDungeon = os.clock() + (count == 0 and DUNGEON_RECHECK_SECONDS or 20)
+            if returnToBattle() then
+                note(count == 0 and "Dungeon tickets 0/5; checking again in 2h"
+                    or "Dungeon tickets unreadable; checking again soon")
+            end
+            return
+        end
+        sharedTicketsEmpty = false
+        noTicketsUntil.halls, noTicketsUntil.crypt = 0, 0
+        log("Dungeon tickets replenished: " .. value)
+    end
+    local current = dungeonTypeOnPage()
+    if current ~= selectedDungeon then
+        local leave = child(screen, {"Leave"})
+        if ready(leave) and buttonText(leave) == "LEAVE PARTY" then
+            if fire("dungeon.leave", leave, "LEAVE PARTY", 3) then task.wait(1) end
+        end
+        if not valid("dungeon", version) then return end
+        local pick = child(screen, {"Pick", selectedDungeon})
+        if ready(pick) then
+            fire("dungeon.pick." .. selectedDungeon, pick, nil, 3)
+            task.wait(1)
+        end
+        current = dungeonTypeOnPage()
+        if current ~= selectedDungeon then
+            nextDungeon = os.clock() + 10
+            note("Dungeon selector unavailable; waiting for " .. dungeonName(selectedDungeon))
+            return
+        end
+    end
+    local ticket = child(screen, {"Hero", "Tickets", "R1", "Amount"})
+    local ticketValue = visible(ticket) and textOf(ticket) or ""
+    local available = tonumber(ticketValue:match("^(%d+)%s*/"))
+    if available == nil then
+        nextDungeon = os.clock() + 10
+        note(dungeonName(selectedDungeon) .. " tickets not readable; retrying")
+        return
+    end
+    if available == 0 then
+        local now = os.clock()
+        noTicketsUntil[selectedDungeon] = now + 60
+        local other = otherDungeon(selectedDungeon)
+        if noTicketsUntil[other] > now then
+            sharedTicketsEmpty = true
+            selectedDungeon = other
+            nextDungeon = now + DUNGEON_RECHECK_SECONDS
+            if returnToBattle() then
+                note("Both dungeon types 0/5; checking again in 2h")
+            end
+        else
+            local empty = dungeonName(selectedDungeon)
+            selectedDungeon = other
+            nextDungeon = now + 4
+            note(empty .. " has no tickets. Trying " .. dungeonName(other))
+        end
+        return
+    end
+    noTicketsUntil[selectedDungeon] = 0
+    local start = child(screen, {"Party", "Action"})
+    if not (ready(start) and buttonText(start) == "START SOLO") then
+        local open = child(screen, {"Open"})
+        if not fire("dungeon.open", open, "OPEN A PARTY", 4) then
+            nextDungeon = os.clock() + 10
+            note("Dungeon party unavailable; retrying")
+            return
+        end
+        task.wait(1)
+    end
+    if not valid("dungeon", version) then return end
+    start = child(page(), {"Party", "Action"})
+    if fire("dungeon.start", start, "START SOLO", 6) then
+        dungeonStarted, dungeonSeen = true, false
+        dungeonSentAt, dungeonReturnedAt = os.clock(), nil
+        nextDungeon = os.clock() + 30
+        note("Started " .. dungeonName(selectedDungeon))
+    else
+        nextDungeon = os.clock() + 10
+        note("START SOLO unavailable; retrying")
+    end
+end
+
+local nextLevel, nextRaid, nextExpedition = 0, 0, 0
+local raidJoinLocked = false
+local function levelTick()
+    local obj = get({"Frame", "Page", "Column", "Screen", "Screen", "LevelAll"})
+    if fire("level.all", obj, "LEVEL UP ALL", 5) then
+        nextLevel = os.clock() + 5
+        note("LEVEL UP ALL pressed")
+    else
+        nextLevel = os.clock() + 5
+    end
+end
+local function raidTick()
+    local join = get({"Frame", "News", "raid", "Action"})
+    if not (ready(join) and buttonText(join) == "JOIN") then
+        raidJoinLocked = false
+        return
+    end
+    if not raidJoinLocked and fire("raid.join", join, "JOIN", 8) then
+        raidJoinLocked = true
+        nextRaid = os.clock() + 8
+        note("RAID JOIN pressed")
+    end
+end
+
+local expeditionIds = {"Epatrol", "Esupply", "Eruins", "Ewastes", "Estarfall"}
+local sendLocked = {}
+local function expRow(id)
+    return child(modalPanel(), {"Content", "Inner", id})
+end
+local function expeditionBadgeCount()
+    local badge = get({"Frame", "Nav", "Row", "expeditions", "Badge"})
+    if not visible(badge) then return 0 end
+    local value = child(badge, {"Text"}) or badge
+    return tonumber(textOf(value)) or 0
+end
+local function expReady(obj, expected)
+    return ready(obj) and buttonText(obj) == expected
+end
+local function waitUntil(version, seconds, predicate)
+    local deadline = os.clock() + seconds
+    repeat
+        if not valid("expedition", version) then return false end
+        if predicate() then return true end
+        task.wait(0.5)
+    until os.clock() >= deadline
+    return predicate()
+end
+local function expeditionTick(version)
+    if not valid("expedition", version) then return end
+    if modalTitle() ~= "EXPEDITIONS" then
+        if modalOpen() then return end
+        if expeditionBadgeCount() <= 0 then
+            nextExpedition = os.clock() + 8
+            return
+        end
+        if not fire("exp.tab", get({"Frame", "Nav", "Row", "expeditions"}), nil, 4) then
+            nextExpedition = os.clock() + 8
+            return
+        end
+        task.wait(1)
+    end
+    if modalTitle() ~= "EXPEDITIONS" then
+        nextExpedition = os.clock() + 8
+        return
+    end
+    for _, id in ipairs(expeditionIds) do
+        if not valid("expedition", version) then return end
+        local row = expRow(id)
+        local claim = child(row, {"Claim"})
+        local again = child(row, {"Again"})
+        local recall = child(row, {"Recall"})
+        local clock = child(row, {"Clock"})
+        if expReady(recall, "RECALL") and visible(clock) then
+            sendLocked[id] = nil
+        elseif expReady(claim, "CLAIM") then
+            sendLocked[id] = nil
+            if fire("exp.claim." .. id, claim, "CLAIM", 3) then
+                note(id .. " claimed")
+                waitUntil(version, 6, function()
+                    return expReady(child(expRow(id), {"Again"}), "SEND AGAIN")
+                end)
+            end
+        end
+        again = child(expRow(id), {"Again"})
+        if not sendLocked[id] and expReady(again, "SEND AGAIN") then
+            -- Lock before dispatch: SEND AGAIN can remain visible for ~3s.
+            sendLocked[id] = true
+            if fire("exp.again." .. id, again, "SEND AGAIN", 6) then
+                note(id .. " SEND AGAIN")
+                local confirmed = waitUntil(version, 10, function()
+                    local r = expRow(id)
+                    local c = child(r, {"Clock"})
+                    return expReady(child(r, {"Recall"}), "RECALL")
+                        and visible(c) and textOf(c) ~= ""
+                end)
+                if confirmed then
+                    local clock = child(expRow(id), {"Clock"})
+                    log(id .. " dispatch confirmed: " .. textOf(clock))
+                elseif valid("expedition", version) then
+                    note(id .. " dispatch unconfirmed; locked against duplicate")
+                end
+            else
+                sendLocked[id] = nil
+            end
+        end
+    end
+    if valid("expedition", version) then
+        fire("exp.close", child(modalPanel(), {"Close"}), "X", 3)
+    end
+    nextExpedition = os.clock() + 12
+end
+
+-- Aurora is read from MOONS > Now.Title. The summoning shop always lists
+-- AURORA MOON, even when the active sky is NORMAL MOON; never use that list.
+local nextMoon = 0
+local moonWasAurora = false
+local moonUsed = {}
+local moonCardsDone = false
+local function closeModal(key)
+    return fire(key, child(modalPanel(), {"Close"}), "X", 1)
+end
+local function moreMenu()
+    local menu = get({"Frame", "Hud", "MoreMenu", "Rows"})
+    if visible(menu) then return menu end
+    if fire("moon.more", get({"Frame", "Hud", "UtilMore"}), nil, 1) then
+        task.wait(0.4)
+    end
+    return visible(menu) and menu or nil
+end
+local function openPotions()
+    if modalTitle() == "POTIONS" then return true end
+    if modalOpen() then return false end
+    local menu = moreMenu()
+    if not menu then return false end
+    if not fire("moon.potions", child(menu, {"potions"}), "POTIONS", 2) then
+        return false
+    end
+    task.wait(0.7)
+    return modalTitle() == "POTIONS"
+end
+local potionNames = {luck = "Luck Potion", haste = "Haste Potion",
+    gild = "Gilded Potion"}
+local function numeric(value)
+    if not value then return nil end
+    local clean = value:gsub(",", "")
+    return tonumber(clean)
+end
+local function potionStatus(id)
+    local row = child(modalPanel(), {"Content", "Inner", id})
+    local obj = child(row, {"Status"})
+    return visible(obj) and textOf(obj) or ""
+end
+local function usePotion(id)
+    if moonUsed[id] then return true end
+    if modalTitle() ~= "POTIONS" then return false end
+    local statusBefore = potionStatus(id)
+    -- Status may be "452 in stash" or "15m 58s left · 451 in stash".
+    local count = numeric(statusBefore:match("([%d,]+)%s+IN STASH"))
+    if statusBefore:find(" LEFT", 1, true) and count then
+        log(potionNames[id] .. " already active: " .. statusBefore)
+        moonUsed[id] = true
+        return true
+    end
+    if count == 0 then
+        log(potionNames[id] .. " empty; skipped")
+        moonUsed[id] = true
+        return true
+    end
+    if not count then
+        log(potionNames[id] .. " stock unreadable; waiting")
+        return false
+    end
+    local drink = child(modalPanel(), {"Content", "Inner", id, "Drink"})
+    if not fire("moon.drink." .. id, drink, "DRINK", 2) then return false end
+    -- Mark before observing; a delayed UI update must never spend twice.
+    moonUsed[id] = true
+    local deadline = os.clock() + 4
+    repeat
+        task.wait(0.4)
+    until potionStatus(id) ~= statusBefore or os.clock() >= deadline
+    log(potionNames[id] .. " stock: " .. statusBefore .. " -> "
+        .. potionStatus(id))
+    return true
+end
+local function openCardPacks()
+    if modalTitle() == "CARD PACKS" then return true end
+    if modalOpen() then return false end
+    local menu = moreMenu()
+    local entry
+    if menu then
+        for _, row in ipairs(menu:GetChildren()) do
+            if row:IsA("GuiButton") then
+                local value = buttonText(row)
+                if value == "CARD PACKS" or value == "CARDS" then
+                    entry = row
+                    break
+                end
+            end
+        end
+    end
+    if entry then
+        fire("moon.cards.menu", entry, buttonText(entry), 2)
+    else
+        -- The battle dock has an Open shortcut. Verify the resulting title.
+        local instant = get({"Frame", "Battle", "Dock", "Instant"})
+        if not fire("moon.cards.open", instant, "OPEN", 2) then return false end
+    end
+    task.wait(0.7)
+    if modalTitle() == "CARD PACKS" then return true end
+    log("Card Packs entry unconfirmed: " .. modalTitle())
+    if modalOpen() then closeModal("moon.cards.wrong.close") end
+    return false
+end
+local function cardCount()
+    local obj = child(modalPanel(), {"Content", "Inner", "Loose", "Row", "Label"})
+    if not visible(obj) then return nil end
+    local digits = textOf(obj):match("^REWARD CARDS%s+([%d,]+)")
+    return numeric(digits)
+end
+local function openOwnedCards(version)
+    if not openCardPacks() then
+        note("Aurora: CARD PACKS entry unavailable; retrying")
+        return false
+    end
+    local initial = cardCount()
+    if initial == nil then
+        note("Aurora: Reward Cards count unreadable; retrying")
+        return false
+    end
+    local count, opened, rounds = initial, 0, 0
+    local finalSmallBatch = false
+    -- The observed OPEN ALL processed roughly 1.26 million cards per press.
+    -- Repeat only after a measured decrease, never while a prior batch is pending.
+    while count > 0 and rounds < 15 and valid("moon", version) do
+        local all = child(modalPanel(), {"Content", "Inner", "Loose",
+            "Row", "Open", "All"})
+        local caption = buttonText(all)
+        if not caption:match("^OPEN [%d,]+$") then
+            log("Reward Cards OPEN unavailable: " .. caption)
+            return false
+        end
+        if not fire("moon.cards.all", all, caption, 4) then return false end
+        rounds = rounds + 1
+        local before = count
+        local deadline = os.clock() + 9
+        repeat
+            task.wait(0.5)
+            count = cardCount()
+        until (count and count < before) or os.clock() >= deadline
+        if not count or count >= before then
+            log("Reward Cards batch unconfirmed: " .. before .. " -> "
+                .. tostring(count or "window closed"))
+            return false
+        end
+        opened = opened + before - count
+        log("Reward Cards batch " .. rounds .. ": " .. before .. " -> "
+            .. count .. " | measured decrease=" .. opened)
+        -- Press once more after the backlog shrinks below 1,000. Auto Roll
+        -- may add a few new cards while the last batch is processing.
+        if before <= 1000 then finalSmallBatch = true end
+        if count == 0 or opened >= initial or finalSmallBatch then
+            break
+        end
+        task.wait(3.5)
+    end
+    if count > 0 and opened < initial and not finalSmallBatch then
+        note("Aurora: Reward Cards remain " .. count .. "; retrying")
+        return false
+    end
+    log("Reward Cards backlog: " .. initial .. " -> " .. count
+        .. " after " .. rounds .. " batch(es)")
+    -- Pack buttons may be GET MORE when owned=0. Never press a purchase link.
+    for _, id in ipairs({"pouch", "crate", "chest"}) do
+        local attempts = 0
+        while valid("moon", version) and modalTitle() == "CARD PACKS"
+            and attempts < 120 and os.clock() < nextMoon + 250 do
+            local row = child(modalPanel(), {"Content", "Inner", "Packs", id})
+            local open = child(row, {"Open"})
+            local sub = child(open, {"Face", "Sub"})
+            local owned = numeric(textOf(sub):match("([%d,]+)%s+OWNED"))
+            if not owned or owned <= 0 then
+                log(id .. " owned: " .. tostring(owned or "unreadable"))
+                break
+            end
+            local caption = buttonText(open)
+            if caption == "GET MORE" or not caption:match("^OPEN") then
+                log(id .. " held " .. owned .. "; OPEN unavailable: " .. caption)
+                break
+            end
+            if not fire("moon.pack." .. id, open, caption, 2) then break end
+            attempts = attempts + 1
+            task.wait(2.2)
+            local afterSub = child(child(modalPanel(), {"Content", "Inner",
+                "Packs", id, "Open"}), {"Face", "Sub"})
+            local after = numeric(textOf(afterSub):match("([%d,]+)%s+OWNED"))
+            log(id .. " owned: " .. owned .. " -> " .. tostring(after or "unconfirmed"))
+            if not after or after >= owned then break end
+        end
+    end
+    if modalTitle() == "CARD PACKS" then closeModal("moon.cards.close") end
+    moonCardsDone = true
+    note("Aurora boost/card opening attempted; see COPY LOG for counts")
+    return true
+end
+local function moonTick(version)
+    if not valid("moon", version) then return end
+    if modalOpen() and modalTitle() ~= "MOONS" then
+        nextMoon = os.clock() + 8
+        return
+    end
+    local openedHere = false
+    if modalTitle() ~= "MOONS" then
+        if not fire("moon.tab", get({"Frame", "Buffs", "Moon"}), nil, 3) then
+            nextMoon = os.clock() + 10
+            return
+        end
+        openedHere = true
+        task.wait(0.7)
+    end
+    local nowTitle = child(modalPanel(), {"Content", "Inner", "Now", "Title"})
+    local sky = visible(nowTitle) and textOf(nowTitle) or ""
+    if modalTitle() ~= "MOONS" or sky == "" then
+        nextMoon = os.clock() + 10
+        log("Moon active title unreadable")
+        if openedHere and modalTitle() == "MOONS" then
+            closeModal("moon.close")
+        end
+        return
+    end
+    local aurora = sky:match("^AURORA MOON") ~= nil
+    if not aurora then
+        if moonWasAurora then log("Aurora ended: " .. sky) end
+        moonWasAurora, moonCardsDone = false, false
+        moonUsed = {}
+        nextMoon = os.clock() + 15
+        if openedHere then closeModal("moon.close") end
+        return
+    end
+    if not moonWasAurora then
+        log("ACTIVE MOON confirmed: " .. sky)
+        moonWasAurora = true
+        moonUsed, moonCardsDone = {}, false
+    end
+    nextMoon = os.clock() + (moonCardsDone and 30 or 12)
+    if openedHere then
+        closeModal("moon.close")
+        task.wait(0.4)
+    end
+    if moonCardsDone then return end
+    if modalOpen() then
+        note("Aurora active; close MOONS to apply boost")
+        return
+    end
+    if not openPotions() then
+        note("Aurora active; POTIONS entry unavailable; retrying")
+        return
+    end
+    for _, id in ipairs({"luck", "haste", "gild"}) do
+        if not valid("moon", version) then return end
+        usePotion(id)
+    end
+    if modalTitle() == "POTIONS" then closeModal("moon.potions.close") end
+    task.wait(0.5)
+    if not valid("moon", version) then return end
+    for _, id in ipairs({"luck", "haste", "gild"}) do
+        if not moonUsed[id] then
+            note("Aurora: " .. potionNames[id] .. " unavailable; retrying")
+            return
+        end
+    end
+    openOwnedCards(version)
+end
+
+local enabledNames = {}
+for _, key in ipairs(settingKeys) do
+    if flags[key] then table.insert(enabledNames, titles[key]) end
+end
+if #enabledNames > 0 then
+    status.Text = "Restored " .. #enabledNames .. " switch(es); see log"
+else
+    status.Text = "Ready. All switches are OFF."
+end
+log("Combined V1.2 R9 ready | restored from " .. (settingsSource or "defaults")
+    .. " | saving to " .. settingsStorage .. " | ON: "
+    .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
+log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
+if settingsStorage ~= "file" then
+    log("Settings are session-only: readfile/writefile support is needed to restore after restarting Roblox")
+end
+if type(firesignal) ~= "function" then
+    note("Executor firesignal unavailable; no game buttons can be pressed")
+end
+task.spawn(function()
+    while alive do
+        local ok, err = pcall(function()
+            local now = os.clock()
+            observeDungeon(now)
+            local blockingDungeonResult = recoverDungeonModal(now)
+            if flags.raid and not modalOpen() and now >= nextRaid then
+                raidTick()
+            end
+            if not busy and flags.level and not modalOpen() and now >= nextLevel then
+                run("level", levelTick)
+            end
+            if not busy and flags.moon and not inDungeon() and
+                now >= nextMoon then
+                run("moon", moonTick)
+            end
+            if not busy and flags.expedition and not blockingDungeonResult
+                and now >= nextExpedition then
+                if modalTitle() == "EXPEDITIONS" or expeditionBadgeCount() > 0 then
+                    run("expedition", expeditionTick)
+                else
+                    nextExpedition = now + 8
+                end
+            end
+            if not busy and flags.dungeon and not dungeonStarted and
+                not inDungeon() and not modalOpen() and now >= nextDungeon then
+                if waveBattle() or dungeonTypeOnPage() then
+                    run("dungeon", runDungeon)
+                end
+            end
+        end)
+        if not ok then
+            note("Scheduler error: " .. tostring(err))
+            task.wait(3)
+        end
+        task.wait(1)
+    end
+end)
+end, function(err)
+    return tostring(err)
+end)
+if startupOk then
+    local player = game:GetService("Players").LocalPlayer
+    local pg = player and player:FindFirstChild("PlayerGui")
+    local old = pg and pg:FindFirstChild("RollStickman_StartupError")
+    if old then old:Destroy() end
+end
+if not startupOk then
+    warn("[RAS] Startup error: " .. startupError)
+    local ok, pg = pcall(function()
+        return game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
+    end)
+    if ok and pg then
+        local old = pg:FindFirstChild("RollStickman_StartupError")
+        if old then old:Destroy() end
+        local gui = Instance.new("ScreenGui")
+        gui.Name = "RollStickman_StartupError"
+        gui.ResetOnSpawn = false
+        gui.DisplayOrder = 1000
+        local message = Instance.new("TextLabel")
+        message.Size = UDim2.fromOffset(600, 110)
+        message.Position = UDim2.fromOffset(20, 160)
+        message.BackgroundColor3 = Color3.fromRGB(90, 27, 35)
+        message.TextColor3 = Color3.new(1, 1, 1)
+        message.TextWrapped = true
+        message.Text = "ROLL A STICKMAN STARTUP ERROR\n" .. startupError
+        message.Parent = gui
+        gui.Parent = pg
+    end
+end
