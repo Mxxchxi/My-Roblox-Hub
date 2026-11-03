@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R10
+-- Roll A Stickman Combined Auto V1.2 R11
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R10 starting; waiting for game to load")
+print("[RAS] R11 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -26,6 +26,8 @@ assert(pg:WaitForChild("RollAStickman", 120), "RollAStickman UI not ready after 
 local SETTINGS_FILE = "RollStickman_Combined_V1_2_settings.json"
 local SETTINGS_KEY = "RollStickman_Combined_V1_2_settings"
 local settingKeys = {"level", "raid", "dungeon", "expedition", "moon", "antiAfk"}
+local potionNames = {luck = "Luck Potion", haste = "Haste Potion", gild = "Gilded Potion"}
+local potionConfig = {when = "Aurora", selected = {luck = true, haste = true, gild = true}}
 local function settingsEnv()
     if type(getgenv) == "function" then
         local ok, env = pcall(getgenv)
@@ -50,7 +52,13 @@ local function cleanSettings(value)
     if tab ~= "Team" and tab ~= "Fight" and tab ~= "Potion" and tab ~= "Status" then
         tab = "Fight"
     end
-    return cleaned, position, tab
+    local source = type(value.potion) == "table" and value.potion or {}
+    local selections = type(source.selected) == "table" and source.selected or {}
+    local potion = {when = "Aurora", selected = {}}
+    for _, id in ipairs({"luck", "haste", "gild"}) do
+        potion.selected[id] = selections[id] ~= false
+    end
+    return cleaned, position, tab, potion
 end
 local function readSettings()
     if type(readfile) == "function" then
@@ -60,22 +68,26 @@ local function readSettings()
                 return HttpService:JSONDecode(content)
             end)
             if valid then
-                local saved, position, tab = cleanSettings(decoded)
-                if saved then return saved, "file", position, tab end
+                local saved, position, tab, potion = cleanSettings(decoded)
+                if saved then return saved, "file", position, tab, potion end
             end
         end
     end
     local env = settingsEnv()
-    local saved, position, tab
+    local saved, position, tab, potion
     if type(env) == "table" then
-        saved, position, tab = cleanSettings(env[SETTINGS_KEY])
+        saved, position, tab, potion = cleanSettings(env[SETTINGS_KEY])
     end
-    return saved, saved and "session" or nil, position, tab
+    return saved, saved and "session" or nil, position, tab, potion
 end
 local settingsPosition
 local settingsTab = "Fight"
 local function writeSettings(current)
     local saved = {placeId = game.PlaceId, flags = {}, activeTab = settingsTab}
+    saved.potion = {when = potionConfig.when, selected = {}}
+    for _, id in ipairs({"luck", "haste", "gild"}) do
+        saved.potion.selected[id] = potionConfig.selected[id] == true
+    end
     if settingsPosition then saved.position = settingsPosition end
     for _, key in ipairs(settingKeys) do
         saved.flags[key] = current[key] == true
@@ -198,7 +210,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R10  ·  ALT", 8, 27)
+local title = label("Title", "ROLL A STICKMAN  |  R11  ·  ALT", 8, 27)
 title.Size = UDim2.fromOffset(258, 27)
 title.TextSize = 12
 title.Active = true
@@ -225,7 +237,7 @@ local toggles = {
     raid = pageItem("Fight", button("RaidToggle", "RAID: OFF", 12, 116, 336, 36)),
     dungeon = pageItem("Fight", button("DungeonToggle", "DUNGEON: OFF", 12, 158, 336, 36)),
     expedition = pageItem("Fight", button("ExpeditionToggle", "EXPEDITIONS: OFF", 12, 200, 336, 36)),
-    moon = pageItem("Potion", button("MoonToggle", "AURORA BOOST: OFF", 12, 116, 336, 36)),
+    moon = pageItem("Potion", button("MoonToggle", "USE POTION: OFF", 12, 116, 336, 30)),
     antiAfk = pageItem("Status", button("AntiAfkToggle", "ANTI AFK: ON", 12, 116, 336, 36)),
 }
 pageLabel("Team", "TeamHeading", "TEAM  /  UPGRADES", 90, 20)
@@ -233,13 +245,24 @@ pageLabel("Team", "TeamHint", "LEVEL UP uses LEVEL UP ALL when that game button 
 pageLabel("Fight", "FightHeading", "FIGHT  /  AUTOMATION", 90, 20)
 pageLabel("Fight", "DungeonMode", "DUNGEON · ALL TYPES\nNo tickets: check again after 2 hours.", 245, 42)
 local dungeonSchedule = pageLabel("Fight", "DungeonSchedule", "Dungeon check: ready", 300, 38)
-pageLabel("Potion", "PotionHeading", "POTION  /  AURORA BOOST", 90, 20)
-pageLabel("Potion", "PotionHint", "Aurora: use Luck / Haste / Gilded, then open owned cards. Stock is read when POTIONS is visible.", 158, 46)
+pageLabel("Potion", "PotionHeading", "POTION  /  CONDITIONS", 90, 20)
+local potionUI = {checks = {}}
+potionUI.dropdown = pageItem("Potion", button("PotionWhen", "Use Potion When: Aurora   v", 12, 152, 336, 30))
+potionUI.option = pageItem("Potion", button("PotionWhenAurora", "Aurora", 12, 184, 336, 30))
+potionUI.option.ZIndex = 30
+potionUI.option.BackgroundColor3 = Color3.fromRGB(35, 100, 90)
+potionUI.option.Visible = false
 local potionLabels = {}
 for i, id in ipairs({"luck", "haste", "gild"}) do
+    local y = 190 + (i - 1) * 46
+    potionUI.checks[id] = pageItem("Potion", button("PotionCheck" .. id,
+        "[x]  " .. potionNames[id], 12, y, 336, 24))
+    potionUI.checks[id].TextXAlignment = Enum.TextXAlignment.Left
     potionLabels[id] = pageLabel("Potion", "PotionStock" .. id,
-        id:upper() .. ": not observed", 210 + (i - 1) * 44, 40)
+        "Stock: not observed", y + 25, 18)
+    potionLabels[id].TextSize = 10
 end
+pageLabel("Potion", "PotionHint", "Checked potions only. Owned cards open afterwards.", 328, 20).TextSize = 10
 pageLabel("Status", "StatusHeading", "STATUS  /  LIVE GAME VALUES", 90, 20)
 local statusScroll = Instance.new("ScrollingFrame")
 statusScroll.Name = "StatusPage"
@@ -328,7 +351,8 @@ logBox.Parent = scroll
 gui.Parent = pg
 local alive = true
 local minimized = false
-local savedFlags, settingsSource, savedPosition, savedTab = readSettings()
+local savedFlags, settingsSource, savedPosition, savedTab, savedPotion = readSettings()
+if savedPotion then potionConfig = savedPotion end
 if not savedFlags and next(previousFlags) then
     savedFlags, settingsSource = previousFlags, "previous UI"
 end
@@ -350,7 +374,7 @@ end
 settingsPosition = {x = panel.Position.X.Offset, y = panel.Position.Y.Offset}
 local versions = {level = 0, raid = 0, dungeon = 0, expedition = 0, moon = 0, antiAfk = 0}
 local titles = {level = "LEVEL UP", raid = "RAID", dungeon = "DUNGEON",
-    expedition = "EXPEDITIONS", moon = "AURORA BOOST", antiAfk = "ANTI AFK"}
+    expedition = "EXPEDITIONS", moon = "USE POTION", antiAfk = "ANTI AFK"}
 local function paintToggle(key)
     gui:SetAttribute("Flag_" .. key, flags[key] == true)
     toggles[key].BackgroundColor3 = flags[key]
@@ -411,6 +435,7 @@ local function setTab(name)
         tabButtons[tab].BackgroundColor3 = tab == name and theme.accent or theme.off
         tabButtons[tab].TextColor3 = tab == name and theme.base or theme.text
     end
+    potionUI.option.Visible = false
     settingsStorage = writeSettings(flags)
     gui:SetAttribute("ActiveTab", name)
 end
@@ -969,8 +994,6 @@ local function openPotions()
     task.wait(0.7)
     return modalTitle() == "POTIONS"
 end
-local potionNames = {luck = "Luck Potion", haste = "Haste Potion",
-    gild = "Gilded Potion"}
 local function numeric(value)
     if not value then return nil end
     local clean = value:gsub(",", "")
@@ -984,6 +1007,7 @@ local function potionStatus(id)
     return value
 end
 local function usePotion(id)
+    if not potionConfig.selected[id] then return true end
     if moonUsed[id] then return true end
     if modalTitle() ~= "POTIONS" then return false end
     local statusBefore = potionStatus(id)
@@ -1103,6 +1127,7 @@ local function openOwnedCards(version)
     end
     log("Reward Cards backlog: " .. initial .. " -> " .. count
         .. " after " .. rounds .. " batch(es)")
+    if not valid("moon", version) then return false end
     -- Pack buttons may be GET MORE when owned=0. Never press a purchase link.
     for _, id in ipairs({"pouch", "crate", "chest"}) do
         local attempts = 0
@@ -1131,9 +1156,10 @@ local function openOwnedCards(version)
             if not after or after >= owned then break end
         end
     end
+    if not valid("moon", version) then return false end
     if modalTitle() == "CARD PACKS" then closeModal("moon.cards.close") end
     moonCardsDone = true
-    note("Aurora boost/card opening attempted; see COPY LOG for counts")
+    note("Selected potions/card opening attempted; see COPY LOG for counts")
     return true
 end
 local function moonTick(version)
@@ -1151,6 +1177,7 @@ local function moonTick(version)
         openedHere = true
         task.wait(0.7)
     end
+    if not valid("moon", version) then return end
     local nowTitle = child(modalPanel(), {"Content", "Inner", "Now", "Title"})
     local sky = visible(nowTitle) and textOf(nowTitle) or ""
     if modalTitle() ~= "MOONS" or sky == "" then
@@ -1162,7 +1189,7 @@ local function moonTick(version)
         return
     end
     rememberStatus("aura", statusPlain(nowTitle))
-    local aurora = sky:match("^AURORA MOON") ~= nil
+    local aurora = potionConfig.when == "Aurora" and sky:match("^AURORA MOON") ~= nil
     if not aurora then
         if moonWasAurora then log("Aurora ended: " .. sky) end
         moonWasAurora, moonCardsDone = false, false
@@ -1181,29 +1208,68 @@ local function moonTick(version)
         closeModal("moon.close")
         task.wait(0.4)
     end
-    if moonCardsDone then return end
+    if not valid("moon", version) then return end
+    local pending = false
+    for _, id in ipairs({"luck", "haste", "gild"}) do
+        if potionConfig.selected[id] and not moonUsed[id] then pending = true end
+    end
+    if moonCardsDone and not pending then return end
     if modalOpen() then
-        note("Aurora active; close MOONS to apply boost")
+        note("Aurora active; close MOONS to use selected potions")
         return
     end
-    if not openPotions() then
+    if pending and not openPotions() then
         note("Aurora active; POTIONS entry unavailable; retrying")
         return
     end
     for _, id in ipairs({"luck", "haste", "gild"}) do
         if not valid("moon", version) then return end
-        usePotion(id)
+        if potionConfig.selected[id] then usePotion(id) end
     end
     if modalTitle() == "POTIONS" then closeModal("moon.potions.close") end
     task.wait(0.5)
     if not valid("moon", version) then return end
     for _, id in ipairs({"luck", "haste", "gild"}) do
-        if not moonUsed[id] then
+        if potionConfig.selected[id] and not moonUsed[id] then
             note("Aurora: " .. potionNames[id] .. " unavailable; retrying")
             return
         end
     end
-    openOwnedCards(version)
+    if not moonCardsDone then openOwnedCards(version) end
+end
+
+local function paintPotionChoices()
+    potionUI.dropdown.Text = "Use Potion When: " .. potionConfig.when .. "   v"
+    for _, id in ipairs({"luck", "haste", "gild"}) do
+        potionUI.checks[id].Text = (potionConfig.selected[id] and "[x]  " or "[ ]  ") .. potionNames[id]
+        potionUI.checks[id].BackgroundColor3 = potionConfig.selected[id]
+            and Color3.fromRGB(31, 92, 84) or theme.off
+    end
+end
+paintPotionChoices()
+potionUI.dropdown.Activated:Connect(function()
+    if alive and not minimized and activeTab == "Potion" then
+        potionUI.option.Visible = not potionUI.option.Visible
+    end
+end)
+potionUI.option.Activated:Connect(function()
+    potionConfig.when = "Aurora"
+    potionUI.option.Visible = false
+    paintPotionChoices()
+    settingsStorage = writeSettings(flags)
+    nextMoon = 0
+    log("Use Potion When: Aurora")
+end)
+for _, id in ipairs({"luck", "haste", "gild"}) do
+    potionUI.checks[id].Activated:Connect(function()
+        potionConfig.selected[id] = not potionConfig.selected[id]
+        potionUI.option.Visible = false
+        versions.moon = versions.moon + 1
+        nextMoon = 0
+        paintPotionChoices()
+        settingsStorage = writeSettings(flags)
+        log(potionNames[id] .. (potionConfig.selected[id] and " selected" or " unchecked"))
+    end)
 end
 
 local statusNextPowerScan = 0
@@ -1278,7 +1344,7 @@ local function refreshStatus(now)
             value = cachedStatus(id .. "Potion")
         end
         put(id .. "Potion", value)
-        potionLabels[id].Text = potionNames[id]:upper() .. "\n" .. value
+        potionLabels[id].Text = value
     end
     put("runtime", string.format("%dm %02ds · %s", math.floor((now - startedAt) / 60),
         math.floor(now - startedAt) % 60, busy and "Working" or "Waiting"))
@@ -1299,7 +1365,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R10 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R11 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
