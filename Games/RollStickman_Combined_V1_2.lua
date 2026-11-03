@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R30
+-- Roll A Stickman Combined Auto V1.2 R31
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R30 starting; waiting for game to load")
+print("[RAS] R31 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -29,7 +29,7 @@ local settingKeys = {"level", "raid", "dungeon", "expedition", "moon", "cards", 
 local potionNames = {luck = "Luck Potion", haste = "Haste Potion", gild = "Gilded Potion"}
 -- These seven names are confirmed by the user's in-game MOONS screenshot.
 local potionConfig = {when = "Aurora", moons = {AURORA = true}, cardMoons = {AURORA = true}, petLuckMoons = {AURORA = true}, petPlayEveryMinutes = 5, petPlayEnabled = true, moonInspectMinutes = 5, moonHudOnly = false, webhookEnabled = false, webhookUrl = "", available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, multipliers = {NORMAL = 1, SILVER = 1.5, AURORA = 12}, selected = {luck = true, haste = true, gild = true}}
-local cardSelection = {loose = true, pouch = true, crate = true, chest = true, requireLuck = true, requirePet = true}
+local cardSelection = {stopBelow = 0, loose = true, pouch = true, crate = true, chest = true, requireLuck = true, requirePet = true}
 local function minutes(value, fallback)
     local number = tonumber(value)
     if not number or number ~= number or number == math.huge or number == -math.huge then return fallback end
@@ -143,6 +143,9 @@ local function cleanSettings(value)
     for _, id in ipairs({"loose", "pouch", "crate", "chest"}) do cards[id] = cardSource[id] ~= false end
     cards.requireLuck = cardSource.requireLuck ~= false
     cards.requirePet = cardSource.requirePet ~= false
+    local threshold = tonumber(cardSource.stopBelow)
+    cards.stopBelow = threshold and threshold == threshold and threshold >= 0 and threshold < math.huge
+        and math.floor(threshold) or 0
     return cleaned, position, tab, potion, cards
 end
 local function readSettings()
@@ -319,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R30  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R31  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -464,6 +467,16 @@ for i, id in ipairs({"loose", "pouch", "crate", "chest"}) do
     cardUI.checks[id].TextXAlignment = Enum.TextXAlignment.Left
 end
 pageLabel("Open Card", "CardHint", "Uses its own Moon selection. Opens owned items only.", 342, 22).TextSize = 10
+pageLabel("Open Card", "StopBelowLabel", "Stop when Rolls less than (Reward Cards; 0 = off)", 370, 22)
+cardUI.stopBelow = Instance.new("TextBox")
+cardUI.stopBelow.Name = "StopBelow"
+cardUI.stopBelow.Position = UDim2.fromOffset(12, 396)
+cardUI.stopBelow.Size = UDim2.fromOffset(336, 28)
+cardUI.stopBelow.BackgroundColor3 = theme.card
+cardUI.stopBelow.TextColor3 = theme.text
+cardUI.stopBelow.TextSize = 14
+cardUI.stopBelow.ClearTextOnFocus = false
+pageItem("Open Card", cardUI.stopBelow)
 local petUI = {targets = {}, nextCheck = 0, scanRequested = false, catalog = {}, nextPlayAt = 0}
 pageLabel("Pet", "PetHeading", "PET  /  BOOST CONDITIONS", 90, 20)
 pageLabel("Pet", "PetLuckLabel", "Pet Luck before cards; restore after cards", 151, 18)
@@ -1534,6 +1547,12 @@ local function openOwnedCardsWorker(version)
         note("Reward Cards count unreadable; retrying")
         return false
     end
+    local thresholdCount = cardCount()
+    if cardSelection.stopBelow > 0 and thresholdCount == nil then return false end
+    if cardUI.belowLimit(thresholdCount) then
+        cardUI.diagnose("CARD_THRESHOLD_REACHED", "remaining=" .. thresholdCount)
+        return true
+    end
     local count, opened, rounds = initial, 0, 0
     -- The observed OPEN ALL processed roughly 1.26 million cards per press.
     -- Repeat only after a measured decrease, never while a prior batch is pending.
@@ -1569,6 +1588,10 @@ local function openOwnedCardsWorker(version)
         opened = opened + before - count
         log("Reward Cards batch " .. rounds .. ": " .. before .. " -> "
             .. count .. " | measured decrease=" .. opened)
+        if cardUI.belowLimit(count) then
+            cardUI.diagnose("CARD_THRESHOLD_REACHED", "remaining=" .. count)
+            return true
+        end
         if count == 0 then break end
         task.wait(3.5)
     end
@@ -2547,7 +2570,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R30 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R31 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -2659,6 +2682,21 @@ for _, id in ipairs({"luck", "haste", "gild"}) do
     end)
 end
 
+function cardUI.belowLimit(count)
+    return count ~= nil and cardSelection.stopBelow > 0 and count < cardSelection.stopBelow
+end
+cardUI.stopBelow.Text = tostring(cardSelection.stopBelow)
+cardUI.stopBelow.FocusLost:Connect(function()
+    local value = tonumber(cardUI.stopBelow.Text:gsub(",", ""))
+    if value and value == value and value >= 0 and value < math.huge then
+        cardSelection.stopBelow = math.floor(value)
+        potionUI.completedEvent = nil
+        versions.moon = versions.moon + 1
+        nextMoon = 0
+        settingsStorage = writeSettings(flags)
+    end
+    cardUI.stopBelow.Text = tostring(cardSelection.stopBelow)
+end)
 function cardUI.paint()
     for _, id in ipairs({"loose", "pouch", "crate", "chest"}) do
         cardUI.checks[id].Text = (cardSelection[id] and "[x]  " or "[ ]  ") .. cardUI.names[id]
@@ -2895,7 +2933,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R30 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R31 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -2937,6 +2975,19 @@ task.spawn(function()
             if not busy and (flags.moon or flags.cards) and not inDungeon() and
                 now >= nextMoon then
                 run("moon", moonTick)
+            end
+            if not busy and flags.pet and not inDungeon() and not modalOpen()
+                and not potionUI.cycle and not petUI.scanRequested and now >= petUI.nextCheck then
+                petUI.nextCheck = now + 300
+                run("pet", function(version)
+                    local function check() return alive and flags.pet and versions.pet == version and not potionUI.cycle end
+                    local ok = petUI.ensureRole("play", "IDLE", check)
+                    if not ok then petUI.nextCheck = os.clock() + 30 end
+                    potionUI.closeCycleWindow()
+                    if check() and not modalOpen() then
+                        fire("pet.idle.back", get({"Frame", "Nav", "Row", "endless"}), nil, 1)
+                    end
+                end)
             end
             if not busy and not inDungeon() and petUI.scanRequested then
                 local manual = petUI.scanRequested
