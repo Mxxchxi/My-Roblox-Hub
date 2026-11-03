@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R16
+-- Roll A Stickman Combined Auto V1.2 R17
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R16 starting; waiting for game to load")
+print("[RAS] R17 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -370,8 +370,8 @@ for _, spec in ipairs({{"petLuckMoons", "PetLuckWhen", 136, 168}, {"petPlayMoons
     pageItem("Pet", target.list)
     table.insert(petUI.targets, target)
 end
-petUI.help = pageLabel("Pet", "PetHelp", "Pet action binding needs a PETS UI report. Open PETS in the game, capture below, then COPY LOG.", 242, 57)
-petUI.capture = pageItem("Pet", button("CapturePet", "CAPTURE PET UI", 12, 308, 336, 32))
+petUI.help = pageLabel("Pet", "PetHelp", "Pet actions need individual bonus stats. Press capture, then hover a pet for 3 seconds to show its tooltip; COPY LOG afterwards.", 242, 57)
+petUI.capture = pageItem("Pet", button("CapturePet", "CAPTURE PET UI (3s)", 12, 308, 336, 32))
 pageLabel("Status", "StatusHeading", "STATUS  /  LIVE GAME VALUES", 90, 20)
 local statusScroll = Instance.new("ScrollingFrame")
 statusScroll.Name = "StatusPage"
@@ -421,7 +421,7 @@ for _, spec in ipairs({
     {"dungeon", "DUNGEON / TICKETS"}, {"nextDungeon", "NEXT DUNGEON CHECK"},
     {"expedition", "EXPEDITIONS READY"}, {"cards", "REWARD CARDS"},
     {"luckPotion", "LUCK POTION"}, {"hastePotion", "HASTE POTION"},
-    {"gildPotion", "GILDED POTION"}, {"runtime", "SESSION / SCHEDULER"},
+    {"gildPotion", "GILDED POTION"}, {"petLuck", "EQUIPPED PET BONUSES"}, {"runtime", "SESSION / SCHEDULER"},
     {"switches", "ENABLED SYSTEMS"}, {"storage", "SETTINGS STORAGE"},
 }) do statusRow(spec[1], spec[2]) end
 local statusHeader = label("StatusHeader", "ACTIVITY", 360, 18)
@@ -692,9 +692,13 @@ stopButton.Activated:Connect(function()
 end)
 copyButton.Activated:Connect(function()
     local value = table.concat(logs, "\n")
+    if petUI.report and #petUI.report > 0 then
+        value = value .. "\n\nFULL PET UI REPORT\n" .. table.concat(petUI.report, "\n")
+    end
     if type(setclipboard) == "function" and pcall(setclipboard, value) then
         copyButton.Text = "COPIED"
     else
+        logBox.Text = value
         logBox:CaptureFocus()
         logBox.CursorPosition = #logBox.Text + 1
         logBox.SelectionStart = 1
@@ -1462,7 +1466,52 @@ function potionUI.resolveSky(version)
     if potionUI.discover() > 0 then potionUI.rebuild() end
     return value, true
 end
+function petUI.equippedStats()
+    local screen = page()
+    local header = child(screen, {"OnHead"})
+    local hint = statusPlain(child(screen, {"SlotHint"})):lower()
+    local value = visible(header) and statusPlain(header) or ""
+    if hint:find("pet", 1, true) and value:upper():match("^EQUIPPED%s+%d+/%d+") then
+        local lower = value:lower()
+        petUI.equipped = {
+            count = tonumber(lower:match("^equipped%s+(%d+)/")) or 0,
+            luck = tonumber(lower:match("%+([%d.]+)%%%s*luck")) or 0,
+            rolls = tonumber(lower:match("%+([%d.]+)%%%s*rolls from play")) or 0,
+            text = value, at = os.clock(),
+        }
+    end
+    local stats = petUI.equipped
+    if stats and os.clock() - stats.at <= 300 then return stats end
+end
+function petUI.inspectEquipped(version)
+    if petUI.equippedStats() then return end
+    if inDungeon() or modalOpen() or os.clock() < (petUI.nextInspect or 0) then return end
+    petUI.nextInspect = os.clock() + 300
+    local root = pg:FindFirstChild("RollAStickman")
+    local function findEntry()
+        for _, obj in ipairs(root and root:GetDescendants() or {}) do
+            if ready(obj) then
+                local name = obj.Name:lower()
+                if buttonText(obj) == "PETS" or name == "pets" or name == "utilpets" then return obj end
+            end
+        end
+    end
+    local entry = findEntry()
+    if not entry then moreMenu(); entry = findEntry() end
+    if not entry then return end
+    local backToBattle = battleTitle() ~= ""
+    if not fire("pet.inspect.open", entry, nil, 5) then return end
+    task.wait(0.8)
+    if not validMoon(version) then return end
+    local stats = petUI.equippedStats()
+    if stats then
+        log("PET EQUIPPED | " .. stats.text)
+        if backToBattle then fire("pet.inspect.back", get({"Frame", "Nav", "Row", "endless"}), nil, 3) end
+    end
+end
 function petUI.luckActive()
+    local stats = petUI.equippedStats()
+    if stats and stats.count > 0 and stats.luck > 0 then return true end
     local root = get({"Frame", "Buffs"})
     for _, widget in ipairs(root and root:GetChildren() or {}) do
         if visible(widget) then
@@ -1490,8 +1539,11 @@ function cardUI.luckActive()
 end
 function cardUI.ready(version)
     if cardSelection.requirePet and not petUI.luckActive() then
-        note("Open Card waiting: active Pet Luck is not confirmed; see PET tab")
-        return false
+        petUI.inspectEquipped(version)
+        if not petUI.luckActive() then
+            note("Open Card waiting: equipped Pet Luck bonus is not confirmed; see PET tab")
+            return false
+        end
     end
     if cardSelection.requireLuck and not cardUI.luckActive() then
         if modalTitle() == "POTIONS" then
@@ -1734,45 +1786,99 @@ for _, id in ipairs({"loose", "pouch", "crate", "chest"}) do
 end
 
 petUI.capture.Activated:Connect(function()
-    log("PET DATA | modal=" .. modalTitle() .. " | Pet Luck active=" .. tostring(petUI.luckActive()))
-    local root = modalTitle():find("PET", 1, true) and modalPanel()
-        or (visible(page()) and page()) or get({"Frame"})
-    local count = 0
-    for _, obj in ipairs(root and root:GetDescendants() or {}) do
-        if visible(obj) then
-            local value = statusPlain(obj)
-            if value ~= "" or obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
-                local parts, parent = {}, obj
-                local owner
-                while parent and parent ~= root do
-                    if not owner and parent:IsA("GuiButton") then owner = parent end
-                    table.insert(parts, 1, parent.Name)
-                    parent = parent.Parent
+    if petUI.capturePending then return end
+    petUI.capturePending = true
+    petUI.capture.Text = "HOVER A PET NOW..."
+    note("Capturing Pet UI in 3s; hover a pet to show its bonus stats")
+    task.delay(3, function()
+    petUI.capturePending = false
+    if not alive then return end
+    petUI.capture.Text = "CAPTURE PET UI (3s)"
+    petUI.report = petUI.report or {}
+    petUI.captureCount = (petUI.captureCount or 0) + 1
+    local function pathOf(obj)
+        local parts = {}
+        while obj and obj ~= pg do table.insert(parts, 1, obj.Name); obj = obj.Parent end
+        return table.concat(parts, ".")
+    end
+    local function report(value)
+        if #petUI.report >= 2000 then return end
+        table.insert(petUI.report, value)
+        log(value)
+    end
+    local function attributes(obj)
+        local ok, attrs = pcall(function() return obj:GetAttributes() end)
+        if ok and type(attrs) == "table" and next(attrs) then
+            local encoded, value = pcall(function() return HttpService:JSONEncode(attrs) end)
+            if encoded then return " | attrs=" .. value end
+        end
+        return ""
+    end
+    local function capture(root, prefix, skipGrid)
+        local count = 0
+        for _, obj in ipairs(root and root:GetDescendants() or {}) do
+            local excluded = false
+            local ancestor = obj
+            while ancestor and ancestor ~= root do
+                if ancestor.Name == "Eggs" or (skipGrid and ancestor.Name == "Grid") then excluded = true; break end
+                ancestor = ancestor.Parent
+            end
+            if not excluded and visible(obj) then
+                local value = statusPlain(obj)
+                if value ~= "" or obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
+                    local owner = obj
+                    while owner and owner ~= pg and not owner:IsA("GuiButton") do owner = owner.Parent end
+                    local text = value ~= "" and value:sub(1, 500) or ("Image=" .. tostring(obj.Image))
+                    report(prefix .. " | " .. pathOf(obj) .. " | " .. text
+                        .. (owner and owner:IsA("GuiButton") and (" | button=" .. pathOf(owner) .. " Active=" .. tostring(owner.Active)) or "")
+                        .. attributes(obj))
+                    count = count + 1
+                    if count >= 250 then report(prefix .. " | limited to 250 fields"); break end
                 end
-                local details = value ~= "" and value:sub(1, 220) or ("Image=" .. tostring(obj.Image))
-                log("PET UI | " .. table.concat(parts, ".") .. " | " .. details
-                    .. (owner and (" | button=" .. owner.Name .. " Active=" .. tostring(owner.Active)) or ""))
-                count = count + 1
-                if count >= 160 then log("PET UI limited to 160 entries; keep only PETS open"); break end
             end
         end
     end
-    local buffs = get({"Frame", "Buffs"})
-    local buffCount = 0
-    for _, obj in ipairs(buffs and buffs:GetDescendants() or {}) do
-        if visible(obj) then
-            local value = statusPlain(obj)
-            if value ~= "" or obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
-                local parts, parent = {}, obj
-                while parent and parent ~= buffs do table.insert(parts, 1, parent.Name); parent = parent.Parent end
-                log("PET BUFF | " .. table.concat(parts, ".") .. " | " .. (value ~= "" and value or tostring(obj.Image)))
-                buffCount = buffCount + 1
-                if buffCount >= 50 then break end
-            end
+    report("PET CAPTURE " .. petUI.captureCount .. " | modal=" .. modalTitle() .. " | Pet Luck active=" .. tostring(petUI.luckActive()))
+    local stats = petUI.equippedStats()
+    if stats then report("PET EQUIPPED | " .. stats.text) end
+    local screen = page()
+    local grid = child(screen, {"Grid"})
+    for _, obj in ipairs(grid and grid:GetChildren() or {}) do
+        if obj:IsA("GuiButton") then
+            report("PET OWNED | " .. pathOf(obj)
+                .. " | name=" .. statusPlain(child(obj, {"Name"}))
+                .. " | level=" .. statusPlain(child(obj, {"Level"}))
+                .. " | copies=" .. statusPlain(child(obj, {"Copies"}))
+                .. " | tag=" .. statusPlain(child(obj, {"Tag"}))
+                .. attributes(obj))
         end
     end
-    petUI.help.Text = "Pet report captured. Press COPY LOG and send it to bind the actual boost buttons."
-    note("Pet UI report captured; COPY LOG")
+    capture(screen, "PET PAGE", true)
+    if modalOpen() then capture(modalPanel(), "PET DETAIL", false) end
+    local root = pg:FindFirstChild("RollAStickman")
+    local function isDetail(obj)
+        local name = obj.Name:lower()
+        return name:find("tooltip", 1, true) or name:find("preview", 1, true)
+            or name:find("inspect", 1, true) or name:find("detail", 1, true)
+    end
+    for _, obj in ipairs(root and root:GetDescendants() or {}) do
+        if obj:IsA("GuiObject") and visible(obj) and isDetail(obj) then
+            local parent, nested = obj.Parent, false
+            while parent and parent ~= root do
+                if isDetail(parent) then nested = true; break end
+                parent = parent.Parent
+            end
+            if not nested then capture(obj, "PET TOOLTIP", false) end
+        end
+    end
+    capture(get({"Frame", "Buffs"}), "PET BUFF", false)
+    if type(writefile) == "function" then
+        local ok = pcall(writefile, "RollStickman_PetUI_Report.txt", table.concat(petUI.report, "\n"))
+        if ok then log("Pet report also saved to RollStickman_PetUI_Report.txt") end
+    end
+    petUI.help.Text = "Pet report captured. Select another pet to show its stats and capture again; COPY LOG includes every capture."
+    note("Pet detail report captured; COPY LOG")
+    end)
 end)
 
 local statusNextPowerScan = 0
@@ -1840,6 +1946,9 @@ local function refreshStatus(now)
         if visible(cards) then rememberStatus("cards", statusPlain(cards)) end
     end
     put("cards", cachedStatus("cards"))
+    local pets = petUI.equippedStats()
+    put("petLuck", pets and (pets.text .. " | observed " .. math.floor(now - pets.at) .. "s ago")
+        or "Open PETS to read equipped luck / rolls-from-play bonuses")
     cardUI.stock.Text = cachedStatus("cards")
     for _, id in ipairs({"luck", "haste", "gild"}) do
         local value
@@ -1870,7 +1979,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R16 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R17 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
