@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R33
+-- Roll A Stickman Combined Auto V1.2 R34
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R33 starting; waiting for game to load")
+print("[RAS] R34 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -25,7 +25,7 @@ assert(pg:WaitForChild("RollAStickman", 120), "RollAStickman UI not ready after 
 
 local SETTINGS_FILE = "RollStickman_Combined_V1_2_settings.json"
 local SETTINGS_KEY = "RollStickman_Combined_V1_2_settings"
-local settingKeys = {"level", "raid", "dungeon", "expedition", "moon", "cards", "pet", "antiAfk"}
+local settingKeys = {"level", "raid", "dungeon", "expedition", "moon", "cards", "pet", "antiAfk", "ads"}
 local potionNames = {luck = "Luck Potion", haste = "Haste Potion", gild = "Gilded Potion"}
 -- These seven names are confirmed by the user's in-game MOONS screenshot.
 local potionConfig = {when = "Aurora", moons = {AURORA = true}, cardMoons = {AURORA = true}, petLuckMoons = {AURORA = true}, petPlayEveryMinutes = 5, petPlayEnabled = true, moonInspectMinutes = 5, moonHudOnly = false, webhookEnabled = false, webhookUrl = "", available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, multipliers = {NORMAL = 1, SILVER = 1.5, AURORA = 12}, selected = {luck = true, haste = true, gild = true}}
@@ -243,7 +243,7 @@ if previous then
     local previousPanel = previous:FindFirstChild("Panel")
     local names = {level = "LevelToggle", raid = "RaidToggle",
         dungeon = "DungeonToggle", expedition = "ExpeditionToggle",
-        moon = "MoonToggle", cards = "CardToggle", pet = "PetToggle", antiAfk = "AntiAfkToggle"}
+        moon = "MoonToggle", cards = "CardToggle", pet = "PetToggle", antiAfk = "AntiAfkToggle", ads = "AdsToggle"}
     for key, name in pairs(names) do
         local storedFlag = previous:GetAttribute("Flag_" .. key)
         if type(storedFlag) == "boolean" then previousFlags[key] = storedFlag end
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R33  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R34  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -407,6 +407,7 @@ local toggles = {
     moon = pageItem("Potion", button("MoonToggle", "USE POTION: OFF", 12, 116, 336, 30)),
     cards = pageItem("Open Card", button("CardToggle", "AUTO OPEN CARD: OFF", 12, 116, 336, 30)),
     pet = pageItem("Pet", button("PetToggle", "AUTO PET: OFF", 12, 116, 336, 30)),
+    ads = pageItem("Fight", button("AdsToggle", "AUTO WATCH AD: OFF", 12, 290, 336, 36)),
     antiAfk = pageItem("Settings", button("AntiAfkToggle", "ANTI AFK: ON", 12, 116, 336, 36)),
 }
 pageLabel("Team", "TeamHeading", "TEAM  /  UPGRADES", 90, 20)
@@ -654,9 +655,9 @@ if savedPosition then
     if ok then panel.Position = UDim2.fromOffset(x, y) end
 end
 settingsPosition = {x = panel.Position.X.Offset, y = panel.Position.Y.Offset}
-local versions = {level = 0, raid = 0, dungeon = 0, expedition = 0, moon = 0, cards = 0, pet = 0, antiAfk = 0}
+local versions = {level = 0, raid = 0, dungeon = 0, expedition = 0, moon = 0, cards = 0, pet = 0, antiAfk = 0, ads = 0}
 local titles = {level = "LEVEL UP", raid = "RAID", dungeon = "DUNGEON",
-    expedition = "EXPEDITIONS", moon = "USE POTION", cards = "AUTO OPEN CARD", pet = "AUTO PET", antiAfk = "ANTI AFK"}
+    expedition = "EXPEDITIONS", moon = "USE POTION", cards = "AUTO OPEN CARD", pet = "AUTO PET", antiAfk = "ANTI AFK", ads = "AUTO WATCH AD"}
 local function paintToggle(key)
     gui:SetAttribute("Flag_" .. key, flags[key] == true)
     toggles[key].BackgroundColor3 = flags[key]
@@ -2620,7 +2621,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R33 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R34 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -2987,6 +2988,48 @@ function neonUI.dismissDaily(now)
     end
 end
 
+neonUI.nextAdCheck = 0
+function neonUI.watchAd(version)
+    local function active() return alive and flags.ads and versions.ads == version end
+    local function row() return get({"Frame", "Page", "Column", "Screen", "Scroll", "Featured", "Ad"}) end
+    local function remaining()
+        local obj = child(row(), {"Text"})
+        return visible(obj) and tonumber(textOf(obj):match("(%d+)%s+LEFT TODAY")) or nil
+    end
+    neonUI.nextAdCheck = os.clock() + 300
+    if not active() or modalOpen() then return end
+    if not visible(row()) then
+        if not fire("ads.shop", get({"Frame", "Hud", "Utilshop"}), nil, 3) then return end
+        local deadline = os.clock() + 6
+        repeat task.wait(0.2) until visible(row()) or not active() or os.clock() >= deadline
+    end
+    local before = remaining()
+    local buy = child(row(), {"Buy"})
+    if active() and before and before > 0 and ready(buy) and buttonText(buy) == "WATCH AD" then
+        if not fire("ads.watch", buy, "WATCH AD", 30) then return end
+        log("WATCH AD requested; remaining=" .. before)
+        neonUI.queueWebhook("📺 เริ่มดูโฆษณารับเพชร เหลือสิทธิ์ก่อนดู " .. before .. " ครั้ง")
+        local deadline = os.clock() + 180
+        local after
+        repeat
+            task.wait(1)
+            after = remaining()
+        until not active() or (after and after < before and ready(child(row(), {"Buy"}))) or os.clock() >= deadline
+        if not active() then return end
+        if not after or after >= before then
+            -- Completion is unknown: pause automation so it cannot click over a running ad.
+            for _, key in ipairs(settingKeys) do flags[key]=false;versions[key]=versions[key]+1;paintToggle(key) end
+            settingsStorage = writeSettings(flags)
+            note("WATCH AD completion unknown; automation paused. Check the game then re-enable switches.")
+            neonUI.queueWebhook("⚠️ ยังยืนยันว่าดูโฆษณาจบไม่ได้ภายใน 3 นาที จึงพักทุกฟังก์ชัน กรุณาตรวจเกมแล้วเปิดสวิตช์ใหม่")
+            return
+        end
+        neonUI.queueWebhook("📺 สิทธิ์ดูโฆษณาลดจาก " .. before .. " เหลือ " .. after .. " ครั้ง (ยังไม่ได้ยืนยันยอดเพชรที่เพิ่ม)")
+        neonUI.nextAdCheck = os.clock() + 60
+    end
+    if active() and not modalOpen() then fire("ads.back", get({"Frame", "Nav", "Row", "endless"}), nil, 1) end
+end
+
 local enabledNames = {}
 for _, key in ipairs(settingKeys) do
     if flags[key] then table.insert(enabledNames, titles[key]) end
@@ -2996,7 +3039,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R33 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R34 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -3065,6 +3108,9 @@ task.spawn(function()
                 else
                     nextExpedition = now + 8
                 end
+            end
+            if not busy and flags.ads and not inDungeon() and not modalOpen() and now >= neonUI.nextAdCheck then
+                run("ads", neonUI.watchAd)
             end
             if not busy and flags.dungeon and not dungeonStarted and
                 not inDungeon() and not modalOpen() and now >= nextDungeon then
