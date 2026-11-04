@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R32
+-- Roll A Stickman Combined Auto V1.2 R33
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R32 starting; waiting for game to load")
+print("[RAS] R33 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R32  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R33  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -1570,7 +1570,7 @@ local function openOwnedCardsWorker(version)
         cardUI.recordOpen(snapshot)
         rounds = rounds + 1
         local before = count
-        local deadline = os.clock() + 9
+        local deadline = os.clock() + 15
         repeat
             task.wait(0.5)
             if modalTitle() == "YOUR HAUL" then
@@ -1581,10 +1581,12 @@ local function openOwnedCardsWorker(version)
         until (count and count < before) or os.clock() >= deadline
         if not cardRunValid() then return false end
         if not count or count >= before then
+            cardUI.diagnose("CARD_BATCH_UNCONFIRMED", "before=" .. before .. " after=" .. tostring(count or "unknown"))
             log("Reward Cards batch unconfirmed: " .. before .. " -> "
                 .. tostring(count or "window closed"))
             return false
         end
+        cardUI.diagnose("CARD_BATCH_CONFIRMED", "before=" .. before .. " after=" .. count)
         opened = opened + before - count
         log("Reward Cards batch " .. rounds .. ": " .. before .. " -> "
             .. count .. " | measured decrease=" .. opened)
@@ -1593,7 +1595,7 @@ local function openOwnedCardsWorker(version)
             return true
         end
         if count == 0 then break end
-        task.wait(3.5)
+        task.wait(4.2)
     end
     if count > 0 then
         note("Aurora: Reward Cards remain " .. count .. "; retrying")
@@ -1900,6 +1902,7 @@ function potionUI.closeCycleWindow()
         closeModal("cycle.close." .. title)
         task.wait(0.3)
         if not modalOpen() then return true end
+        if title == "YOUR HAUL" and modalTitle() == "CARD PACKS" then return true end
         if modalTitle() ~= title then return false end
     until not alive or os.clock() >= deadline
     log("CYCLE window close unconfirmed: " .. title)
@@ -2467,6 +2470,8 @@ function neonUI.humanWebhook(message)
         return message:match("| " .. key .. "=([^|]+)") or "ไม่ทราบ"
     end
     local reasons = {
+        CARD_BATCH_CONFIRMED="เปิดชุดการ์ดสำเร็จ ยอดคงเหลือลดลง",
+        CARD_BATCH_UNCONFIRMED="ยังอ่านยอดหลังเปิดชุดล่าสุดไม่ได้ จะรอตรวจใหม่",
         MOON_NOT_SELECTED="ข้ามการ์ด: Moon นี้ไม่ได้อยู่ในรายการที่เลือก",
         CYCLE_CHECK="เริ่มตรวจเงื่อนไขเปิดการ์ด", RETRY_PENDING="รอลองใหม่ใน 30 วินาที",
         BLOCKING_WINDOW="งานรออยู่: มีหน้าต่างเกมขวาง", POTION_PAGE_UNAVAILABLE="ยังเปิดหน้า Potion ไม่สำเร็จ",
@@ -2494,6 +2499,7 @@ function neonUI.humanWebhook(message)
         return "🎮 " .. title .. "\nMoon: " .. field("Moon") .. "| เหลือ " .. field("remaining") .. "วินาที"
             .. "\nLuck Potion: " .. yes("luckPotionConfirmed") .. " | Pet Luck: " .. yes("petLuckConfirmed")
             .. "\nค่า Luck: " .. field("Luck") .. "\nหน้าต่างปัจจุบัน: " .. field("modal")
+            .. "\nรายละเอียด: " .. (message:match("reason=[^|]+| ([^|]*)") or "")
             .. "\nรหัสตรวจสอบ: " .. reason
     end
     if message:match("^CARD OPEN PRESSED") then
@@ -2614,7 +2620,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R32 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R33 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -2990,7 +2996,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R32 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R33 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
