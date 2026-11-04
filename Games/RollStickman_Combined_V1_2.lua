@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R31
+-- Roll A Stickman Combined Auto V1.2 R32
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R31 starting; waiting for game to load")
+print("[RAS] R32 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R31  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R32  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -2462,7 +2462,51 @@ function neonUI.paintWebhook()
     neonUI.webhook.toggle.Text = (potionConfig.webhookEnabled and "[x] " or "[ ] ") .. "Discord webhook: card opens"
     neonUI.webhook.toggle.BackgroundColor3 = potionConfig.webhookEnabled and theme.accent or theme.off
 end
+function neonUI.humanWebhook(message)
+    local function field(key)
+        return message:match("| " .. key .. "=([^|]+)") or "ไม่ทราบ"
+    end
+    local reasons = {
+        MOON_NOT_SELECTED="ข้ามการ์ด: Moon นี้ไม่ได้อยู่ในรายการที่เลือก",
+        CYCLE_CHECK="เริ่มตรวจเงื่อนไขเปิดการ์ด", RETRY_PENDING="รอลองใหม่ใน 30 วินาที",
+        BLOCKING_WINDOW="งานรออยู่: มีหน้าต่างเกมขวาง", POTION_PAGE_UNAVAILABLE="ยังเปิดหน้า Potion ไม่สำเร็จ",
+        LUCK_POTION_UNCONFIRMED="รอให้ยืนยันบัฟ Luck Potion ได้", PET_LUCK_UNCONFIRMED="ยังยืนยันบัฟ Pet Luck ไม่ได้",
+        PET_PREPARE_FAILED="เตรียม Pet Luck ไม่สำเร็จ", PET_RESTORED="คืน Pet ชุดเดิมสำเร็จ",
+        PET_RESTORE_UNCONFIRMED="ยังยืนยันการคืน Pet ไม่ได้", CARD_PAGE_UNAVAILABLE="เปิดหน้าการ์ดไม่สำเร็จ",
+        CARD_THRESHOLD_REACHED="หยุดเปิดการ์ด: จำนวนคงเหลือต่ำกว่าค่าที่ตั้ง",
+        CARDS_REMAIN="ยังมีการ์ดเหลือ หรืออ่านจำนวนคงเหลือไม่ได้",
+        WORKER_STOPPED="รอบเปิดการ์ดหยุดก่อนเสร็จ", WORKER_FINISHED="รอบเปิดการ์ดเสร็จแล้ว",
+        MOON_UNCONFIRMED="กำลังรอยืนยัน Moon", CARD_COUNT_UNREADABLE="อ่านจำนวนการ์ดไม่ได้",
+        CARD_DISABLED_OR_MOON_EXPIRED="ข้ามการ์ด: ปิดระบบหรือ Moon หมดเวลา",
+        DAILY_POPUP_CLOSED="ปิดหน้าต่างรางวัลรายวันแล้ว ทำงานต่อได้",
+        DAILY_POPUP_CLOSE_FAILED="ยังปิดหน้าต่างรางวัลรายวันไม่ได้",
+    }
+    if message:match("^CARD CHECK") then
+        local reason = field("reason"):match("^%s*(.-)%s*$")
+        local potion, action = reason:match("^POTION_(%u+)_(.+)$")
+        local title = reasons[reason]
+        if potion then
+            local actions={DRINK_PRESSED="ส่งคำสั่งใช้ยาแล้ว", EMPTY="ยาหมด", STATUS_UNREADABLE="อ่านสถานะยาไม่ได้", DRINK_UNAVAILABLE="ปุ่มใช้ยายังไม่พร้อม"}
+            title = (actions[action] or "ตรวจสอบยา") .. ": " .. potion
+        end
+        title = title or "พบปัญหาระหว่างทำงาน"
+        local function yes(key) return field(key):match("true") and "ผ่าน" or "ยังไม่ยืนยัน" end
+        return "🎮 " .. title .. "\nMoon: " .. field("Moon") .. "| เหลือ " .. field("remaining") .. "วินาที"
+            .. "\nLuck Potion: " .. yes("luckPotionConfirmed") .. " | Pet Luck: " .. yes("petLuckConfirmed")
+            .. "\nค่า Luck: " .. field("Luck") .. "\nหน้าต่างปัจจุบัน: " .. field("modal")
+            .. "\nรหัสตรวจสอบ: " .. reason
+    end
+    if message:match("^CARD OPEN PRESSED") then
+        return "🃏 ส่งคำสั่งเปิดการ์ดแล้ว (รอยืนยันยอดหลังเปิด)\n"
+            .. (message:match("| ([^|]+) | batch=") or "การ์ด")
+            .. " | ชุดที่ " .. field("batch") .. "\nจำนวนก่อนเปิด: " .. field("stock")
+            .. "\nLuck ตอนเปิด: " .. field("Luck HUD") .. "\nMoon: " .. field("Moon")
+            .. "\nPet: " .. field("Pet")
+    end
+    return message
+end
 function neonUI.queueWebhook(message, manual)
+    message = neonUI.humanWebhook(message)
     local url = validWebhook(potionConfig.webhookUrl)
     if url == "" or (not manual and not potionConfig.webhookEnabled) then return false end
     if #neonUI.webhook.queue >= 50 then
@@ -2570,7 +2614,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R31 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R32 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -2924,6 +2968,19 @@ local function refreshStatus(now)
     put("storage", settingsStorage == "file" and "File · restores across restarts" or "Session only")
 end
 
+function neonUI.dismissDaily(now)
+    local title = modalTitle()
+    local daily = {['DAILY REWARDS']=true, ['DAILY REWARD']=true, ['DAILY LOGIN']=true, ['DAILY LOGIN REWARDS']=true}
+    if not daily[title] or now < (neonUI.nextDailyClose or 0) then return end
+    neonUI.nextDailyClose = now + 10
+    if closeModal("daily.close") then
+        task.wait(0.4)
+        cardUI.diagnose(modalTitle() ~= title and "DAILY_POPUP_CLOSED" or "DAILY_POPUP_CLOSE_FAILED", title)
+    else
+        cardUI.diagnose("DAILY_POPUP_CLOSE_FAILED", title)
+    end
+end
+
 local enabledNames = {}
 for _, key in ipairs(settingKeys) do
     if flags[key] then table.insert(enabledNames, titles[key]) end
@@ -2933,7 +2990,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R31 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R32 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -2953,6 +3010,7 @@ task.spawn(function()
                 log("Status display error: " .. tostring(statusError))
             end
             observeDungeon(now)
+            if not busy then neonUI.dismissDaily(now) end
             local blockingDungeonResult = recoverDungeonModal(now)
             if not busy and potionUI.scanRequested then
                 potionUI.scanRequested = false
