@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R35
+-- Roll A Stickman Combined Auto V1.2 R36
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R35 starting; waiting for game to load")
+print("[RAS] R36 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R35  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R36  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -734,8 +734,7 @@ local function toggleMinimized()
     if not alive then return end
     minimized = not minimized
     for _, obj in ipairs(panel:GetChildren()) do
-        if obj:IsA("GuiObject") and obj ~= header and obj ~= title
-            and obj ~= minimizeUI and obj ~= closeUI then
+        if obj:IsA("GuiObject") and obj ~= minimizeUI then
             if minimized then
                 foldedVisibility[obj] = obj.Visible
                 obj.Visible = false
@@ -744,7 +743,10 @@ local function toggleMinimized()
             end
         end
     end
-    panel.Size = UDim2.fromOffset(neonUI.width, minimized and 54 or PANEL_HEIGHT)
+    panel.Size = minimized and UDim2.fromOffset(24, 24) or UDim2.fromOffset(neonUI.width, PANEL_HEIGHT)
+    panel.ClipsDescendants = minimized
+    minimizeUI.Position = minimized and UDim2.fromOffset(0, 0) or UDim2.fromOffset(589, 14)
+    minimizeUI.Size = minimized and UDim2.fromOffset(24, 24) or UDim2.fromOffset(28, 28)
     minimizeUI.Text = minimized and "+" or "-"
     gui:SetAttribute("Minimized", minimized)
     local x, y = clampPosition(panel.Position.X.Offset, panel.Position.Y.Offset)
@@ -2620,7 +2622,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R35 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R36 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -2996,7 +2998,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R35 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R36 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
