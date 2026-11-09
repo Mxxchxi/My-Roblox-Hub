@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R37
+-- Roll A Stickman Combined Auto V1.2 R38
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R37 starting; waiting for game to load")
+print("[RAS] R38 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R37  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R38  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -2623,7 +2623,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R37 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R38 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -2999,7 +2999,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R37 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R38 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -3042,7 +3042,8 @@ task.spawn(function()
                 run("arena", function(version)
                     if not fire("arena.tab", get({"Frame","Nav","Row","arena"}), "ARENA") then return end
                     local labels = {}
-                    local deadline = os.clock() + 4
+                    local opponentsRequested = false
+                    local deadline = os.clock() + 12
                     repeat
                         task.wait(0.25)
                         if not valid("arena", version) or modalOpen() then return end
@@ -3056,7 +3057,15 @@ task.spawn(function()
                                 if ready(item) then
                                     local name = buttonText(item)
                                     if name ~= "" then labels[name] = true end
-                                    if confirmed and (name == "FIGHT" or name == "BATTLE" or name == "CHALLENGE"
+                                    if name == "FIND OPPONENTS" and not opponentsRequested then
+                                        if fire("arena.find", item, name, 10) then
+                                            opponentsRequested = true
+                                            deadline = os.clock() + 12
+                                            note("Arena finding opponents")
+                                            break
+                                        end
+                                    end
+                                    if (confirmed or opponentsRequested) and (name == "FIGHT" or name == "BATTLE" or name == "CHALLENGE"
                                         or name == "JOIN" or name == "START" or name == "FIGHT AGAIN") then
                                         if fire("arena.fight", item, name) then
                                             note("Arena pressed " .. name)
