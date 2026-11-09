@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R36
+-- Roll A Stickman Combined Auto V1.2 R37
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R36 starting; waiting for game to load")
+print("[RAS] R37 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -25,7 +25,7 @@ assert(pg:WaitForChild("RollAStickman", 120), "RollAStickman UI not ready after 
 
 local SETTINGS_FILE = "RollStickman_Combined_V1_2_settings.json"
 local SETTINGS_KEY = "RollStickman_Combined_V1_2_settings"
-local settingKeys = {"level", "raid", "dungeon", "expedition", "moon", "cards", "pet", "antiAfk"}
+local settingKeys = {"level", "raid", "arena", "dungeon", "expedition", "moon", "cards", "pet", "antiAfk"}
 local potionNames = {luck = "Luck Potion", haste = "Haste Potion", gild = "Gilded Potion"}
 -- These seven names are confirmed by the user's in-game MOONS screenshot.
 local potionConfig = {when = "Aurora", moons = {AURORA = true}, cardMoons = {AURORA = true}, petLuckMoons = {AURORA = true}, petPlayEveryMinutes = 5, petPlayEnabled = true, moonInspectMinutes = 5, moonHudOnly = false, webhookEnabled = false, webhookUrl = "", available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, multipliers = {NORMAL = 1, SILVER = 1.5, AURORA = 12}, selected = {luck = true, haste = true, gild = true}}
@@ -241,7 +241,7 @@ local previous = pg:FindFirstChild(NAME)
 local previousFlags = {}
 if previous then
     local previousPanel = previous:FindFirstChild("Panel")
-    local names = {level = "LevelToggle", raid = "RaidToggle",
+    local names = {level = "LevelToggle", raid = "RaidToggle", arena = "ArenaToggle",
         dungeon = "DungeonToggle", expedition = "ExpeditionToggle",
         moon = "MoonToggle", cards = "CardToggle", pet = "PetToggle", antiAfk = "AntiAfkToggle"}
     for key, name in pairs(names) do
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R36  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R37  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -401,6 +401,7 @@ function neonUI.minuteControls(tab, prefix, y)
 end
 local toggles = {
     level = pageItem("Team", button("LevelToggle", "LEVEL UP: OFF", 12, 116, 336, 36)),
+    arena = pageItem("Fight", button("ArenaToggle", "ARENA: OFF", 12, 344, 336, 36)),
     raid = pageItem("Fight", button("RaidToggle", "RAID: OFF", 12, 116, 336, 36)),
     dungeon = pageItem("Fight", button("DungeonToggle", "DUNGEON: OFF", 12, 158, 336, 36)),
     expedition = pageItem("Fight", button("ExpeditionToggle", "EXPEDITIONS: OFF", 12, 200, 336, 36)),
@@ -654,8 +655,8 @@ if savedPosition then
     if ok then panel.Position = UDim2.fromOffset(x, y) end
 end
 settingsPosition = {x = panel.Position.X.Offset, y = panel.Position.Y.Offset}
-local versions = {level = 0, raid = 0, dungeon = 0, expedition = 0, moon = 0, cards = 0, pet = 0, antiAfk = 0}
-local titles = {level = "LEVEL UP", raid = "RAID", dungeon = "DUNGEON",
+local versions = {level = 0, raid = 0, arena = 0, dungeon = 0, expedition = 0, moon = 0, cards = 0, pet = 0, antiAfk = 0}
+local titles = {level = "LEVEL UP", raid = "RAID", arena = "ARENA", dungeon = "DUNGEON",
     expedition = "EXPEDITIONS", moon = "USE POTION", cards = "AUTO OPEN CARD", pet = "AUTO PET", antiAfk = "ANTI AFK"}
 local function paintToggle(key)
     gui:SetAttribute("Flag_" .. key, flags[key] == true)
@@ -2622,7 +2623,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R36 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R37 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -2998,7 +2999,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R36 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R37 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -3034,6 +3035,44 @@ task.spawn(function()
             end
             if not busy and flags.raid and not modalOpen() and now >= nextRaid then
                 raidTick()
+            end
+            if not busy and flags.arena and waveBattle() and not inDungeon() and not modalOpen()
+                and now >= (neonUI.nextArena or 0) then
+                neonUI.nextArena = now + 60
+                run("arena", function(version)
+                    if not fire("arena.tab", get({"Frame","Nav","Row","arena"}), "ARENA") then return end
+                    local labels = {}
+                    local deadline = os.clock() + 4
+                    repeat
+                        task.wait(0.25)
+                        if not valid("arena", version) or modalOpen() then return end
+                        local screen = get({"Frame","Page","Column","Screen"})
+                        local confirmed = false
+                        if visible(screen) then
+                            for _, item in ipairs(screen:GetDescendants()) do
+                                if visible(item) and textOf(item):find("ARENA", 1, true) then confirmed = true break end
+                            end
+                            for _, item in ipairs(screen:GetDescendants()) do
+                                if ready(item) then
+                                    local name = buttonText(item)
+                                    if name ~= "" then labels[name] = true end
+                                    if confirmed and (name == "FIGHT" or name == "BATTLE" or name == "CHALLENGE"
+                                        or name == "JOIN" or name == "START" or name == "FIGHT AGAIN") then
+                                        if fire("arena.fight", item, name) then
+                                            note("Arena pressed " .. name)
+                                            return
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    until os.clock() >= deadline
+                    local found = {}
+                    for name in pairs(labels) do table.insert(found, name) end
+                    table.sort(found)
+                    note("Arena: no confirmed fight button. Visible buttons: " .. table.concat(found, ", "))
+                    fire("arena.back", get({"Frame","Nav","Row","endless"}))
+                end)
             end
             if not busy and flags.level and not modalOpen() and now >= nextLevel then
                 run("level", levelTick)
