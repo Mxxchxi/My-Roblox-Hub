@@ -9,7 +9,11 @@ local playerGui = player and player:WaitForChild("PlayerGui", 15)
 local ROOT = "https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub/"
 local API_ROOT = "https://api.github.com/repos/Mxxchxi/My-Roblox-Hub/git/ref/heads/"
 -- Optional test override: getgenv().MyRobloxHubRef = "feature/universal-multi-game-loader"
-local environment = type(getgenv) == "function" and getgenv() or _G
+local environment = _G
+if type(getgenv) == "function" then
+    local envOk, env = pcall(getgenv)
+    if envOk and type(env) == "table" then environment = env end
+end
 local requestedRef = type(environment) == "table" and environment.MyRobloxHubRef or nil
 if type(requestedRef) ~= "string" or not requestedRef:match("^[%w_%-/]+$") or requestedRef:find("..", 1, true) then
     requestedRef = "main"
@@ -89,6 +93,12 @@ local ok, err = xpcall(function()
     local run = compile(source, entry.script)
     status("Starting " .. tostring(entry.name or game.PlaceId) .. "...")
     run()
+    if entry.uiName then
+        assert(type(entry.uiName) == "string" and #entry.uiName > 0, "Invalid UI verification name")
+        assert(playerGui, "Cannot verify UI: PlayerGui unavailable")
+        assert(playerGui:FindFirstChild(entry.uiName),
+            "Game script returned but expected UI is missing: " .. entry.uiName)
+    end
     status("Started " .. tostring(entry.name or game.PlaceId) .. " · " .. ref:sub(1, 7))
     if gui then
         local completed = gui
