@@ -23,7 +23,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 
 The loader downloads the registry and selected script from the same Git commit when GitHub's API is available. When the API is unavailable it falls back to uncached `main`. Unknown places show an unsupported-game notice and run nothing. Each script must handle its own UI initialization. Existing Roll A Stickman script is preserved.
 
-Note: Executor HTTP/loadstring support is required. Test the loader in each game before release; Roll A Stickman V3 was reported working in Potassium before the latest UI-verification change; re-test the latest branch before merging.
+Note: Executor HTTP/loadstring support is required. Test the loader in each game before release; Roll A Stickman V3 including UI verification passed a user-run Potassium smoke test at commit 5129cee. This does not validate every automation feature.
 
 ## Architecture rules
 
@@ -50,11 +50,21 @@ getgenv().MyRobloxHubRef = "feature/universal-multi-game-loader"
 loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub/feature/universal-multi-game-loader/Loader.lua"))()
 ```
 
-- [ ] Loader reports Roll A Stickman and selected commit
-- [ ] UI `RollStickman_Combined_V1_2` is visible without a startup failure
+- [x] Loader reports Roll A Stickman and selected commit (reported smoke test)
+- [x] UI `RollStickman_Combined_V1_2` is visible without a startup failure (reported smoke test)
 - [ ] Existing settings and toggles restore as expected
 - [ ] Raid, Arena, Dungeon and Expeditions work individually
 - [ ] Unknown PlaceId shows unsupported and does not run a game script
 - [ ] Re-running loader does not create duplicate windows
 
 If the console reports `expected UI is missing`, capture the output and verify the current script's UI name. A successful dispatch is not proof that all automation features work.
+
+## Static contract checks
+
+Run from the repository root:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+These tests check registry paths, loader dispatch, revision metadata, and error-handling contracts without starting Roblox. They do not replace a Potassium runtime test. The user-reported smoke test passed at commit `5129cee`; automated test execution has not yet been verified.
