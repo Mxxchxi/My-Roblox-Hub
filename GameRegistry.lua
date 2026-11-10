@@ -6,5 +6,6 @@ return {
         script = "Games/RollStickman_Combined_V1_2.lua",
         minRevision = 10,
         revisionPattern = "Combined Auto V1%.2 R(%d+)",
+        uiName = "RollStickman_Combined_V1_2",
     },
 }
