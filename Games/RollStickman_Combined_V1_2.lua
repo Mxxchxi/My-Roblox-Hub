@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R41
+-- Roll A Stickman Combined Auto V1.2 R42
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R41 starting; waiting for game to load")
+print("[RAS] R42 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R41  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R42  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -2624,7 +2624,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R41 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R42 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3000,7 +3000,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R41 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R42 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -3109,7 +3109,7 @@ task.spawn(function()
                                     if name == "FIND OPPONENTS" and not opponentsRequested then
                                         if fire("arena.find", item, name, 10) then
                                             opponentsRequested = true
-                                            neonUI.nextArena = os.clock() + 120
+                                            neonUI.nextArena = os.clock()
                                             deadline = os.clock() + 12
                                             note("Arena finding opponents")
                                             break
@@ -3118,8 +3118,8 @@ task.spawn(function()
                                     if (confirmed or opponentsRequested) and (name == "FIGHT" or name == "BATTLE" or name == "CHALLENGE"
                                         or name == "JOIN" or name == "START" or name == "FIGHT AGAIN") then
                                         if fire("arena.fight", item, name) then
-                                            neonUI.nextArena = os.clock() + 120
-                                            note("Arena quota available; next check in 2m")
+                                            neonUI.nextArena = os.clock()
+                                            note("Arena quota available; next check when idle")
                                             note("Arena FIGHT dispatched; waiting for battle")
                                             local startDeadline = os.clock() + 10
                                             local started = false
@@ -3142,12 +3142,12 @@ task.spawn(function()
                                                     if arenaPage() then
                                                         fire("arena.back", get({"Frame","Nav","Row","endless"}))
                                                     end
-                                                    neonUI.nextArena = os.clock() + 120
+                                                    neonUI.nextArena = os.clock()
                                                     return
                                                 end
                                             until os.clock() >= finishDeadline
                                             note("Arena return timeout; inspect current battle or result window")
-                                            neonUI.nextArena = os.clock() + 120
+                                            neonUI.nextArena = os.clock()
                                             return
                                         end
                                     end
