@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R39
+-- Roll A Stickman Combined Auto V1.2 R40
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R39 starting; waiting for game to load")
+print("[RAS] R40 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R39  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R40  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -2624,7 +2624,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R39 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R40 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3000,7 +3000,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R39 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R40 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -3039,7 +3039,7 @@ task.spawn(function()
             end
             if not busy and flags.arena and not inDungeon() and not modalOpen()
                 and now >= (neonUI.nextArena or 0) then
-                neonUI.nextArena = now + 60
+                neonUI.nextArena = now + 7200
                 run("arena", function(version)
                     local function arenaPage()
                         local screen = page()
@@ -3054,6 +3054,33 @@ task.spawn(function()
                         if not waveBattle() then return end
                         if not fire("arena.tab", get({"Frame","Nav","Row","arena"}), "ARENA") then return end
                     end
+                    local function returnToBattle()
+                        local untilTime = os.clock() + 9
+                        repeat
+                            fire("arena.back", get({"Frame","Nav","Row","endless"}), nil, 1)
+                            task.wait(0.25)
+                            if waveBattle() then return end
+                        until not valid("arena", version) or os.clock() >= untilTime
+                        note("Arena return not confirmed within 10s")
+                    end
+                    local function quotaEmpty(screen)
+                        for _, item in ipairs(screen:GetDescendants()) do
+                            if visible(item) then
+                                local value = textOf(item)
+                                local path = item:GetFullName():lower()
+                                local relevant = path:find("ticket", 1, true) or path:find("attempt", 1, true)
+                                    or path:find("quota", 1, true) or value:find("TICKET", 1, true)
+                                    or value:find("ATTEMPT", 1, true) or value:find("FIGHT", 1, true)
+                                if value == "NO TICKETS" or value == "NO ATTEMPTS LEFT"
+                                    or value == "NO FIGHTS LEFT" or value == "DAILY LIMIT REACHED"
+                                    or (relevant and value:match("^0%s*/%s*%d+"))
+                                    or (relevant and value:match("%f[%d]0%s+LEFT")) then
+                                    return true
+                                end
+                            end
+                        end
+                        return false
+                    end
                     local labels = {}
                     local opponentsRequested = false
                     local deadline = os.clock() + 12
@@ -3063,6 +3090,12 @@ task.spawn(function()
                         local screen = get({"Frame","Page","Column","Screen"})
                         local confirmed = false
                         if visible(screen) then
+                            if quotaEmpty(screen) then
+                                neonUI.nextArena = os.clock() + 7200
+                                note("Arena quota empty; next check in 2h")
+                                returnToBattle()
+                                return
+                            end
                             for _, item in ipairs(screen:GetDescendants()) do
                                 if visible(item) and textOf(item):find("ARENA", 1, true) then confirmed = true break end
                             end
@@ -3073,6 +3106,7 @@ task.spawn(function()
                                     if name == "FIND OPPONENTS" and not opponentsRequested then
                                         if fire("arena.find", item, name, 10) then
                                             opponentsRequested = true
+                                            neonUI.nextArena = os.clock() + 120
                                             deadline = os.clock() + 12
                                             note("Arena finding opponents")
                                             break
@@ -3081,6 +3115,8 @@ task.spawn(function()
                                     if (confirmed or opponentsRequested) and (name == "FIGHT" or name == "BATTLE" or name == "CHALLENGE"
                                         or name == "JOIN" or name == "START" or name == "FIGHT AGAIN") then
                                         if fire("arena.fight", item, name) then
+                                            neonUI.nextArena = os.clock() + 120
+                                            note("Arena quota available; next check in 2m")
                                             note("Arena FIGHT dispatched; waiting for battle")
                                             local startDeadline = os.clock() + 10
                                             local started = false
@@ -3103,12 +3139,12 @@ task.spawn(function()
                                                     if arenaPage() then
                                                         fire("arena.back", get({"Frame","Nav","Row","endless"}))
                                                     end
-                                                    neonUI.nextArena = os.clock() + 60
+                                                    neonUI.nextArena = os.clock() + 120
                                                     return
                                                 end
                                             until os.clock() >= finishDeadline
                                             note("Arena return timeout; inspect current battle or result window")
-                                            neonUI.nextArena = os.clock() + 60
+                                            neonUI.nextArena = os.clock() + 120
                                             return
                                         end
                                     end
