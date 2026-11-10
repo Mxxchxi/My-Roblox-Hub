@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R42
+-- Roll A Stickman Combined Auto V1.2 R43
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R42 starting; waiting for game to load")
+print("[RAS] R43 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R42  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R43  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -2624,7 +2624,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R42 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R43 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3000,7 +3000,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R42 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R43 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -3058,11 +3058,14 @@ task.spawn(function()
                         if not fire("arena.tab", get({"Frame","Nav","Row","arena"}), "ARENA") then return end
                     end
                     local function returnToBattle()
-                        local untilTime = os.clock() + 9
+                        local untilTime = os.clock() + 4
                         repeat
                             fire("arena.back", get({"Frame","Nav","Row","endless"}), nil, 1)
                             task.wait(0.25)
-                            if waveBattle() then return end
+                            if waveBattle() and not visible(page()) then
+                                note("Arena returned to battle")
+                                return
+                            end
                         until not valid("arena", version) or os.clock() >= untilTime
                         note("Arena return not confirmed within 10s")
                     end
@@ -3086,7 +3089,7 @@ task.spawn(function()
                     end
                     local labels = {}
                     local opponentsRequested = false
-                    local deadline = os.clock() + 12
+                    local deadline = os.clock() + 5
                     repeat
                         task.wait(0.25)
                         if not valid("arena", version) or modalOpen() then return end
@@ -3110,7 +3113,7 @@ task.spawn(function()
                                         if fire("arena.find", item, name, 10) then
                                             opponentsRequested = true
                                             neonUI.nextArena = os.clock()
-                                            deadline = os.clock() + 12
+                                            deadline = os.clock() + 5
                                             note("Arena finding opponents")
                                             break
                                         end
@@ -3159,7 +3162,8 @@ task.spawn(function()
                     for name in pairs(labels) do table.insert(found, name) end
                     table.sort(found)
                     note("Arena: no confirmed fight button. Visible buttons: " .. table.concat(found, ", "))
-                    fire("arena.back", get({"Frame","Nav","Row","endless"}))
+                    neonUI.nextArena = os.clock() + 3600
+                    returnToBattle()
                 end)
             end
             if not busy and flags.level and not modalOpen() and now >= nextLevel then
