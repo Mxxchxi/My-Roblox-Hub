@@ -23,7 +23,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 
 The loader downloads the registry and selected script from the same Git commit when GitHub's API is available. When the API is unavailable it falls back to uncached `main`. Unknown places show an unsupported-game notice and run nothing. Each script must handle its own UI initialization. Existing Roll A Stickman script is preserved.
 
-Note: Executor HTTP/loadstring support is required. Test the loader in each game before release; no live executor test is performed by this change.
+Note: Executor HTTP/loadstring support is required. Test the loader in each game before release; Roll A Stickman V3 was reported working in Potassium before the latest UI-verification change; re-test the latest branch before merging.
 
 ## Architecture rules
 
@@ -40,3 +40,21 @@ Note: Executor HTTP/loadstring support is required. Test the loader in each game
 - The GitHub API may fail or be rate-limited; fallback to `main` is not an atomic snapshot if files change between requests.
 - A successful return from a game script does not guarantee that its UI initialized correctly. Verify in-game.
 - Only Roll A Stickman is currently registered. More games require real scripts and confirmed PlaceIds.
+
+## Potassium regression checklist (feature branch)
+
+Run in Roll A Stickman (PlaceId `115068315659966`):
+
+```lua
+getgenv().MyRobloxHubRef = "feature/universal-multi-game-loader"
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub/feature/universal-multi-game-loader/Loader.lua"))()
+```
+
+- [ ] Loader reports Roll A Stickman and selected commit
+- [ ] UI `RollStickman_Combined_V1_2` is visible without a startup failure
+- [ ] Existing settings and toggles restore as expected
+- [ ] Raid, Arena, Dungeon and Expeditions work individually
+- [ ] Unknown PlaceId shows unsupported and does not run a game script
+- [ ] Re-running loader does not create duplicate windows
+
+If the console reports `expected UI is missing`, capture the output and verify the current script's UI name. A successful dispatch is not proof that all automation features work.
