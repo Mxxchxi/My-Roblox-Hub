@@ -1,83 +1,112 @@
--- My Roblox Hub Loader V2: resolve the latest commit, then load an immutable URL.
+-- My Roblox Hub | Universal Multi-Game Loader V3
+-- The registry and selected script are fetched from the same Git commit.
 if not game:IsLoaded() then game.Loaded:Wait() end
-if game.PlaceId ~= 115068315659966 then
-    warn("[RAS] This loader supports Roll A Stickman (PlaceId 115068315659966)")
-    return
-end
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
-local pg = player and player:WaitForChild("PlayerGui", 30)
-local noticeGui, notice
-local function show(message, failed)
-    print("[RAS Loader] " .. message)
-    if not pg then return end
-    if not noticeGui then
-        local old = pg:FindFirstChild("RollStickman_LoaderStatus")
-        if old then old:Destroy() end
-        noticeGui = Instance.new("ScreenGui")
-        noticeGui.Name = "RollStickman_LoaderStatus"
-        noticeGui.ResetOnSpawn = false
-        noticeGui.DisplayOrder = 1001
-        notice = Instance.new("TextLabel")
-        notice.Position = UDim2.fromOffset(12, 105)
-        notice.Size = UDim2.fromOffset(500, 48)
-        notice.TextColor3 = Color3.new(1, 1, 1)
-        notice.Font = Enum.Font.Code
-        notice.TextSize = 13
-        notice.TextWrapped = true
-        notice.Parent = noticeGui
-        noticeGui.Parent = pg
-    end
-    notice.BackgroundColor3 = failed and Color3.fromRGB(116, 38, 53)
-        or Color3.fromRGB(24, 76, 69)
-    notice.Text = "RAS LOADER V2 | " .. message
+local playerGui = player and player:WaitForChild("PlayerGui", 15)
+local ROOT = "https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub/"
+local API_ROOT = "https://api.github.com/repos/Mxxchxi/My-Roblox-Hub/git/ref/heads/"
+-- Optional test override: getgenv().MyRobloxHubRef = "feature/universal-multi-game-loader"
+local environment = _G
+if type(getgenv) == "function" then
+    local envOk, env = pcall(getgenv)
+    if envOk and type(env) == "table" then environment = env end
 end
-local function feedback(message, failed)
-    local ok = pcall(show, message, failed)
-    if not ok then warn("[RAS Loader] " .. message) end
+local requestedRef = type(environment) == "table" and environment.MyRobloxHubRef or nil
+if type(requestedRef) ~= "string" or not requestedRef:match("^[%w_%-/]+$") or requestedRef:find("..", 1, true) then
+    requestedRef = "main"
+end
+local gui, label
+
+local function status(message, failed)
+    local prefix = "[My Roblox Hub] "
+    if failed then warn(prefix .. message) else print(prefix .. message) end
+    if not playerGui then return end
+    if not gui then
+        local old = playerGui:FindFirstChild("MyRobloxHub_LoaderStatus")
+        if old then old:Destroy() end
+        gui = Instance.new("ScreenGui")
+        gui.Name = "MyRobloxHub_LoaderStatus"
+        gui.ResetOnSpawn = false
+        gui.DisplayOrder = 1001
+        label = Instance.new("TextLabel")
+        label.Position = UDim2.fromOffset(12, 105)
+        label.Size = UDim2.fromOffset(510, 50)
+        label.Font = Enum.Font.Code
+        label.TextSize = 13
+        label.TextWrapped = true
+        label.TextColor3 = Color3.new(1, 1, 1)
+        label.Parent = gui
+        gui.Parent = playerGui
+    end
+    label.BackgroundColor3 = failed and Color3.fromRGB(116, 38, 53)
+        or Color3.fromRGB(24, 76, 69)
+    label.Text = "MY ROBLOX HUB | " .. message
+end
+
+local function fetch(url)
+    local content = game:HttpGet(url)
+    assert(type(content) == "string" and #content > 0, "Empty response")
+    return content
+end
+
+local function compile(source, name)
+    assert(type(loadstring) == "function", "Executor loadstring unavailable")
+    local fn, err = loadstring(source, "@" .. name)
+    assert(fn, err)
+    return fn
 end
 
 local ok, err = xpcall(function()
-    assert(type(loadstring) == "function", "Executor loadstring is unavailable")
     local nonce = HttpService:GenerateGUID(false)
-    feedback("Checking latest GitHub commit...", false)
+    status("Checking game " .. tostring(game.PlaceId) .. "...")
+    local ref = requestedRef
     local apiOk, head = pcall(function()
-        local text = game:HttpGet("https://api.github.com/repos/Mxxchxi/My-Roblox-Hub/git/ref/heads/main?_=" .. nonce)
-        return HttpService:JSONDecode(text)
+        return HttpService:JSONDecode(fetch(API_ROOT .. requestedRef .. "?_=" .. nonce))
     end)
-    local ref = apiOk and type(head) == "table" and head.object and head.object.sha
-    if not (type(ref) == "string" and #ref == 40 and ref:match("^%x+$")) then
-        ref = "main"
-        feedback("Commit lookup unavailable; requesting uncached main...", false)
+    local sha = apiOk and type(head) == "table" and head.object and head.object.sha
+    if type(sha) == "string" and #sha == 40 and sha:match("^%x+$") then
+        ref = sha
+    else
+        status("Commit lookup unavailable; using " .. requestedRef .. " (non-atomic fallback)")
     end
-    local url = "https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub/"
-        .. ref .. "/Games/RollStickman_Combined_V1_2.lua?_=" .. nonce
-    local source = game:HttpGet(url)
-    assert(type(source) == "string" and #source > 0, "Downloaded script is empty")
-    local revision = tonumber(source:match("Combined Auto V1%.2 R(%d+)"))
-    assert(revision and revision >= 10, "Outdated or unexpected script received; expected R10 or newer")
-    local run, compileError = loadstring(source, "@RollStickman_Combined_V1_2.lua")
-    assert(run, compileError)
-    feedback("Loading R" .. revision .. " · " .. ref:sub(1, 7), false)
-    local previous = pg and pg:FindFirstChild("RollStickman_Combined_V1_2")
+    local function download(path)
+        return fetch(ROOT .. ref .. "/" .. path .. "?_=" .. nonce)
+    end
+    local registry = compile(download("GameRegistry.lua"), "GameRegistry.lua")()
+    assert(type(registry) == "table", "Invalid game registry")
+    local entry = registry[game.PlaceId]
+    if not entry then
+        status("Unsupported game (PlaceId " .. tostring(game.PlaceId) .. ")", true)
+        return
+    end
+    assert(type(entry) == "table" and type(entry.script) == "string", "Invalid registry entry")
+    assert(entry.script:match("^Games/[%w_%-/]+%.lua$")
+        and not entry.script:find("..", 1, true), "Unsafe script path")
+    local source = download(entry.script)
+    if entry.revisionPattern then
+        local rev = tonumber(source:match(entry.revisionPattern))
+        assert(rev and rev >= (entry.minRevision or 0), "Script revision check failed")
+    end
+    local run = compile(source, entry.script)
+    status("Starting " .. tostring(entry.name or game.PlaceId) .. "...")
     run()
-    local main = pg and pg:FindFirstChild("RollStickman_Combined_V1_2")
-    local panel = main and main:FindFirstChild("Panel")
-    local title = panel and panel:FindFirstChild("Title")
-    local actual = title and tonumber(title.Text:match("|%s*R(%d+)"))
-    assert(main and main ~= previous and actual == revision,
-        "R" .. revision .. " UI did not start; check the red startup error or executor log")
-    feedback("R" .. revision .. " started · " .. ref:sub(1, 7), false)
-    if noticeGui then
-        local completedNotice = noticeGui
-        task.delay(8, function() completedNotice:Destroy() end)
+    if entry.uiName then
+        assert(type(entry.uiName) == "string" and #entry.uiName > 0, "Invalid UI verification name")
+        assert(playerGui, "Cannot verify UI: PlayerGui unavailable")
+        assert(playerGui:FindFirstChild(entry.uiName),
+            "Game script returned but expected UI is missing: " .. entry.uiName)
+    end
+    status("Started " .. tostring(entry.name or game.PlaceId) .. " · " .. ref:sub(1, 7))
+    if gui then
+        local completed = gui
+        task.delay(8, function()
+            if completed and completed.Parent then completed:Destroy() end
+        end)
     end
 end, function(message)
     return tostring(message)
 end)
-if not ok then
-    feedback("FAILED: " .. err, true)
-    warn("[RAS Loader] " .. err)
-end
+if not ok then status("FAILED: " .. err, true) end

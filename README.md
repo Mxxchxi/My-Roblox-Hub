@@ -1,6 +1,39 @@
-# My-Roblox-Hub
+# My Roblox Hub — Universal Multi-Game Script Hub
 
-## Roll A Stickman — V1.2 R21 · Neon V2
+One loader for all supported Roblox places. The loader identifies `game.PlaceId`, looks up the matching script in [GameRegistry.lua](GameRegistry.lua), and executes only that game's script. Unsupported places receive a status message.
+
+## Run
+
+```lua
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub/main/Loader.lua"))()
+```
+
+> Multi-game support is currently under review in [PR #2](https://github.com/Mxxchxi/My-Roblox-Hub/pull/2). The main URL will use the new behavior after merging.
+
+## Supported games
+
+| Game | PlaceId | Script |
+| --- | --- | --- |
+| Roll A Stickman | `115068315659966` | [RollStickman_Combined_V1_2.lua](Games/RollStickman_Combined_V1_2.lua) |
+
+## Repository structure
+
+```text
+Loader.lua                 # Shared entrypoint
+GameRegistry.lua           # PlaceId -> game script mapping
+Games/                     # Game-specific scripts
+Assets/                    # Shared assets
+MULTI_GAME.md              # Adding games and loader behavior
+README.md                  # Hub overview and game documentation
+```
+
+To add games, follow [MULTI_GAME.md](MULTI_GAME.md). Keep game-specific automation, settings, and UI in `Games/` rather than in the shared loader.
+
+---
+
+## Roll A Stickman — existing game documentation
+
+### Version V1.2 R21 · Neon V2
 
 PlaceId: `115068315659966`
 
