@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R44
+-- Roll A Stickman Combined Auto V1.2 R45
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R44 starting; waiting for game to load")
+print("[RAS] R45 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R44  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R45  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -401,10 +401,10 @@ function neonUI.minuteControls(tab, prefix, y)
 end
 local toggles = {
     level = pageItem("Team", button("LevelToggle", "LEVEL UP: OFF", 12, 116, 336, 36)),
-    arena = pageItem("Fight", button("ArenaToggle", "ARENA: OFF", 12, 344, 336, 36)),
+    arena = pageItem("Fight", button("ArenaToggle", "ARENA: OFF", 12, 158, 336, 36)),
     raid = pageItem("Fight", button("RaidToggle", "RAID: OFF", 12, 116, 336, 36)),
-    dungeon = pageItem("Fight", button("DungeonToggle", "DUNGEON: OFF", 12, 158, 336, 36)),
-    expedition = pageItem("Fight", button("ExpeditionToggle", "EXPEDITIONS: OFF", 12, 200, 336, 36)),
+    dungeon = pageItem("Fight", button("DungeonToggle", "DUNGEON: OFF", 12, 200, 336, 36)),
+    expedition = pageItem("Fight", button("ExpeditionToggle", "EXPEDITIONS: OFF", 12, 242, 336, 36)),
     moon = pageItem("Potion", button("MoonToggle", "USE POTION: OFF", 12, 116, 336, 30)),
     cards = pageItem("Open Card", button("CardToggle", "AUTO OPEN CARD: OFF", 12, 116, 336, 30)),
     pet = pageItem("Pet", button("PetToggle", "AUTO PET: OFF", 12, 116, 336, 30)),
@@ -413,8 +413,9 @@ local toggles = {
 pageLabel("Team", "TeamHeading", "TEAM  /  UPGRADES", 90, 20)
 pageLabel("Team", "TeamHint", "LEVEL UP uses LEVEL UP ALL when that game button is visible. Open the team upgrade page to use it.", 165, 70)
 pageLabel("Fight", "FightHeading", "FIGHT  /  AUTOMATION", 90, 20)
-pageLabel("Fight", "DungeonMode", "DUNGEON · ALL TYPES\nNo tickets: check again after 2 hours.", 245, 42)
-local dungeonSchedule = pageLabel("Fight", "DungeonSchedule", "Dungeon check: ready", 300, 38)
+pageLabel("Fight", "DungeonMode", "DUNGEON · ALL TYPES\nNo tickets: check again after 2 hours.", 290, 42)
+local dungeonSchedule = pageLabel("Fight", "DungeonSchedule", "Dungeon check: ready", 340, 38)
+pageLabel("Fight", "ArenaHint", "ARENA · Continuous while available\nEmpty quota: check in 1 hour.", 390, 44)
 pageLabel("Potion", "PotionHeading", "POTION  /  CONDITIONS", 90, 20)
 local potionUI = {checks = {}, scanRequested = false, entries = {}, iconMap = {}, iconConflicts = {}, probeAt = 0}
 potionUI.dropdown = pageItem("Potion", button("PotionWhen", "Use Potion When: Aurora   v", 12, 152, 276, 30))
@@ -1737,7 +1738,7 @@ local function moonTick(version)
                 log("CYCLE Open Card")
                 potionUI.cycle.cardsFinished = openOwnedCards(version) == true
             else log("CYCLE Open Card skipped: configured conditions are not met") end
-        else cardUI.diagnose(not cardMatch and "MOON_NOT_SELECTED" or "CARD_DISABLED_OR_MOON_EXPIRED") end
+        else cardUI.diagnose(not flags.cards and "CARDS_DISABLED" or (not cardMatch and "MOON_NOT_SELECTED" or "CARD_DISABLED_OR_MOON_EXPIRED")) end
     end)
     if not ok then cardUI.diagnose("CYCLE_ERROR", tostring(errorText)) end
     local closed = potionUI.closeCycleWindow()
@@ -2476,6 +2477,7 @@ function neonUI.humanWebhook(message)
     local reasons = {
         CARD_BATCH_CONFIRMED="เปิดชุดการ์ดสำเร็จ ยอดคงเหลือลดลง",
         CARD_BATCH_UNCONFIRMED="ยังอ่านยอดหลังเปิดชุดล่าสุดไม่ได้ จะรอตรวจใหม่",
+        CARDS_DISABLED="ข้ามการ์ด: ปิด Auto Open Card อยู่",
         MOON_NOT_SELECTED="ข้ามการ์ด: Moon นี้ไม่ได้อยู่ในรายการที่เลือก",
         CYCLE_CHECK="เริ่มตรวจเงื่อนไขเปิดการ์ด", RETRY_PENDING="รอลองใหม่ใน 30 วินาที",
         BLOCKING_WINDOW="งานรออยู่: มีหน้าต่างเกมขวาง", POTION_PAGE_UNAVAILABLE="ยังเปิดหน้า Potion ไม่สำเร็จ",
@@ -2624,7 +2626,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R44 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R45 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3000,7 +3002,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R44 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R45 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -3062,7 +3064,7 @@ task.spawn(function()
                         repeat
                             fire("arena.back", get({"Frame","Nav","Row","endless"}), nil, 1)
                             task.wait(0.25)
-                            if waveBattle() and not visible(page()) then
+                            if waveBattle() and not arenaPage() then
                                 note("Arena returned to battle")
                                 return
                             end
@@ -3142,21 +3144,27 @@ task.spawn(function()
                                                 return
                                             end
                                             note("Arena page changed; waiting for return")
+                                            local battleStartedAt = os.clock()
+                                            local returnSince
                                             local finishDeadline = os.clock() + 120
                                             repeat
                                                 task.wait(0.5)
                                                 if not valid("arena", version) then return end
-                                                if not modalOpen() and (arenaPage() or waveBattle()) then
-                                                    note("Arena returned; result not verified")
-                                                    if arenaPage() then
-                                                        fire("arena.back", get({"Frame","Nav","Row","endless"}))
-                                                    end
+                                                local returned = not modalOpen() and (arenaPage() or waveBattle())
+                                                if returned and os.clock() - battleStartedAt >= 5 then
+                                                    returnSince = returnSince or os.clock()
+                                                else
+                                                    returnSince = nil
+                                                end
+                                                if returnSince and os.clock() - returnSince >= 3 then
+                                                    note("Arena return stable for 3s; result not verified")
+                                                    if arenaPage() then returnToBattle() end
                                                     neonUI.nextArena = os.clock()
                                                     return
                                                 end
                                             until os.clock() >= finishDeadline
-                                            note("Arena return timeout; inspect current battle or result window")
-                                            neonUI.nextArena = os.clock()
+                                            note("Arena return timeout; retry after 1 minute")
+                                            neonUI.nextArena = os.clock() + 60
                                             return
                                         end
                                     end
