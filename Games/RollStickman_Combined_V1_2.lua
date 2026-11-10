@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R45
+-- Roll A Stickman Combined Auto V1.2 R46
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R45 starting; waiting for game to load")
+print("[RAS] R46 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R45  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R46  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -823,7 +823,7 @@ local function validMoon(version)
     return alive and (flags.moon or flags.cards) and versions.moon == version
 end
 local function run(key, operation)
-    if busy then return end
+    if busy or os.clock() < (neonUI.raidPriorityUntil or 0) then return end
     busy = true
     local version = versions[key]
     task.spawn(function()
@@ -1200,11 +1200,29 @@ local function raidTick()
     end
     if not raidJoinLocked and fire("raid.join", join, "JOIN", 8) then
         raidJoinLocked = true
+        neonUI.raidPriorityUntil = os.clock() + 60
+        for key in pairs(versions) do
+            if key ~= "raid" then versions[key] = versions[key] + 1 end
+        end
         nextRaid = os.clock() + 8
         neonUI.nextArena = math.max(neonUI.nextArena or 0, os.clock() + 60)
         note("RAID JOIN pressed")
     end
 end
+
+-- Poll independently so waiting workers cannot delay a Raid notification.
+task.spawn(function()
+    while alive do
+        if flags.raid then
+            local ok, err = pcall(raidTick)
+            if not ok then
+                log("Raid priority check error: " .. tostring(err))
+                task.wait(1)
+            end
+        end
+        task.wait(0.1)
+    end
+end)
 
 local expeditionIds = {"Epatrol", "Esupply", "Eruins", "Ewastes", "Estarfall"}
 local sendLocked = {}
@@ -2626,7 +2644,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R45 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R46 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3002,7 +3020,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R45 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R46 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -3022,6 +3040,7 @@ task.spawn(function()
                 log("Status display error: " .. tostring(statusError))
             end
             observeDungeon(now)
+            if now < (neonUI.raidPriorityUntil or 0) then return end
             if not busy then neonUI.dismissDaily(now) end
             local blockingDungeonResult = recoverDungeonModal(now)
             if not busy and potionUI.scanRequested then
