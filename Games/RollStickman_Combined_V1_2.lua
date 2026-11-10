@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R40
+-- Roll A Stickman Combined Auto V1.2 R41
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R40 starting; waiting for game to load")
+print("[RAS] R41 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R40  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R41  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -2624,7 +2624,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R40 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R41 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3000,7 +3000,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R40 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R41 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -3039,7 +3039,7 @@ task.spawn(function()
             end
             if not busy and flags.arena and not inDungeon() and not modalOpen()
                 and now >= (neonUI.nextArena or 0) then
-                neonUI.nextArena = now + 7200
+                neonUI.nextArena = now + 3600
                 run("arena", function(version)
                     local function arenaPage()
                         local screen = page()
@@ -3051,7 +3051,10 @@ task.spawn(function()
                         return false
                     end
                     if not arenaPage() then
-                        if not waveBattle() then return end
+                        if not waveBattle() then
+                            neonUI.nextArena = 0
+                            return
+                        end
                         if not fire("arena.tab", get({"Frame","Nav","Row","arena"}), "ARENA") then return end
                     end
                     local function returnToBattle()
@@ -3091,8 +3094,8 @@ task.spawn(function()
                         local confirmed = false
                         if visible(screen) then
                             if quotaEmpty(screen) then
-                                neonUI.nextArena = os.clock() + 7200
-                                note("Arena quota empty; next check in 2h")
+                                neonUI.nextArena = os.clock() + 3600
+                                note("Arena quota empty; next check in 1h")
                                 returnToBattle()
                                 return
                             end
