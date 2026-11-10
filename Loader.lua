@@ -60,7 +60,7 @@ local ok, err = xpcall(function()
     if type(sha) == "string" and #sha == 40 and sha:match("^%x+$") then
         ref = sha
     else
-        status("Commit lookup unavailable; using uncached main")
+        status("Commit lookup unavailable; using main (non-atomic fallback)")
     end
     local function download(path)
         return fetch(ROOT .. ref .. "/" .. path .. "?_=" .. nonce)
@@ -74,7 +74,7 @@ local ok, err = xpcall(function()
     end
     assert(type(entry) == "table" and type(entry.script) == "string", "Invalid registry entry")
     assert(entry.script:match("^Games/[%w_%-/]+%.lua$")
-        and not entry.script:find("%.%.", 1, true), "Unsafe script path")
+        and not entry.script:find("..", 1, true), "Unsafe script path")
     local source = download(entry.script)
     if entry.revisionPattern then
         local rev = tonumber(source:match(entry.revisionPattern))
