@@ -7,7 +7,13 @@ local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 local playerGui = player and player:WaitForChild("PlayerGui", 15)
 local ROOT = "https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub/"
-local API = "https://api.github.com/repos/Mxxchxi/My-Roblox-Hub/git/ref/heads/main"
+local API_ROOT = "https://api.github.com/repos/Mxxchxi/My-Roblox-Hub/git/ref/heads/"
+-- Optional test override: getgenv().MyRobloxHubRef = "feature/universal-multi-game-loader"
+local environment = type(getgenv) == "function" and getgenv() or _G
+local requestedRef = type(environment) == "table" and environment.MyRobloxHubRef or nil
+if type(requestedRef) ~= "string" or not requestedRef:match("^[%w_%-/]+$") or requestedRef:find("..", 1, true) then
+    requestedRef = "main"
+end
 local gui, label
 
 local function status(message, failed)
@@ -52,15 +58,15 @@ end
 local ok, err = xpcall(function()
     local nonce = HttpService:GenerateGUID(false)
     status("Checking game " .. tostring(game.PlaceId) .. "...")
-    local ref = "main"
+    local ref = requestedRef
     local apiOk, head = pcall(function()
-        return HttpService:JSONDecode(fetch(API .. "?_=" .. nonce))
+        return HttpService:JSONDecode(fetch(API_ROOT .. requestedRef .. "?_=" .. nonce))
     end)
     local sha = apiOk and type(head) == "table" and head.object and head.object.sha
     if type(sha) == "string" and #sha == 40 and sha:match("^%x+$") then
         ref = sha
     else
-        status("Commit lookup unavailable; using main (non-atomic fallback)")
+        status("Commit lookup unavailable; using " .. requestedRef .. " (non-atomic fallback)")
     end
     local function download(path)
         return fetch(ROOT .. ref .. "/" .. path .. "?_=" .. nonce)
