@@ -73,10 +73,10 @@ env.task.wait = function()
         movement.PlaybackState="Completed"
     end
 end
-env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
+env.placeState={enabled=false,slots={},attempts=0,observed=0};env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -88,6 +88,7 @@ local function prompt(distance)
 end
 local function reset()
     env.hatch.enabled=true;env.attemptState={}
+    env.placeState={enabled=false,slots={},attempts=0,observed=0}
     funcs.mark(false)
     funcs.resetServer()
     equippedChildren,backpackChildren = {},{}
@@ -421,6 +422,8 @@ check("pickup starts native return inside the same dispatch", function()
 end)
 local function node(name,class,attrs,children)
     local obj={Name=name,ClassName=class,Position=position(80),children=children or {},attrs=attrs or {}}
+    function obj:IsDescendantOf(root) local n=self.Parent;while n do if n==root then return true end;n=n.Parent end;return false end
+    for _,child in ipairs(obj.children) do child.Parent=obj end
     function obj:GetChildren() return self.children end
     function obj:FindFirstChild(name) for _,v in ipairs(self.children) do if v.Name==name then return v end end end
     function obj:GetAttribute(key) return self.attrs[key] end
@@ -569,5 +572,65 @@ check("walking progress and airborne character do not trigger jumping", function
     funcs.recover(state,root,humanoid,position(40));assert(not humanoid.Jump)
     humanoid.FloorMaterial="Air";clock=clock+2
     funcs.recover(state,root,humanoid,position(40));assert(not humanoid.Jump and state.attempts==0)
+end)
+check("placement binds only parts in confirmed owned plot", function()
+    local slot=node("EmptySlot","Part")
+    local own=node("1","Model",{OwnerUserId=42},{node("SpawnPoint","Part"),slot})
+    plotFixture=node("Plots","Folder",{}, {own})
+    local ok=funcs.bindPlace(slot,position(80));assert(ok and #env.placeState.slots==1)
+    assert(not funcs.bindPlace(node("ForeignSlot","Part"),position(120)))
+end)
+check("placement rejects duplicate marked slot positions", function()
+    local slot=node("Floor","Part")
+    plotFixture=node("Plots","Folder",{}, {node("1","Model",{OwnerUserId=42},{node("SpawnPoint","Part"),slot})})
+    assert(funcs.bindPlace(slot,position(80)))
+    assert(not funcs.bindPlace(slot,position(81)))
+end)
+check("placement selects only inventory AssetEgg tools", function()
+    backpackChildren={eggTool("Weapon"),eggTool("AssetEgg")}
+    local selected=funcs.selectPlaceEgg()
+    assert(selected and selected.uid=="sample-egg-id")
+end)
+check("placement never treats unequipping as UID removal", function()
+    local egg=eggTool("AssetEgg");equippedChildren={egg}
+    assert(not funcs.uidGone("sample-egg-id"))
+    equippedChildren={};backpackChildren={egg};assert(not funcs.uidGone("sample-egg-id"))
+    backpackChildren={};assert(funcs.uidGone("sample-egg-id"))
+end)
+local function setupPlaceClick(fail)
+    root.Position=position(80)
+    local slot=node("EmptySlot","Part")
+    plotFixture=node("Plots","Folder",{}, {node("1","Model",{OwnerUserId=42},{node("SpawnPoint","Part"),slot})})
+    assert(funcs.bindPlace(slot,position(80)))
+    env.placeState.enabled=true
+    local egg=eggTool("AssetEgg");backpackChildren={egg}
+    function humanoid:EquipTool(tool) equippedChildren={tool};backpackChildren={};tool.Parent=character end
+    env.Enum.CameraType={Scriptable="Scriptable"}
+    local originalFrame={Position=position(0,12,12)}
+    local camera={CameraType="Custom",CFrame=originalFrame,WorldToScreenPoint=function() return position(100,100,1),true end}
+    env.workspace.CurrentCamera=camera
+    env.CFrame={lookAt=function(eye) return {Position=eye} end}
+    local clicks=0
+    env.game={GetService=function()
+        return {SendMouseMoveEvent=function() end,SendMouseButtonEvent=function(_,x,y,button,down)
+            if fail then error("mock input unsupported") end
+            if down then clicks=clicks+1 else equippedChildren={};egg.Parent=nil end
+        end}
+    end}
+    return camera,originalFrame,function() return clicks end
+end
+check("placement clicks once and restores camera after UID removal", function()
+    local camera,original,clicks=setupPlaceClick(false)
+    funcs.place()
+    assert(clicks()==1 and env.placeState.observed==1)
+    assert(camera.CFrame==original and camera.CameraType=="Custom")
+    funcs.place();assert(clicks()==1)
+end)
+check("placement input failure restores camera and stops retries", function()
+    local camera,original=setupPlaceClick(true)
+    funcs.place()
+    assert(not env.placeState.enabled and env.placeState.lastAttempt.inputOK==false)
+    assert(camera.CFrame==original and camera.CameraType=="Custom")
+    assert(env.placeState.slots[1].used)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
