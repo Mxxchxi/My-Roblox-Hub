@@ -52,7 +52,7 @@ env.task.wait = function()
         movement.PlaybackState="Completed"
     end
 end
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -63,6 +63,7 @@ local function prompt(distance)
     return p
 end
 local function reset()
+    funcs.mark(false)
     env.promptCache, env.collectAttempts = {}, {}
     env.collectEgg = {enabled = true, attempts = 0}
     env.active, env.busy, env.hatchRunning = true, false, false
@@ -103,7 +104,9 @@ end)
 check("cooldown and three attempt limit", function()
     local p=prompt(2); env.promptCache[p]=true
     funcs.dispatch(); funcs.dispatch(); assert(p.began == 1)
-    clock=14; funcs.dispatch(); clock=18; funcs.dispatch(); clock=22; funcs.dispatch()
+    env.collectEgg.enabled=true; clock=14; funcs.dispatch()
+    env.collectEgg.enabled=true; clock=18; funcs.dispatch()
+    env.collectEgg.enabled=true; clock=22; funcs.dispatch()
     assert(p.began == 3 and env.collectEgg.attempts == 3)
 end)
 check("failed input releases hold and records error", function()
@@ -159,13 +162,33 @@ check("wait for delayed carry UI before choosing another egg", function()
     assert(waits >= 3 and env.collectEgg.lastInput.carryVisibleAfter)
     assert(env.collectEgg.unconfirmed == 0 and p.began == 1)
 end)
-check("pause after three unconfirmed inputs", function()
+check("pause after one unconfirmed input", function()
     local p=prompt(3); env.promptCache[p]=true
-    funcs.dispatch(); clock=clock+4
-    funcs.dispatch(); clock=clock+4
     funcs.dispatch()
-    assert(env.collectEgg.enabled == false and env.collectEgg.unconfirmed == 3)
-    assert(env.collectEgg.pausedReason and p.began == 3)
-    clock=clock+4; funcs.dispatch(); assert(p.began == 3)
+    assert(env.collectEgg.enabled == false and env.collectEgg.unconfirmed == 1)
+    assert(env.collectEgg.pausedReason and p.began == 1)
+    clock=clock+4; funcs.dispatch(); assert(p.began == 1)
+end)
+check("manual carry marker stops pickup despite hidden GUI", function()
+    local p=prompt(3); env.promptCache[p]=true
+    funcs.mark(true)
+    assert(funcs.snapshot().carrying == true and env.collectEgg.enabled == false)
+    env.collectEgg.enabled=true; funcs.dispatch(); assert(p.began == 0)
+    funcs.mark(false); assert(funcs.snapshot().carrying == false)
+end)
+check("manual carry marker cancels active movement", function()
+    local p=prompt(40); env.promptCache[p]=true
+    onWait=function() funcs.mark(true) end
+    funcs.dispatch()
+    assert(movement.PlaybackState == "Cancelled" and p.began == 0)
+end)
+check("export reads character evidence independently of GUI scan", function()
+    function character:GetChildren() return {{Name="ObservedObject", ClassName="Model"}} end
+    function character:GetDescendants() return {} end
+    function character:GetAttributes() return {SampleState="held"} end
+    local e=funcs.snapshot(true).carryEvidence
+    assert(e and e.characterAttributes.SampleState == "held")
+    assert(e.characterChildren[1].name == "ObservedObject")
+    assert(e.manualMarker == false)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
