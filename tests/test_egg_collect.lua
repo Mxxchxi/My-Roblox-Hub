@@ -23,6 +23,8 @@ function button:IsA(kind) return kind == "GuiObject" end
 function drop:FindFirstChild() return button end
 function pg:FindFirstChild() return carrying and drop or nil end
 local character = {}
+local equippedChildren = {}
+function character:GetChildren() return equippedChildren end
 function character:FindFirstChild() return root end
 function character:FindFirstChildOfClass() return humanoid end
 local env = setmetatable({pg = pg, workspace = {}, player = {Character = character},
@@ -64,6 +66,8 @@ local function prompt(distance)
 end
 local function reset()
     funcs.mark(false)
+    equippedChildren = {}
+    function character:GetChildren() return equippedChildren end
     env.promptCache, env.collectAttempts = {}, {}
     env.collectEgg = {enabled = true, attempts = 0}
     env.active, env.busy, env.hatchRunning = true, false, false
@@ -183,12 +187,37 @@ check("manual carry marker cancels active movement", function()
     assert(movement.PlaybackState == "Cancelled" and p.began == 0)
 end)
 check("export reads character evidence independently of GUI scan", function()
-    function character:GetChildren() return {{Name="ObservedObject", ClassName="Model"}} end
+    function character:GetChildren() return {{Name="ObservedObject", ClassName="Model", IsA=function() return false end}} end
     function character:GetDescendants() return {} end
     function character:GetAttributes() return {SampleState="held"} end
     local e=funcs.snapshot(true).carryEvidence
     assert(e and e.characterAttributes.SampleState == "held")
     assert(e.characterChildren[1].name == "ObservedObject")
     assert(e.manualMarker == false)
+end)
+local function eggTool(kind)
+    return {Name="Raccoon Egg",IsA=function(_,class) return class == "Tool" end,
+        GetAttribute=function(_,key) if key == "ItemType" then return kind elseif key == "UID" then return "sample-egg-id" end end}
+end
+check("detect equipped AssetEgg with hidden drop GUI", function()
+    equippedChildren={eggTool("AssetEgg")}
+    local snapshot=funcs.snapshot()
+    assert(snapshot.carrying and snapshot.carryState.equippedEgg)
+    assert(snapshot.carryState.source == "equipped_asset_egg" and not snapshot.carryState.fieldCarryUI)
+    assert(snapshot.carryState.pickupVerified == false)
+    local p=prompt(3); env.promptCache[p]=true; funcs.dispatch(); assert(p.began == 0)
+end)
+check("do not mistake another Tool for an egg", function()
+    equippedChildren={eggTool("Weapon")}
+    assert(funcs.snapshot().carrying == false)
+end)
+check("unequipping egg clears automatic holding state", function()
+    equippedChildren={eggTool("AssetEgg")}; assert(funcs.snapshot().carrying)
+    equippedChildren={}; assert(not funcs.snapshot().carrying)
+end)
+check("equipping egg during Tween stops before pickup", function()
+    local p=prompt(40); env.promptCache[p]=true
+    onWait=function() equippedChildren={eggTool("AssetEgg")} end
+    funcs.dispatch(); assert(p.began == 0 and not env.collectEgg.moving)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
