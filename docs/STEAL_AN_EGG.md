@@ -1,55 +1,64 @@
-# Auto Place disabled in v1.36
+# Steal An Egg — v1.37
 
-The user reported BAC-3515/BAC-8515 kicks associated with placement tests. Auto Place is now release-gated OFF. Its button displays DISABLED; the runtime returns before equipping an egg, walking or sending a click. Re-enable attempts through the UI cannot override the gate. This does not establish the detection mechanism or guarantee that other executor automation is accepted by the game.
+PlaceId: 107778070777162. Load through the existing universal Loader.
+All automation starts OFF. Runtime validation on Potassium is still required.
 
-The placement sections below describe historical behavior and are not active instructions for v1.36. Place eggs manually. Read-only slot inspection remains available. Stop the old running script before updating; editing GitHub does not disable a previously loaded session.
+## Status
+| Feature | Implementation and evidence |
+|---|---|
+| Collect / native return / Auto Home | User reports confirm Forest redemption and subsequent collection. Lake is not fully verified. |
+| Auto Hatch | Walks to ready owned-base Hatch! prompts and holds input. Actual pet creation remains unverified. |
+| Base / treadmill upgrades | Implemented using mapped soft-currency UI callbacks, affordability checks and level-change confirmation. Offline tested only. |
+| Speed training | Walks to owned TreadmillBottom and observes SpeedGained notifications. Offline tested only. |
+| Auto Place | Disabled in release after user-reported BAC kicks. No UI toggle can enable it. |
+| Money collection | Removed: the game collects money automatically. |
 
-# Steal An Egg — v1.28
-PlaceId: 107778070777162. Uses the existing universal Loader.
+## Auto Place remains disabled
+The release constant AUTO_PLACE_ENABLED=false prevents equip, movement and clicks from Auto Place before any action is attempted. Historical placement code is unreachable through the feature. Stop the previously running script before updating. This does not establish the detection mechanism or certify other executor automation as accepted by the game. Place eggs manually.
 
-## Current workflow
-Collect -> game redeems egg at the base boundary -> new egg UID appears -> Auto Place equips it and clicks a marked empty slot -> wait for Hatch! -> Auto Hatch approaches and holds the prompt.
+## Upgrades
+The Upgrade button cycles OFF -> BASE -> TREADMILL -> BOTH -> OFF.
+BOTH picks the cheapest affordable mapped option. Disable Collect to allow this module to run.
 
-Collection, placement and hatching start OFF and run sequentially. Close stops all movement and held input. Alt / RightShift hide or show the UI without stopping enabled automation.
+Only the explicitly observed PlotUpgrade/TreadmillUpgrade -> Sign -> SurfaceGui -> Frame -> Upgrade or FirstUpgrade controls are considered. RobuxUpgrade is excluded. Prices must parse as dollar-prefixed in-game amounts such as $1M / $15K. No Robux purchase prompt is accepted or confirmed.
 
-## Auto Home and Collect
-Auto Home identifies a uniquely owned plot from owner metadata or the exact account username on PlotSign. A unique delivery candidate is preferred over a SpawnPoint fallback. A spawn fallback is not a verified delivery trigger; observed game redemption can finish a trip before reaching the spawn. No nearest-plot ownership guess is made.
+The balance must be found unambiguously in Cash/Money/Coins player attributes or matching numeric leaderstats values. Missing/conflicting balance information blocks purchases rather than guessing. The game's live currency schema is not yet verified.
 
-Walk is the default outbound mode; optional Tween is available. Loaded return uses Humanoid:MoveTo, without changing WalkSpeed. When walking stalls, up to two normal jump attempts per waypoint are allowed, with two seconds between attempts. Airborne characters are not repeatedly forced to jump.
+Existing client callbacks are dispatched only if the executor supplies firesignal AND getconnections and a handler is observed on MouseButton1Click or Activated. Exactly one signal is dispatched, without fallback double-clicking. Missing callback mapping blocks the action. No guessed Remote arguments and no VirtualInputManager purchase clicks are used.
 
-FieldEggCarry.IsCarrying is read from an observed server event for the current character. GUI is fallback evidence. Equipped AssetEgg inventory tools are distinguished from field eggs. Successful boundary redemption is inferred from a recent FieldEggRedeemVerdict plus a newly added egg UID with a matching name; field carry disappearing alone is not success. An uncertain pickup pauses.
+The module walks within range, then rechecks plot ownership, current level and affordability. Each action is separated by at least eight seconds. A strictly higher displayed level confirms an observed upgrade. If no level change is seen within ten seconds, the module turns OFF without retrying the purchase.
 
-Manual delivery-point setup remains available in Settings. Automatic selection refreshes each session.
+## Speed training
+Turn Train ON while Collect is OFF. The module uses the uniquely owned plot's observed TreadmillBottom, moves there through Humanoid:MoveTo, and stays/repositions on the belt. It never writes WalkSpeed or sends guessed speed-gain Remote commands.
 
-## Placement setup
-1. Stop automation and unequip the egg.
-2. Open Placement -> Mark empty slot.
-3. Click an actual EMPTY slot in your own plot.
-4. Repeat for additional empty slots, up to twelve; markers must be at least four studs apart.
-5. Enable Auto Place. Enable Auto Hatch if desired.
+RE/Treadmill/SpeedGained is observed read-only and counted in training.events. This is notification evidence, not a claimed numerical gain; the server payload contract is not interpreted. If no notification arrives, the UI reports waiting. Extra game-specific video/input requirements, if present, need live validation.
 
-Slots are marked per session and consumed once. The script does not infer that arbitrary floor parts are empty slots. Only clicked parts descended from the confirmed owned plot are accepted. Clear slots resets all markers; use it only after confirming they are empty.
+Upgrades take priority over training while a purchase result is pending. Hatch and Collect movement are serialized with these systems. Collect enabled pauses upgrades/training. Close stops all automation and active movement. Turning training OFF stops its movement; turning an active upgrade mode OFF cancels its approach.
 
-Auto Place selects a Tool with ItemType=AssetEgg and a nonempty UID from character/Backpack, equips it, and uses native ground movement to approach. It temporarily aims the camera at the marked position, checks for occlusion, and sends a mouse click through VirtualInputManager. Camera state and mouse release are restored on failure. Executor support is not guaranteed; errors appear in the placement report.
+## Hatch
+Place eggs manually in the base, then turn Auto Hatch ON. Only enabled exact Hatch! prompts in the owned base are eligible. Detached prompts must be uniquely closest to the owned plot center within 35 studs with a five-stud margin over the next plot.
 
-A UID disappearing from both character and Backpack after the click, while the same living character remains, is recorded as placement inference. This is not direct verification of a world egg. Unequipping alone does not count. Missing confirmation stops the feature and reserves that slot to avoid repeated clicks.
+Auto Hatch walks toward ready eggs within 150 studs, then holds within the smaller of seven studs and MaxActivationDistance. It waits while collecting/placing/carrying, with a four-second cooldown and three attempts per prompt. Input success or prompt disappearance is not claimed as pet creation.
 
-## Auto Hatch
-Only enabled exact Hatch! prompts in the confirmed owned base are targeted automatically. Detached SmartPromptPart prompts are accepted only when uniquely closest to the owned plot center, within 35 studs and at least five studs clearer than the next plot. Auto Hatch walks toward ready eggs within 150 studs, then holds within the smaller of seven studs and MaxActivationDistance. Three attempts per prompt and a four-second cooldown remain.
+## Collect and Home
+Auto Home matches explicit owner metadata or the exact account username on PlotSign. It rejects ambiguous plots and prefers a delivery candidate over a disclosed spawn fallback.
 
-Prompt disappearance or disabling after input is logged, but is not reported as verified pet creation. Eggs must first be placed and finish growing. Hatching pauses while collecting, placing, carrying field eggs or holding an inventory egg.
+WALK is the default outbound mode; optional Tween remains available. Loaded return uses native movement. Current-character FieldEggCarry.IsCarrying events take priority over GUI evidence. A recent redemption event plus a matching new inventory UID can complete return before reaching SpawnPoint. Normal walking-stall recovery may try two jumps per waypoint with cooldown; there is no repeated midair jump.
 
-## Reports and remaining work
-Copy short / Copy all refresh live state. Reports include autoPlace attempts and UID removals, lastAttempt error/inputOK/worldPlacementVerified, carry state, home mapping, movement/jump recovery, inventory deltas, deliveries and bounded game-event history.
+Forest successes are supported by user reports; not all areas are verified. Alt/RightShift hide/show the hub without stopping automation; Close stops it.
 
-Automatic money collection was removed because the game already collects money.
-Base/treadmill upgrades and speed training remain unimplemented pending game interaction mapping.
+## Reports
+Copy short refreshes live state without Scan. It contains:
+- autoCollect.upgrades: mode, last, pending, observed level increases
+- autoCollect.training: enabled, last, events, lastEventAt
+- autoCollect.autoHome, lastReturn, carryState and inventory observations
+- autoHatch.lastAttempt with inputOK/promptChanged/resultVerified
+- autoPlace.available=false and bounded event/slot diagnostics
 
-## Validation
-From repository root:
+## Local validation
 ~~~sh
 python -m unittest discover -s tests -v
 luac5.4 -p Games/StealAnEgg_Diagnostics.lua
 lua5.4 tests/test_egg_collect.lua
 ~~~
-73 simulated cases plus 4 Loader contracts pass locally, covering placement ownership, duplicate markers, egg selection, UID verification, single clicks, input failure and camera restoration as well as collection/hatch regressions. These are not Potassium/Roblox end-to-end tests. Forest collection has user report evidence; placement and automatic hatching still require in-game validation.
+96 simulated cases and 4 Loader contract tests pass. The complete Lua chunk compiles locally. These checks cover cash parsing, unknown/conflicting balances, exclusion of premium controls, missing callbacks, level confirmation/no-result stop, native treadmill approach and previous automation guards. They are not Potassium/server tests and do not guarantee absence of anti-cheat kicks.
