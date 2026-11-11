@@ -415,6 +415,7 @@ end)
 local function node(name,class,attrs,children)
     local obj={Name=name,ClassName=class,Position=position(80),children=children or {},attrs=attrs or {}}
     function obj:GetChildren() return self.children end
+    function obj:FindFirstChild(name) for _,v in ipairs(self.children) do if v.Name==name then return v end end end
     function obj:GetAttribute(key) return self.attrs[key] end
     function obj:GetFullName() return "Workspace.Plots."..self.Name end
     function obj:IsA(kind) return kind==self.ClassName or kind=="BasePart" and (self.ClassName=="Part" or self.ClassName=="SpawnLocation") end
@@ -449,5 +450,22 @@ check("auto home refuses several candidate delivery points", function()
     plotFixture=node("Plots","Folder",nil,{node("2","Model",{OwnerUserId=42},
         {node("DeliveryPoint","Part"),node("DeliveryZone","Part")})})
     local point=funcs.resolveHome();assert(not point)
+end)
+check("auto home reads exact username on observed PlotSign", function()
+    local text=node("OwnerLabel","TextLabel");text.Text="<b>@TestPlayer</b>'s Base"
+    local own=node("3","Model",{}, {node("PlotSign","Part",{}, {text}),node("SpawnPoint","Part")})
+    plotFixture=node("Plots","Folder",{}, {own})
+    local point,plot,_,report=funcs.resolveHome()
+    assert(point and plot==own and report.ownerEvidence == "PlotSign exact username")
+end)
+check("plot sign does not match username substrings", function()
+    local text=node("OwnerLabel","TextLabel");text.Text="TestPlayer123's Base"
+    plotFixture=node("Plots","Folder",{}, {node("3","Model",{}, {node("PlotSign","Part",{}, {text}),node("SpawnPoint","Part")})})
+    assert(not funcs.resolveHome())
+end)
+check("explicit other owner overrides stale matching sign", function()
+    local text=node("OwnerLabel","TextLabel");text.Text="TestPlayer"
+    plotFixture=node("Plots","Folder",{}, {node("3","Model",{OwnerUserId=99}, {node("PlotSign","Part",{}, {text}),node("SpawnPoint","Part")})})
+    assert(not funcs.resolveHome())
 end)
 print(string.format("%d Auto Collect tests passed", tests))
