@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.18
+-- Steal An Egg: structure diagnostics v1.19
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -53,7 +53,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.18", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.19", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -95,7 +95,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.18 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.19 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -129,7 +129,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.18 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.19 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -174,7 +174,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.18 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.19 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -418,8 +418,15 @@ local function liveHatchSnapshot()
 end
 -- AUTO_COLLECT_ENGINE_BEGIN
 local collectTween
+local walkingHumanoid
 local deliveryPoint
 local function cancelCollectTween(reason)
+    if walkingHumanoid then
+        local character=player.Character
+        local root=character and character:FindFirstChild("HumanoidRootPart")
+        if root then pcall(function() walkingHumanoid:MoveTo(root.Position) end) end
+        walkingHumanoid=nil
+    end
     if collectTween then collectTween:Cancel(); collectTween = nil end
     if collectEgg.moving then
         collectEgg.moving = false
@@ -427,6 +434,7 @@ local function cancelCollectTween(reason)
     end
 end
 local manualCarry = false
+local serverCarry
 local function dropCarryVisible()
     -- This UI was observed in the report. Inspect all ancestors, not just the label.
     local node = pg:FindFirstChild("DropHeldEgg")
@@ -439,8 +447,18 @@ local function dropCarryVisible()
     end
     return node == pg
 end
+local function updateServerCarry(payload)
+    if type(payload)~="table" or type(payload.IsCarrying)~="boolean" then return end
+    serverCarry={isCarrying=payload.IsCarrying,character=player.Character,at=os.time()}
+    if type(payload.Uid)=="string" then serverCarry.uid=payload.Uid end
+    if type(payload.RunBackWakeDelayRequired)=="boolean" then serverCarry.runBackWakeDelayRequired=payload.RunBackWakeDelayRequired end
+end
+local function fieldCarryActive()
+    if serverCarry and serverCarry.character==player.Character then return serverCarry.isCarrying end
+    return dropCarryVisible()
+end
 local function carryState()
-    local state = {manualMarker = manualCarry, fieldCarryUI = dropCarryVisible(), equippedEgg = false,
+    local state = {manualMarker = manualCarry, fieldCarryUI = dropCarryVisible(), fieldCarrying=fieldCarryActive(), equippedEgg = false,
         source = "none", pickupVerified = false}
     local character = player.Character
     if character then
@@ -453,8 +471,12 @@ local function carryState()
             end
         end
     end
-    state.blocked = state.manualMarker or state.fieldCarryUI or state.equippedEgg
-    if state.fieldCarryUI then state.source = "field_carry_ui"
+    state.blocked = state.manualMarker or state.fieldCarrying or state.equippedEgg
+    if serverCarry and serverCarry.character==player.Character then
+        state.serverCarrying=serverCarry.isCarrying;state.fieldEggUid=serverCarry.uid
+        state.runBackWakeDelayRequired=serverCarry.runBackWakeDelayRequired
+    end
+    if state.fieldCarrying then state.source = serverCarry and serverCarry.character==player.Character and "field_carry_event" or "field_carry_ui"
     elseif state.equippedEgg then state.source = "equipped_asset_egg"
     elseif state.manualMarker then state.source = "user_marker" end
     return state
@@ -487,6 +509,7 @@ local function eventValue(value, depth, seen)
     return result
 end
 local function recordGameEvent(name, ...)
+    if name=="RE/EggWorld/FieldEggCarry" then updateServerCarry((...)) end
     local args={}
     for i=1,math.min(select("#",...),6) do args[i]=eventValue(select(i,...),0,{}) end
     local state=carryState()
@@ -593,7 +616,7 @@ local function pathMove(root, humanoid, character, destination, requireCarry, ta
         if busy then return stop("Route interrupted by scan") end
         if player.Character~=character or not root.Parent or humanoid.Health<=0 then return stop("Character changed during route") end
         if target and (not target.Parent or not target:IsDescendantOf(workspace)) then return stop("Route target removed") end
-        if requireCarry and not dropCarryVisible() and (root.Position-destination).Magnitude>4 then return stop("Field carry disappeared during route") end
+        if requireCarry and not fieldCarryActive() and (root.Position-destination).Magnitude>4 then return stop("Field carry disappeared during route") end
         if not requireCarry and carryVisible() then return stop("Holding state detected during route") end
         local goal=i==#route and destination or point.Position+Vector3.new(0,lift,0)
         local delta=goal-root.Position
@@ -782,6 +805,72 @@ local function setDeliveryPoint(position)
     deliveryPoint = position
     return true
 end
+local function walkReturn(root,humanoid,character,destination)
+    local nav={at=os.time(),mode="Humanoid.MoveTo",status="Planning ground return",completed=0}
+    collectEgg.lastNavigation=nav
+    local params=RaycastParams.new()
+    params.FilterType=Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances={character}
+    params.RespectCanCollide=true
+    local route
+    if workspace:Raycast(root.Position,destination-root.Position,params) then
+        local ok,result=pcall(function()
+            local path=PathfindingService:CreatePath({AgentRadius=2,AgentHeight=5,AgentCanJump=false,WaypointSpacing=5})
+            path:ComputeAsync(root.Position,destination)
+            if path.Status~=Enum.PathStatus.Success then return nil end
+            return path:GetWaypoints()
+        end)
+        if not ok or not result or #result<2 or #result>80 then nav.status="No ground return path";return false,nav.status end
+        route=result
+    else route={{Position=destination}} end
+    nav.waypoints=#route
+    local total=0
+    local previous=root.Position
+    for _,point in ipairs(route) do total=total+(point.Position-previous).Magnitude;previous=point.Position end
+    if total>600 then nav.status="Ground route exceeds 600 studs";return false,nav.status end
+    nav.routeDistance=total
+    local function stop(reason)
+        nav.status=reason
+        cancelCollectTween(reason)
+        recordGameEvent("return.walk.stop",reason)
+        return false,reason
+    end
+    for i,point in ipairs(route) do
+        local goal=i==#route and destination or point.Position
+        local started=os.clock()
+        local deadline=(root.Position-goal).Magnitude/math.max(humanoid.WalkSpeed,1)+5
+        nav.currentWaypoint=i
+        if not active or not collectEgg.enabled then return stop("Return cancelled") end
+        if player.Character~=character or not root.Parent or humanoid.Health<=0 then return stop("Character changed during return") end
+        if not fieldCarryActive() and (root.Position-destination).Magnitude>4 then return stop("Game no longer reports field egg carrying") end
+        walkingHumanoid=humanoid
+        collectEgg.moving=true
+        humanoid:MoveTo(goal)
+        local refreshed=os.clock()
+        -- Waypoints lie on the floor; compare horizontal arrival without lifting the root.
+        local function reached()
+            local offset=root.Position-goal
+            local radius=i==#route and 1.5 or 2.5
+            return math.sqrt(offset.X*offset.X+offset.Z*offset.Z)<=radius and math.abs(offset.Y)<=6
+        end
+        -- MoveTo handles physics and natural height. Never tween CFrame or force a jump while carrying.
+        while not reached() do
+            if not active or not collectEgg.enabled then return stop("Return cancelled") end
+            if player.Character~=character or not root.Parent or humanoid.Health<=0 then return stop("Character changed during return") end
+            if busy then return stop("Return interrupted by scan") end
+            if not fieldCarryActive() and (root.Position-destination).Magnitude>4 then return stop("Game no longer reports field egg carrying") end
+            if os.clock()-started>deadline then return stop("Ground return stalled at waypoint "..i) end
+            if os.clock()-refreshed>=1 then humanoid:MoveTo(goal);refreshed=os.clock() end
+            nav.status="Walking home";collectLabel.Text=string.format("Walking home %d/%d",i,#route)
+            task.wait(0.1)
+        end
+        nav.completed=i
+    end
+    if not active or not collectEgg.enabled then return stop("Return cancelled") end
+    cancelCollectTween("At delivery point")
+    nav.status="Ground return reached delivery point"
+    return true,nav.status
+end
 local function returnHome(root, humanoid, character)
     if not deliveryPoint then pauseCollect("Holding field egg: set your delivery point in Settings"); return end
     if not root or not humanoid or humanoid.Health <= 0 then pauseCollect("Character unavailable during return"); return end
@@ -792,47 +881,11 @@ local function returnHome(root, humanoid, character)
         destination = {x=deliveryPoint.X,y=deliveryPoint.Y,z=deliveryPoint.Z}}
     collectEgg.lastReturn = record
     if delta.Magnitude > 600 then pauseCollect("Delivery point beyond 600 studs"); record.status=collectEgg.last; return end
-    if delta.Magnitude > 4 then
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        params.FilterDescendantsInstances = {character}
-        params.RespectCanCollide = true
-        local hit = workspace:Raycast(root.Position,delta,params)
-        if hit then
-            record.obstacle = hit.Instance and hit.Instance:GetFullName() or "Unknown obstacle"
-            local reached,reason=pathMove(root,humanoid,character,deliveryPoint,true)
-            if not reached then
-                record.status = reason:find("carry",1,true) and "Return interrupted: carry state lost" or "Return path obstructed"
-                record.routeReason=reason
-                if active and collectEgg.enabled then pauseCollect(record.status .. ": "..reason) end
-                return
-            end
-            delta=deliveryPoint-root.Position
-        end
-        local duration = delta.Magnitude/math.clamp(humanoid.WalkSpeed,8,24)
-        collectEgg.moving = true
-        collectTween = TweenService:Create(root,TweenInfo.new(duration,Enum.EasingStyle.Linear),{CFrame=root.CFrame+delta})
-        collectTween:Play()
-        local started = os.clock()
-        local reason = "Return Tween ended before arrival"
-        while true do
-            if not active or not collectEgg.enabled then reason="Return cancelled"; break end
-            if player.Character ~= character or not root.Parent or humanoid.Health <= 0 then reason="Character changed or died during return"; break end
-            if busy then reason="Return interrupted by scan"; break end
-            -- Check arrival first: a delivery trigger may clear carry UI immediately.
-            if (root.Position-deliveryPoint).Magnitude <= 4 then reason="At delivery point"; break end
-            if not dropCarryVisible() then reason="Field carry state disappeared before delivery"; break end
-            if not collectTween or collectTween.PlaybackState ~= Enum.PlaybackState.Playing then break end
-            if os.clock()-started > duration+1 then reason="Return timed out"; break end
-            local nextDelta=deliveryPoint-root.Position
-            if nextDelta.Magnitude > 0.1 and workspace:Raycast(root.Position,nextDelta.Unit*math.min(3,nextDelta.Magnitude),params) then
-                reason="Obstacle appeared during return"; break
-            end
-            task.wait(0.1)
-        end
-        cancelCollectTween(reason)
-        record.status,record.endDistance = reason,(root.Position-deliveryPoint).Magnitude
-        if reason ~= "At delivery point" then
+    if delta.Magnitude > 1.5 then
+        local reached,reason=walkReturn(root,humanoid,character,deliveryPoint)
+        record.status,record.endDistance=reason,(root.Position-deliveryPoint).Magnitude
+        if not reached then
+            record.routeReason=reason
             if active and collectEgg.enabled then pauseCollect(reason) end
             return
         end
@@ -844,7 +897,7 @@ local function returnHome(root, humanoid, character)
     local clearSince
     while active and collectEgg.enabled and player.Character == character and humanoid.Health > 0 and os.clock()<deadline do
         if (root.Position-deliveryPoint).Magnitude > 6 then pauseCollect("Moved away from delivery point"); record.status=collectEgg.last; return end
-        if dropCarryVisible() then clearSince=nil else clearSince=clearSince or os.clock() end
+        if fieldCarryActive() then clearSince=nil else clearSince=clearSince or os.clock() end
         if clearSince and os.clock()-clearSince>=1 then
             local added = before and newInventoryEggs(before,eggInventory()) or {}
             record.inventoryAdded = added
@@ -874,7 +927,7 @@ local function collectSnapshot(includeEvidence)
         gameEvents = gameEvents, eventObserver = eventObserver,
         lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, deliveryPointSet = deliveryPoint ~= nil,
         inputInProgress = collectRunning, carrying = carryVisible(), carryState = carryState(), matchingPrompts = 0,
-        scope = "Tween pickup within 250 studs; return to configured delivery point within 600 studs",
+        scope = "Tween pickup within 250 studs; native ground walking return within 600 studs",
         moving = collectEgg.moving == true, lastMovement = collectEgg.lastMovement,
         result = "Input attempts only; pickup success is not verified"}
     local character = player.Character
@@ -918,7 +971,7 @@ local function collectStep()
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if carrying.manualMarker then collectEgg.last="User carrying marker active"; return end
-    if carrying.fieldCarryUI then returnHome(root,humanoid,character); return end
+    if carrying.fieldCarrying then returnHome(root,humanoid,character); return end
     if carrying.equippedEgg then collectEgg.last="Inventory egg equipped; unequip to collect field eggs"; return end
     collectEgg.phase="SEEKING"
     local best, bestDistance
@@ -975,14 +1028,14 @@ local function collectStep()
     record.inventoryBeforeCount, record.inventoryAfterCount = inventoryBefore.count, inventoryAfter.count
     record.inventoryComparisonComplete = inventoryBefore.complete and inventoryAfter.complete
     record.carryStateAfter = carryState()
-    if record.carryStateAfter.fieldCarryUI then collectEgg.tripInventory=inventoryBefore end
+    if record.carryStateAfter.fieldCarrying then collectEgg.tripInventory=inventoryBefore end
     record.carryVisibleAfter = record.carryStateAfter.blocked
     if #record.inventoryAdded > 0 then
         record.outcome = "New egg UID observed after input; acquisition source not verified"
         collectEgg.inventoryAdditionsObserved = (collectEgg.inventoryAdditionsObserved or 0) + #record.inventoryAdded
         collectEgg.unconfirmed = 0
     elseif record.carryVisibleAfter then
-        record.outcome = record.carryStateAfter.fieldCarryUI and "Field carry UI detected; pickup inferred from UI"
+        record.outcome = record.carryStateAfter.fieldCarrying and (record.carryStateAfter.serverCarrying and "Game reported field egg carrying" or "Field carry UI detected; pickup inferred from UI")
             or record.carryStateAfter.equippedEgg and "Egg tool equipped; field pickup not verified"
             or "User marked carrying; game pickup not verified"
         collectEgg.unconfirmed = 0
@@ -1075,6 +1128,7 @@ carryMarker.Activated:Connect(function()
 end)
 connections[#connections+1] = player.CharacterAdded:Connect(function()
     cancelCollectTween("Character changed")
+    serverCarry=nil
     collectEgg.enabled=false
     collectEgg.tripInventory=nil
     collectEgg.phase="PAUSED"
@@ -1170,7 +1224,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.18", placeId = game.PlaceId,
+        local report = {version = "1.19", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -1342,7 +1396,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.18", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.19", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -1372,7 +1426,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.18 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.19 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
