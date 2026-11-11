@@ -57,7 +57,7 @@ env.task.wait = function()
         movement.PlaybackState="Completed"
     end
 end
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -79,6 +79,7 @@ local function reset()
     root.Position,root.CFrame = position(0),position(0)
     obstacle,movement,onWait = false,nil,nil
     env.collectRunning=false
+    funcs.home(nil)
 end
 local tests = 0
 local function check(name, fn) reset(); fn(); tests = tests + 1; print("PASS " .. name) end
@@ -245,5 +246,48 @@ check("unknown UID suppresses inventory acquisition claims", function()
     backpackChildren={unknown}; local before=funcs.inventory()
     backpackChildren={eggTool("AssetEgg")}
     assert(not before.complete and #funcs.diff(before,funcs.inventory()) == 0)
+end)
+check("field egg without delivery point pauses instead of wandering", function()
+    carrying=true
+    funcs.dispatch()
+    assert(not movement and env.collectEgg.enabled == false)
+    assert(env.collectEgg.pausedReason:find("delivery point",1,true))
+end)
+check("return to configured home and observe inventory delivery", function()
+    funcs.home(position(40)); carrying=true
+    env.collectEgg.tripInventory=funcs.inventory()
+    onWait=function()
+        if movement then carrying=false; backpackChildren={eggTool("AssetEgg")} end
+    end
+    funcs.dispatch()
+    assert(root.Position.X == 40 and env.collectEgg.deliveriesObserved == 1)
+    assert(env.collectEgg.phase == "SEEKING" and env.collectEgg.enabled)
+end)
+check("carry clearing away from home is not delivery", function()
+    funcs.home(position(40)); carrying=true
+    env.collectEgg.tripInventory=funcs.inventory()
+    onWait=function()
+        carrying=false
+        if movement then movement.goal.CFrame=position(20) end
+    end
+    funcs.dispatch()
+    assert(not env.collectEgg.deliveriesObserved and not env.collectEgg.enabled)
+    assert(env.collectEgg.lastReturn.status == "Field carry state disappeared before delivery")
+end)
+check("return blocked by wall pauses with no delivery claim", function()
+    funcs.home(position(40)); carrying=true; obstacle=true
+    funcs.dispatch()
+    assert(not movement and not env.collectEgg.enabled and not env.collectEgg.deliveriesObserved)
+    assert(env.collectEgg.lastReturn.status == "Return path obstructed")
+end)
+check("arrival without game accepting egg pauses", function()
+    funcs.home(position(40)); carrying=true
+    funcs.dispatch()
+    assert(root.Position.X == 40 and not env.collectEgg.enabled)
+    assert(env.collectEgg.lastReturn.status == "Home reached but game did not accept the egg")
+end)
+check("changing home during movement is rejected", function()
+    funcs.home(position(40)); env.collectRunning=true
+    local ok=funcs.home(position(20)); assert(not ok)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
