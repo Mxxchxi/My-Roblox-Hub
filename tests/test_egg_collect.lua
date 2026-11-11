@@ -73,7 +73,7 @@ env.task.wait = function()
         movement.PlaybackState="Completed"
     end
 end
-env.placeState={enabled=false,slots={},attempts=0,observed=0};env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
+env.placeState={enabled=false,slots={},attempts=0,observed=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
 local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies}", "collect-engine", "t", env))()
@@ -89,6 +89,7 @@ end
 local function reset()
     env.hatch.enabled=true;env.attemptState={}
     env.placeState={enabled=false,slots={},attempts=0,observed=0}
+    env.AUTO_PLACE_ENABLED=true
     env.frame=nil;env.restore=nil
     funcs.mark(false)
     funcs.resetServer()
@@ -772,5 +773,15 @@ check("placement records real Tool Activated signal", function()
     end
     funcs.place()
     assert(env.placeState.lastAttempt.activatedCount==1 and disconnected)
+end)
+check("disabled Auto Place performs no equip movement or click", function()
+    local camera,original,clicks=setupPlaceClick(false)
+    env.AUTO_PLACE_ENABLED=false
+    local equipped=false
+    function humanoid:EquipTool() equipped=true end
+    funcs.place()
+    assert(not equipped and not walkGoal and clicks()==0 and not env.placeState.enabled)
+    assert(env.placeState.last:find("disabled",1,true))
+    assert(camera.CFrame==original)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
