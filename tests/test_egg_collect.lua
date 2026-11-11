@@ -393,4 +393,20 @@ check("server carry state does not survive character replacement", function()
     assert(not funcs.snapshot().carryState.serverCarrying)
     env.player.Character=character
 end)
+check("pickup starts native return inside the same dispatch", function()
+    funcs.home(position(40))
+    local p=prompt(3);env.promptCache[p]=true
+    onWait=function()
+        if walkGoal then
+            carrying=false;funcs.updateCarry({IsCarrying=false})
+            backpackChildren={eggTool("AssetEgg")}
+        else
+            carrying=true;funcs.updateCarry({IsCarrying=true,Uid="field-egg"})
+        end
+    end
+    funcs.dispatch()
+    assert(env.collectEgg.lastReturn and env.collectEgg.deliveriesObserved == 1)
+    assert(env.collectEgg.lastReturn.confirmationToReturnMs <= 1)
+    assert(env.collectEgg.lastInput.returnDispatchedClock)
+end)
 print(string.format("%d Auto Collect tests passed", tests))
