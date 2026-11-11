@@ -88,7 +88,7 @@ local function reset()
     equippedChildren,backpackChildren = {},{}
     function character:GetChildren() return equippedChildren end
     env.promptCache, env.collectAttempts = {}, {}
-    env.collectEgg = {enabled = true, attempts = 0}
+    env.collectEgg = {enabled = true, attempts = 0, approachMode="Tween"}
     env.active, env.busy, env.hatchRunning = true, false, false
     carrying, failInput, clock = false, false, 10
     humanoid.Health = 100
@@ -503,5 +503,17 @@ end)
 check("base inspection refuses unknown ownership", function()
     plotFixture=node("Plots","Folder",{}, {node("3","Model",{}, {node("CashTile","Part")})})
     local report=funcs.inspectBase();assert(not report.found and #report.touchParts==0)
+end)
+check("walk approach reaches egg without creating CFrame tween", function()
+    env.collectEgg.approachMode="Walk"
+    local p=prompt(40);env.promptCache[p]=true
+    funcs.dispatch()
+    assert(tweenCreated==0 and p.began==1 and root.Position.X>30)
+end)
+check("walk approach stops when disabled", function()
+    env.collectEgg.approachMode="Walk"
+    local p=prompt(40);env.promptCache[p]=true
+    onWait=function() env.collectEgg.enabled=false;funcs.cancel("Collect OFF") end
+    funcs.dispatch();assert(p.began==0 and tweenCreated==0)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
