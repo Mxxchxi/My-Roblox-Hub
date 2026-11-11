@@ -724,4 +724,19 @@ check("PetArea grid excludes occupied volumes and marks owned candidates", funct
     assert(env.placeState.autoMark.areas[1].blocked==1 and env.placeState.slots[1].spatial)
     env.workspace.Raycast,env.workspace.FindFirstChild,env.workspace.GetPartBoundsInBox=oldRay,oldFind,oldBounds
 end)
+check("offscreen placement does not reserve or click slot", function()
+    local camera,original,clicks=setupPlaceClick(false)
+    camera.WorldToScreenPoint=function() return position(100,100,1),false end
+    funcs.place()
+    assert(clicks()==0 and not env.placeState.slots[1].used)
+    assert(camera.CFrame==original and camera.CameraType=="Custom")
+    assert(not env.placeState.lastAttempt.pressAttempted)
+end)
+check("unavailable input service leaves slot available", function()
+    local camera,original,clicks=setupPlaceClick(false)
+    env.game.GetService=function() error("input service unavailable") end
+    funcs.place()
+    assert(clicks()==0 and not env.placeState.slots[1].used and not env.placeState.enabled)
+    assert(camera.CFrame==original)
+end)
 print(string.format("%d Auto Collect tests passed", tests))
