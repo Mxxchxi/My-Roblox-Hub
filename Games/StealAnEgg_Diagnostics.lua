@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.17
+-- Steal An Egg: structure diagnostics v1.18
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -53,7 +53,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.17", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.18", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -95,7 +95,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.17 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.18 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -129,7 +129,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.17 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.18 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -174,7 +174,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.17 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.18 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -462,6 +462,42 @@ end
 local function carryVisible()
     return carryState().blocked
 end
+local gameEvents = {}
+local eventObserver = {hooked = {}, errors = {}}
+local function eventValue(value, depth, seen)
+    local kind=type(value)
+    if kind=="nil" then return "<nil>" end
+    if kind=="string" then return value:sub(1,180) end
+    if kind=="number" then return value==value and value~=math.huge and value~=-math.huge and value or tostring(value) end
+    if kind=="boolean" then return value end
+    if typeof(value)=="Instance" then return {instance=value:GetFullName(),class=value.ClassName} end
+    if typeof(value)=="Vector3" then return {x=value.X,y=value.Y,z=value.Z} end
+    if kind~="table" then return "<"..kind..">" end
+    if depth>=2 then return "<depth limit>" end
+    if seen[value] then return "<cycle>" end
+    seen[value]=true
+    local result,count={},0
+    for key,item in pairs(value) do
+        if count>=8 then result.__truncated=true; break end
+        if type(key)=="string" or type(key)=="number" then
+            result[tostring(key):sub(1,80)]=eventValue(item,depth+1,seen);count=count+1
+        end
+    end
+    seen[value]=nil
+    return result
+end
+local function recordGameEvent(name, ...)
+    local args={}
+    for i=1,math.min(select("#",...),6) do args[i]=eventValue(select(i,...),0,{}) end
+    local state=carryState()
+    local item={at=os.time(),clock=os.clock(),name=name,args=args,
+        phase=collectEgg.phase or "IDLE",fieldCarryUI=state.fieldCarryUI,equippedEgg=state.equippedEgg}
+    local character=player.Character
+    local root=character and character:FindFirstChild("HumanoidRootPart")
+    if root then item.position={x=root.Position.X,y=root.Position.Y,z=root.Position.Z} end
+    gameEvents[#gameEvents+1]=item
+    if #gameEvents>16 then table.remove(gameEvents,1) end
+end
 local function eggInventory()
     local snapshot = {items = {}, complete = true, count = 0}
     local backpack = player:FindFirstChildOfClass("Backpack")
@@ -544,6 +580,7 @@ local function pathMove(root, humanoid, character, destination, requireCarry, ta
     if distance>600 then record.status="Route exceeds 600 studs"; return false,record.status end
     local function stop(reason)
         record.status=reason
+        recordGameEvent("navigation.stop",reason)
         cancelCollectTween(reason)
         return false,reason
     end
@@ -765,7 +802,7 @@ local function returnHome(root, humanoid, character)
             record.obstacle = hit.Instance and hit.Instance:GetFullName() or "Unknown obstacle"
             local reached,reason=pathMove(root,humanoid,character,deliveryPoint,true)
             if not reached then
-                record.status = "Return path obstructed"
+                record.status = reason:find("carry",1,true) and "Return interrupted: carry state lost" or "Return path obstructed"
                 record.routeReason=reason
                 if active and collectEgg.enabled then pauseCollect(record.status .. ": "..reason) end
                 return
@@ -834,6 +871,7 @@ local function collectSnapshot(includeEvidence)
         unconfirmed = collectEgg.unconfirmed or 0, pausedReason = collectEgg.pausedReason,
         inventoryAdditionsObserved = collectEgg.inventoryAdditionsObserved or 0,
         phase = collectEgg.phase or "IDLE", deliveriesObserved = collectEgg.deliveriesObserved or 0,
+        gameEvents = gameEvents, eventObserver = eventObserver,
         lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, deliveryPointSet = deliveryPoint ~= nil,
         inputInProgress = collectRunning, carrying = carryVisible(), carryState = carryState(), matchingPrompts = 0,
         scope = "Tween pickup within 250 studs; return to configured delivery point within 600 studs",
@@ -912,6 +950,7 @@ local function collectStep()
     collectEgg.attempts = collectEgg.attempts + 1
     local record = {path = best:GetFullName(), distance = bestDistance, at = os.time(), status = "Started"}
     collectEgg.lastInput = record
+    recordGameEvent("collect.input.begin",best:GetFullName())
     local ok, err = pcall(function()
         holding = best
         best:InputHoldBegin()
@@ -961,6 +1000,7 @@ local function collectStep()
             end
         end
     end
+    recordGameEvent("collect.input.outcome",record.outcome)
     if active then collectEgg.last = collectEgg.pausedReason or record.outcome end
 end
 local function dispatchCollect()
@@ -980,6 +1020,40 @@ local function setManualCarry(value)
     end
 end
 -- AUTO_COLLECT_ENGINE_END
+-- Read-only event observations. Payloads are bounded and are not interpreted as
+-- authoritative carry state until the event contract is established.
+local watchedEvents = {
+    ["RE/EggWorld/FieldEggCarry"]=true, ["RE/EggWorld/FieldEggGone"]=true,
+    ["RE/EggWorld/FieldEggRedeemVerdict"]=true, ["RE/EggWorld/OwnerDropped"]=true,
+    ["RE/EggWorld/OwnerShifted"]=true, ["RE/GuardPatrol/SpeedTollWarning"]=true,
+}
+local hookedEvents=setmetatable({}, {__mode="k"})
+local storage=game:GetService("ReplicatedStorage")
+local function observeGameEvent(obj)
+    if not obj:IsA("RemoteEvent") or not watchedEvents[obj.Name] or hookedEvents[obj] then return end
+    local packages=storage:FindFirstChild("Packages")
+    local networking=packages and packages:FindFirstChild("Networking")
+    if not networking or not obj:IsDescendantOf(networking) then return end
+    local ok,connection=pcall(function()
+        return obj.OnClientEvent:Connect(function(...)
+            if not active then return end
+            local success,err=pcall(recordGameEvent,obj.Name,...)
+            if not success then eventObserver.lastError=tostring(err):sub(1,100) end
+        end)
+    end)
+    if ok then
+        hookedEvents[obj]=true
+        connections[#connections+1]=connection
+        eventObserver.hooked[#eventObserver.hooked+1]=obj.Name
+    else eventObserver.errors[#eventObserver.errors+1]=tostring(connection):sub(1,100) end
+end
+connections[#connections+1]=storage.DescendantAdded:Connect(observeGameEvent)
+local packages=storage:FindFirstChild("Packages")
+local networking=packages and packages:FindFirstChild("Networking")
+if networking then
+    for _, obj in ipairs(networking:GetDescendants()) do observeGameEvent(obj) end
+end
+
 setHomeButton.Activated:Connect(function()
     local character=player.Character
     local root=character and character:FindFirstChild("HumanoidRootPart")
@@ -1096,7 +1170,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.17", placeId = game.PlaceId,
+        local report = {version = "1.18", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -1268,7 +1342,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.17", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.18", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -1298,7 +1372,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.17 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.18 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
