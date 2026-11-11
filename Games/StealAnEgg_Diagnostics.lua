@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.30
+-- Steal An Egg: structure diagnostics v1.31
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -53,7 +53,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.30", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.31", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -97,7 +97,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.30 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.31 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -139,7 +139,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.30 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.31 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -184,7 +184,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.30 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.31 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -1304,7 +1304,7 @@ local function collectSnapshot(includeEvidence)
         inventoryAdditionsObserved = collectEgg.inventoryAdditionsObserved or 0,
         phase = collectEgg.phase or "IDLE", deliveriesObserved = collectEgg.deliveriesObserved or 0,
         gameEvents = gameEvents, eventObserver = eventObserver,
-        autoPlace={enabled=placeState and placeState.enabled,attempts=placeState and placeState.attempts,observed=placeState and placeState.observed,last=placeState and placeState.last,lastAttempt=placeState and placeState.lastAttempt,autoMark=placeState and placeState.autoMark,lastSlotPick=placeState and placeState.lastSlotPick},
+        autoPlace={binding=placeState and placeState.binding,preparingBind=placeState and placeState.preparingBind,enabled=placeState and placeState.enabled,attempts=placeState and placeState.attempts,observed=placeState and placeState.observed,last=placeState and placeState.last,lastAttempt=placeState and placeState.lastAttempt,autoMark=placeState and placeState.autoMark,lastSlotPick=placeState and placeState.lastSlotPick},
         autoHome={enabled=autoHome.enabled,ready=autoHome.ready,reason=autoHome.reason,report=includeEvidence and autoHome.report or nil},
         lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, lastWalkingRecovery=lastWalkingRecovery, deliveryPointSet = deliveryPoint ~= nil,
         approachMode=collectEgg.approachMode or "Walk", inputInProgress = collectRunning, carrying = carryVisible(), carryState = carryState(), matchingPrompts = 0,
@@ -1666,6 +1666,7 @@ local function placeStep()
     placeState.last="Placement unconfirmed; slot reserved to avoid duplicate clicks"
 end
 local function dispatchPlace()
+    if placeState.binding or placeState.preparingBind then return end
     if placeRunning or hatchRunning or collectRunning then return end
     placeRunning=true
     local ok,err=pcall(placeStep)
@@ -1685,8 +1686,40 @@ placeToggle.Activated:Connect(function()
     if not placeState.enabled and placeRunning then cancelCollectTween("Auto Place OFF") end
 end)
 bindSlot.Activated:Connect(function()
-    if placeRunning or collectRunning or hatchRunning or carryVisible() then placeLabel.Text="Stop automation and unequip the egg before marking a slot";return end
-    placeState.binding=true;placeLabel.Text="Click an EMPTY slot inside your own plot. No placement input will be generated."
+    if placeState.preparingBind then return end
+    if fieldCarryActive() or manualCarry then placeLabel.Text="Deliver the field egg or clear the carrying marker before marking";return end
+    placeState.preparingBind=true;placeState.binding=false
+    placeState.enabled=false;collectEgg.enabled=false;hatch.enabled=false
+    placeToggle.Text="Auto Place: OFF";collectButton.Text="Collect: OFF";hatchButton.Text="Auto Hatch: OFF"
+    cancelCollectTween("Preparing slot selection")
+    if hatchWalking then
+        local character=player.Character;local root=character and character:FindFirstChild("HumanoidRootPart")
+        if root then pcall(function() hatchWalking:MoveTo(root.Position) end) end
+        hatchWalking=nil
+    end
+    if holding then pcall(function() holding:InputHoldEnd() end);holding=nil end
+    placeState.last="Preparing slot selection";placeLabel.Text=placeState.last
+    task.spawn(function()
+        local ok,err=pcall(function()
+            local deadline=os.clock()+7
+            while active and (placeRunning or collectRunning or hatchRunning) and os.clock()<deadline do task.wait(0.1) end
+            if not active then return end
+            if placeRunning or collectRunning or hatchRunning then error("Automation is still stopping; press Mark again") end
+            local character=player.Character
+            local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+            if not humanoid then error("Character unavailable") end
+            humanoid:UnequipTools()
+            task.wait(0.1)
+            if carryVisible() then error("An egg is still equipped or carried") end
+            placeState.binding=true
+            placeState.last="Waiting for your empty-slot click"
+            placeLabel.Text=placeState.last
+            restore.Text="Pick slot"
+            setShown(false)
+        end)
+        placeState.preparingBind=false
+        if not ok and active then placeState.last=tostring(err):sub(1,140);placeLabel.Text=placeState.last;setShown(true) end
+    end)
 end)
 clearSlots.Activated:Connect(function()
     if placeRunning then return end
@@ -1694,15 +1727,19 @@ clearSlots.Activated:Connect(function()
     placeToggle.Text="Auto Place: OFF";placeLabel.Text="Slots cleared; mark empty slots again"
 end)
 connections[#connections+1]=UIS.InputBegan:Connect(function(input,processed)
-    if not placeState.binding or processed or input.UserInputType~=Enum.UserInputType.MouseButton1 then return end
+    if not placeState.binding or input.UserInputType~=Enum.UserInputType.MouseButton1 then return end
     for _,obj in ipairs(pg:GetGuiObjectsAtPosition(input.Position.X,input.Position.Y)) do
         if obj:IsDescendantOf(gui) then return end
     end
-    if carryVisible() then placeState.binding=false;placeLabel.Text="Unequip the egg before marking";return end
+    if carryVisible() then placeState.binding=false;placeState.last="Unequip the egg before marking";placeLabel.Text=placeState.last;setShown(true);restore.Text="YUU HUB";return end
     local mouse=player:GetMouse()
     local ok,message=addPlacementSlot(mouse.Target,mouse.Hit.Position)
+    placeState.last=message
+    if placeState.lastSlotPick then placeState.lastSlotPick.gameProcessed=processed;placeState.lastSlotPick.message=message end
     placeLabel.Text=message
-    if ok then placeState.binding=false end
+    placeState.binding=false
+    restore.Text="YUU HUB"
+    setShown(true);showTab("Placement")
 end)
 approachButton.Activated:Connect(function()
     if collectRunning then status.Text="Stop Collect before changing movement mode";return end
@@ -1876,7 +1913,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.30", placeId = game.PlaceId,
+        local report = {version = "1.31", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -2048,7 +2085,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.30", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.31", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -2078,7 +2115,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.30 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.31 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
