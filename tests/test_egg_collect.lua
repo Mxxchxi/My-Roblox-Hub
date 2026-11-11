@@ -151,4 +151,21 @@ check("disabled prompt nearby waits without input or movement", function()
     funcs.dispatch(); assert(not movement and p.began == 0)
     assert(env.collectEgg.last == "In range; waiting for game to enable prompt")
 end)
+check("wait for delayed carry UI before choosing another egg", function()
+    local p=prompt(3); env.promptCache[p]=true
+    local waits=0
+    onWait=function() waits=waits+1; if waits == 3 then carrying=true end end
+    funcs.dispatch()
+    assert(waits >= 3 and env.collectEgg.lastInput.carryVisibleAfter)
+    assert(env.collectEgg.unconfirmed == 0 and p.began == 1)
+end)
+check("pause after three unconfirmed inputs", function()
+    local p=prompt(3); env.promptCache[p]=true
+    funcs.dispatch(); clock=clock+4
+    funcs.dispatch(); clock=clock+4
+    funcs.dispatch()
+    assert(env.collectEgg.enabled == false and env.collectEgg.unconfirmed == 3)
+    assert(env.collectEgg.pausedReason and p.began == 3)
+    clock=clock+4; funcs.dispatch(); assert(p.began == 3)
+end)
 print(string.format("%d Auto Collect tests passed", tests))
