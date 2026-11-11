@@ -24,6 +24,8 @@ function drop:FindFirstChild() return button end
 function pg:FindFirstChild() return carrying and drop or nil end
 local character = {}
 local equippedChildren = {}
+local backpackChildren = {}
+local backpack = {GetChildren=function() return backpackChildren end}
 function character:GetChildren() return equippedChildren end
 function character:FindFirstChild() return root end
 function character:FindFirstChildOfClass() return humanoid end
@@ -32,6 +34,7 @@ local env = setmetatable({pg = pg, workspace = {}, player = {Character = charact
     collectEgg = {enabled = true, attempts = 0}, collectAttempts = {}, promptCache = {},
     os = {clock = function() return clock end, time = function() return 123 end},
     task = {wait = function() end}, promptPosition = function(p) return p.position end}, {__index = _G})
+function env.player:FindFirstChildOfClass() return backpack end
 env.RaycastParams = {new=function() return {} end}
 env.Vector3 = {new=position}
 env.Enum = {RaycastFilterType={Exclude="Exclude"},EasingStyle={Linear="Linear"},PlaybackState={Playing="Playing",Completed="Completed",Cancelled="Cancelled"}}
@@ -54,7 +57,7 @@ env.task.wait = function()
         movement.PlaybackState="Completed"
     end
 end
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -66,7 +69,7 @@ local function prompt(distance)
 end
 local function reset()
     funcs.mark(false)
-    equippedChildren = {}
+    equippedChildren,backpackChildren = {},{}
     function character:GetChildren() return equippedChildren end
     env.promptCache, env.collectAttempts = {}, {}
     env.collectEgg = {enabled = true, attempts = 0}
@@ -219,5 +222,28 @@ check("equipping egg during Tween stops before pickup", function()
     local p=prompt(40); env.promptCache[p]=true
     onWait=function() equippedChildren={eggTool("AssetEgg")} end
     funcs.dispatch(); assert(p.began == 0 and not env.collectEgg.moving)
+end)
+check("new backpack egg UID observed after input", function()
+    local p=prompt(3); env.promptCache[p]=true
+    onWait=function() backpackChildren={eggTool("AssetEgg")} end
+    funcs.dispatch()
+    assert(env.collectEgg.lastInput.inventoryAdded[1].uid == "sample-egg-id")
+    assert(env.collectEgg.inventoryAdditionsObserved == 1 and env.collectEgg.unconfirmed == 0)
+end)
+check("moving an existing egg between containers is not acquisition", function()
+    local egg=eggTool("AssetEgg"); backpackChildren={egg}
+    local before=funcs.inventory(); backpackChildren={}; equippedChildren={egg}
+    assert(#funcs.diff(before,funcs.inventory()) == 0)
+end)
+check("non-egg tools never count as inventory additions", function()
+    local before=funcs.inventory(); backpackChildren={eggTool("Weapon")}
+    assert(#funcs.diff(before,funcs.inventory()) == 0)
+end)
+check("unknown UID suppresses inventory acquisition claims", function()
+    local unknown=eggTool("AssetEgg")
+    function unknown:GetAttribute(key) if key == "ItemType" then return "AssetEgg" end end
+    backpackChildren={unknown}; local before=funcs.inventory()
+    backpackChildren={eggTool("AssetEgg")}
+    assert(not before.complete and #funcs.diff(before,funcs.inventory()) == 0)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
