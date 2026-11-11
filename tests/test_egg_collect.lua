@@ -41,8 +41,17 @@ env.Enum = {RaycastFilterType={Exclude="Exclude"},EasingStyle={Linear="Linear"},
 env.TweenInfo = {new=function(duration) return {duration=duration} end}
 env.collectLabel = {}
 env.math = setmetatable({clamp=function(n,lo,hi) return math.max(lo,math.min(hi,n)) end},{__index=math})
-local obstacle, movement, onWait
-function env.workspace:Raycast() return obstacle and {} or nil end
+local obstacle, movement, onWait, mockRoute
+function env.workspace:Raycast(origin,delta)
+    if type(obstacle) == "function" then return obstacle(origin,delta) and {} or nil end
+    return obstacle and {} or nil
+end
+env.Enum.PathStatus={Success="Success",NoPath="NoPath"}
+env.Enum.PathWaypointAction={Walk="Walk",Jump="Jump"}
+env.PathfindingService={CreatePath=function()
+    return {Status=mockRoute and "Success" or "NoPath",ComputeAsync=function() end,
+        GetWaypoints=function() return mockRoute end}
+end}
 env.TweenService = {Create=function(_,target,info,goal)
     local t = {target=target,goal=goal,info=info}
     function t:Play() self.PlaybackState="Playing"; movement=self end
@@ -57,7 +66,7 @@ env.task.wait = function()
         movement.PlaybackState="Completed"
     end
 end
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -77,7 +86,7 @@ local function reset()
     carrying, failInput, clock = false, false, 10
     humanoid.Health = 100
     root.Position,root.CFrame = position(0),position(0)
-    obstacle,movement,onWait = false,nil,nil
+    obstacle,movement,onWait,mockRoute = false,nil,nil,nil
     env.collectRunning=false
     funcs.home(nil)
 end
@@ -289,5 +298,39 @@ end)
 check("changing home during movement is rejected", function()
     funcs.home(position(40)); env.collectRunning=true
     local ok=funcs.home(position(20)); assert(not ok)
+end)
+local function detour(endX)
+    return {{Position=position(0),Action="Walk"},{Position=position(0,0,10),Action="Walk"},
+        {Position=position(endX,0,10),Action="Walk"},{Position=position(endX),Action="Walk"}}
+end
+check("pathfinding detours around a blocked straight approach", function()
+    local p=prompt(40);env.promptCache[p]=true
+    obstacle=function(_,delta) return delta.Magnitude>10 end
+    mockRoute=detour(35)
+    funcs.dispatch()
+    assert(p.began == 1 and root.Position.X == 35)
+    assert(env.collectEgg.lastNavigation.completed == 4)
+end)
+check("pathfinding returns home around a blocked straight line", function()
+    funcs.home(position(40));carrying=true;env.collectEgg.tripInventory=funcs.inventory()
+    obstacle=function(_,delta) return delta.Magnitude>10 end
+    mockRoute=detour(40)
+    onWait=function()
+        if movement and movement.goal.CFrame.X==40 and movement.goal.CFrame.Z==0 then
+            carrying=false;backpackChildren={eggTool("AssetEgg")}
+        end
+    end
+    funcs.dispatch()
+    assert(env.collectEgg.deliveriesObserved == 1 and env.collectEgg.lastNavigation.completed == 4)
+end)
+check("route cancellation prevents successful arrival result", function()
+    mockRoute=detour(40)
+    onWait=function() env.collectEgg.enabled=false end
+    local ok,reason=funcs.navigate(root,humanoid,character,position(40),false)
+    assert(not ok and reason == "Route cancelled")
+end)
+check("no path result is reported without movement", function()
+    local ok,reason=funcs.navigate(root,humanoid,character,position(40),false)
+    assert(not ok and reason:find("No path",1,true) and not movement)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
