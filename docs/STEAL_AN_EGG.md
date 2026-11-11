@@ -1,4 +1,4 @@
-# Steal An Egg — diagnostics v1.2
+# Steal An Egg — diagnostics v1.3
 
 PlaceId: `107778070777162`. Metadata inspection only; the five gameplay automation features await live game data.
 
@@ -16,10 +16,15 @@ v1.1 fixes the v1.0 shared-budget depth-first traversal: separate FIFO scans res
 
 Validation: Lua 5.4 syntax check, simulated 13,000-asset starvation regression, result-overflow regression, and all 4 existing loader contract tests passed locally. Roblox APIs and Potassium execution require in-game verification.
 
-## v1.2 report export
 
-**Copy all** tries setclipboard, toclipboard and set_clipboard, including functions exposed through getgenv. A successful call is a copy request, not proof of clipboard contents. If copying fails, use **Save file**; when supported, writefile creates `StealAnEgg_Report_<timestamp>.json` in the executor workspace. readfile verifies bytes when available. Upload the saved JSON to chat.
+## v1.3 clipboard export
 
-If both clipboard and file APIs are unavailable, use **Select page**, press Ctrl+C, and append each page to a text file in order using **Page >**. The report view uses 6,000-byte pages without splitting UTF-8 codepoints. Copy all and Save file always export the entire report. Page selection resets edited text to the original report page.
+**Copy all** always sends the complete report, without silently shortening it. It tries available executor clipboard aliases. When getclipboard/readclipboard can return text, exact readback is required for a VERIFIED message. Mismatches try the next writer. Unreadable clipboard calls are reported as unverified.
 
-Additional simulated checks passed for clipboard failure/alias fallback, UTF-8 page reconstruction, file write/read verification, file failure/unavailable behavior, page navigation and the scan-in-progress export guard. Potassium-specific clipboard and file behavior still requires testing.
+If no verified copy succeeds, the full report replaces the page view and is selected for native **Ctrl+C**. **Select ALL** provides the same selection directly. Previous/next page buttons still return to the paged view. If the TextBox cannot hold the full report, the status says so.
+
+**Copy short** explicitly exports an incomplete summary (summaryOnly=true), limited to roughly 10 KB, with active prompts, visible GUI metadata and remote names; candidates are excluded and omitted counts are recorded. It is a fallback for message/clipboard size limits, not the complete diagnostic record. **Save file** continues to save the full report to the executor workspace.
+
+Clipboard operations affect the computer running Potassium. They do not transfer text to a different computer. Paste into ChatGPT on that computer or use the remote-access application\u2019s clipboard sync when available.
+
+Validation: Lua syntax, simulated full-text selection, no-op clipboard detection, failed-writer alias fallback, unreadable clipboard handling, executor/nested aliases, UTF-8 preservation, prior scan regressions and 4 loader contract checks passed. Potassium and remote clipboard synchronization need real-device verification.
