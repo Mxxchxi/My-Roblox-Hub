@@ -35,6 +35,7 @@ local env = setmetatable({pg = pg, workspace = {}, player = {Character = charact
     os = {clock = function() return clock end, time = function() return 123 end},
     task = {wait = function() end}, promptPosition = function(p) return p.position end}, {__index = _G})
 function env.player:FindFirstChildOfClass() return backpack end
+env.typeof=function(v) return type(v)=="table" and v.__type or type(v) end
 env.RaycastParams = {new=function() return {} end}
 env.Vector3 = {new=position}
 env.Enum = {RaycastFilterType={Exclude="Exclude"},EasingStyle={Linear="Linear"},PlaybackState={Playing="Playing",Completed="Completed",Cancelled="Cancelled"}}
@@ -66,7 +67,7 @@ env.task.wait = function()
         movement.PlaybackState="Completed"
     end
 end
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -332,5 +333,23 @@ end)
 check("no path result is reported without movement", function()
     local ok,reason=funcs.navigate(root,humanoid,character,position(40),false)
     assert(not ok and reason:find("No path",1,true) and not movement)
+end)
+check("game event trace preserves primitive payload and phase", function()
+    env.collectEgg.phase="RETURNING"
+    funcs.record("RE/EggWorld/FieldEggCarry",true,"egg-uid",123)
+    local log=funcs.snapshot().gameEvents;local last=log[#log]
+    assert(last.name == "RE/EggWorld/FieldEggCarry" and last.args[1] == true and last.args[2] == "egg-uid")
+    assert(last.phase == "RETURNING" and last.position)
+end)
+check("game event trace is bounded to sixteen entries", function()
+    for i=1,40 do funcs.record("mock",i) end
+    local log=funcs.snapshot().gameEvents
+    assert(#log == 16 and log[1].args[1] == 25 and log[16].args[1] == 40)
+end)
+check("event payload cycles and long strings are bounded", function()
+    local cycle={};cycle.self=cycle
+    funcs.record("mock",cycle,string.rep("x",1000))
+    local log=funcs.snapshot().gameEvents;local last=log[#log]
+    assert(last.args[1].self == "<cycle>" and #last.args[2] == 180)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
