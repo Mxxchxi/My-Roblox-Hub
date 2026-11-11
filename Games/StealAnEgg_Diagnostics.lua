@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.5
+-- Steal An Egg: structure diagnostics v1.6
 -- Auto Hatch test via nearby enabled prompts; other automation awaits argument mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -41,7 +41,7 @@ pageLabel.Position = UDim2.new(0.60, 0, 0, 50)
 pageLabel.Size = UDim2.new(0.39, 0, 0, 38)
 pageLabel.BackgroundTransparency = 1
 pageLabel.TextColor3 = Color3.new(1, 1, 1)
-pageLabel.Text = "v1.5 | Waiting for scan"
+pageLabel.Text = "v1.6 | Waiting for scan"
 local status = Instance.new("TextLabel", frame)
 status.Position = UDim2.new(0.01, 0, 0, 137)
 status.Size = UDim2.new(0.98, 0, 0, 38)
@@ -66,7 +66,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.5 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.6 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -110,7 +110,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.5 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.6 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -173,11 +173,13 @@ local function copyPayload(text, label)
 end
 local busy = false
 -- AUTO_HATCH_BEGIN
-local hatchButton = button("Auto Hatch: OFF", 0.01, 0.38)
+local hatchButton = button("Auto Hatch: OFF", 0.01, 0.27)
 hatchButton.Position = UDim2.new(0.01, 0, 0, 94)
+local testHatch = button("Test Hatch once", 0.29, 0.23)
+testHatch.Position = UDim2.new(0.29, 0, 0, 94)
 local hatchLabel = Instance.new("TextLabel", frame)
-hatchLabel.Position = UDim2.new(0.40, 0, 0, 94)
-hatchLabel.Size = UDim2.new(0.59, 0, 0, 38)
+hatchLabel.Position = UDim2.new(0.54, 0, 0, 94)
+hatchLabel.Size = UDim2.new(0.45, 0, 0, 38)
 hatchLabel.BackgroundTransparency = 1
 hatchLabel.TextColor3 = Color3.new(1, 1, 1)
 hatchLabel.TextWrapped = true
@@ -206,8 +208,9 @@ local function eligible(prompt, root, humanoid)
     if not position then return false end
     return (root.Position - position).Magnitude <= math.min(prompt.MaxActivationDistance, 7)
 end
-local function hatchStep()
-    if not active or not hatch.enabled or busy then return end
+local function hatchStep(manual)
+    if not active or (not hatch.enabled and not manual) then return end
+    if busy then hatch.last = "Paused during scan"; hatchLabel.Text = hatch.last; return end
     local character = player.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -252,6 +255,69 @@ hatchButton.Activated:Connect(function()
     hatchLabel.Text = hatch.last
     if not hatch.enabled and holding then pcall(function() holding:InputHoldEnd() end); holding = nil end
 end)
+local hatchRunning = false
+local function dispatchHatch(manual)
+    if hatchRunning then return end
+    hatchRunning = true
+    local ok, err = pcall(hatchStep, manual)
+    hatchRunning = false
+    if not ok and active then
+        hatch.last = "Hatch test error: " .. tostring(err):sub(1, 100)
+        hatchLabel.Text = hatch.last
+    end
+end
+testHatch.Activated:Connect(function() task.spawn(dispatchHatch, true) end)
+local function liveHatchSnapshot()
+    local character = player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local snapshot = {enabled = hatch.enabled, attempts = hatch.attempts, last = hatch.last,
+        scanning = busy, inputInProgress = hatchRunning, cacheCount = 0,
+        result = "Input attempts only; hatch success is not verified"}
+    if root then snapshot.characterPosition = {x = root.Position.X, y = root.Position.Y, z = root.Position.Z} end
+    snapshot.alive = humanoid ~= nil and humanoid.Health > 0
+    local nearestDistance = math.huge
+    for prompt in pairs(promptCache) do
+        snapshot.cacheCount = snapshot.cacheCount + 1
+        if prompt.Parent and prompt.ActionText == "Hatch!" and prompt:IsDescendantOf(workspace) then
+            local position = promptPosition(prompt)
+            local distance = position and root and (root.Position - position).Magnitude or math.huge
+            if not snapshot.nearest or distance < nearestDistance then
+                nearestDistance = distance
+                local state = attemptState[prompt]
+                local reason = "Ready to attempt"
+                if not snapshot.alive then reason = "Character unavailable/dead"
+                elseif not prompt.Enabled then reason = "Prompt disabled"
+                elseif not position then reason = "Prompt location unavailable"
+                elseif distance > math.min(prompt.MaxActivationDistance, 7) then reason = "Outside activation range"
+                elseif prompt.HoldDuration < 0 or prompt.HoldDuration > 5 then reason = "Unsupported hold duration"
+                elseif state and state.count >= 3 then reason = "Attempt cap reached; toggle OFF/ON to reset"
+                elseif state and os.clock() - state.time < 4 then reason = "Cooldown"
+                elseif busy then reason = "Scan in progress"
+                elseif hatchRunning then reason = "Input in progress"
+                elseif not hatch.enabled then reason = "Auto Hatch OFF; Test Hatch once is available" end
+                snapshot.nearest = {path = prompt:GetFullName(), enabled = prompt.Enabled,
+                    allowedDistance = math.min(prompt.MaxActivationDistance, 7),
+                    holdDuration = prompt.HoldDuration, attempts = state and state.count or 0, reason = reason}
+                if distance < math.huge then snapshot.nearest.distance = distance end
+            end
+        end
+    end
+    if not snapshot.nearest then snapshot.blocked = "No Hatch! prompt in cache" end
+    return snapshot
+end
+local function refreshExportState()
+    if reportText == "" then return end
+    local snapshot = liveHatchSnapshot()
+    -- Replace the old scan-time snapshot at copy/save time, without rescanning.
+    local full = Http:JSONDecode(reportText)
+    full.autoHatch = snapshot
+    reportText = Http:JSONEncode(full)
+    local short = Http:JSONDecode(shortReportText)
+    short.autoHatch = snapshot
+    shortReportText = Http:JSONEncode(short)
+    splitPages(reportText)
+end
 local function stopHatch()
     active = false
     hatch.enabled = false
@@ -264,8 +330,15 @@ end)
 task.spawn(function()
     while active do
         task.wait(1)
-        local ok, err = pcall(hatchStep)
-        if not ok and active then hatchLabel.Text = "Hatch test error: " .. tostring(err):sub(1, 100) end
+        dispatchHatch(false)
+        if active and hatch.enabled and not hatchRunning then
+            local ok, snapshot = pcall(liveHatchSnapshot)
+            if ok then
+                local nearest = snapshot.nearest
+                hatchLabel.Text = nearest and (nearest.reason .. (nearest.distance and string.format(" | %.1f/%.1f studs", nearest.distance, nearest.allowedDistance) or ""))
+                    or (snapshot.blocked or hatch.last)
+            end
+        end
     end
 end)
 -- AUTO_HATCH_END
@@ -277,7 +350,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.5", placeId = game.PlaceId,
+        local report = {version = "1.6", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -446,10 +519,9 @@ local function collect()
             end)
             return items
         end
-        report.autoHatch = {enabled = hatch.enabled, attempts = hatch.attempts, last = hatch.last,
-            result = "Input attempts only; hatch success is not verified"}
+        report.autoHatch = liveHatchSnapshot()
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.5", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.6", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -479,7 +551,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.5 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.6 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
@@ -495,7 +567,10 @@ local function exportCopy(short)
     copying = true
     status.Text = "Copying on TEST PC..."
     task.spawn(function()
-        local ok, err = pcall(copyPayload, short and shortReportText or reportText, short and "SHORT report" or "FULL report")
+        local ok, err = pcall(function()
+            refreshExportState()
+            copyPayload(short and shortReportText or reportText, short and "SHORT report" or "FULL report")
+        end)
         copying = false
         if not ok and active then
             status.Text = "Copy error: " .. tostring(err):sub(1, 120) .. ". Try Select ALL, then Ctrl+C."
@@ -507,6 +582,8 @@ shortCopy.Activated:Connect(function() exportCopy(true) end)
 save.Activated:Connect(function()
     if busy then status.Text = "Scanning. Wait for completion."; return end
     if reportText == "" then status.Text = "No report. Press Scan first."; return end
+    local refreshed, refreshError = pcall(refreshExportState)
+    if not refreshed then status.Text = "Export refresh failed: " .. tostring(refreshError):sub(1, 100); return end
     local writer = capability("writefile")
     if not writer then
         selectAll()
@@ -534,6 +611,7 @@ previous.Activated:Connect(function() pageIndex = math.max(1, pageIndex - 1); sh
 following.Activated:Connect(function() pageIndex = math.max(1, math.min(#pages, pageIndex + 1)); showPage() end)
 close.Activated:Connect(function() stopHatch(); lifetime:Disconnect(); gui:Destroy() end)
 task.spawn(collect)
+
 
 
 
