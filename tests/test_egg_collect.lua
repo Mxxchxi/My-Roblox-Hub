@@ -72,7 +72,7 @@ env.task.wait = function()
         movement.PlaybackState="Completed"
     end
 end
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil end,resolveHome=resolveAutoHome}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -467,5 +467,27 @@ check("explicit other owner overrides stale matching sign", function()
     local text=node("OwnerLabel","TextLabel");text.Text="TestPlayer"
     plotFixture=node("Plots","Folder",{}, {node("3","Model",{OwnerUserId=99}, {node("PlotSign","Part",{}, {text}),node("SpawnPoint","Part")})})
     assert(not funcs.resolveHome())
+end)
+check("redeem event plus new UID completes before spawn", function()
+    funcs.home(position(40));carrying=true
+    env.collectEgg.tripInventory=funcs.inventory();env.collectEgg.tripStartedClock=clock
+    onWait=function()
+        if walkGoal then
+            walkGoal=position(20);carrying=false;backpackChildren={eggTool("AssetEgg")}
+            funcs.record("RE/EggWorld/FieldEggRedeemVerdict",{DisplayName="Raccoon Egg"})
+        end
+    end
+    funcs.dispatch()
+    assert(root.Position.X==20 and env.collectEgg.deliveriesObserved==1 and env.collectEgg.enabled)
+    assert(env.collectEgg.phase=="SEEKING")
+end)
+check("redeem event without new UID does not claim delivery", function()
+    funcs.home(position(40));carrying=true
+    env.collectEgg.tripInventory=funcs.inventory();env.collectEgg.tripStartedClock=clock
+    onWait=function()
+        if walkGoal then walkGoal=position(20);carrying=false end
+        funcs.record("RE/EggWorld/FieldEggRedeemVerdict",{DisplayName="Raccoon Egg"})
+    end
+    funcs.dispatch();assert(not env.collectEgg.deliveriesObserved and not env.collectEgg.enabled)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
