@@ -1,4 +1,4 @@
-# Steal An Egg — v1.16
+# Steal An Egg — v1.17
 PlaceId: 107778070777162. Uses the existing universal Loader.
 
 ## Setup
@@ -13,7 +13,7 @@ The delivery point lasts for this script session. It is not guessed from the nea
 ## Collection cycle
 The exact observed CarryAreaEgg / Steal / Egg prompt is tracked. Targets may have a disabled distance-dependent prompt while approaching, but input requires an enabled prompt and a living character inside the smaller of 8 studs and MaxActivationDistance.
 
-The nearest directly reachable target within 250 studs on approximately the same level is approached by Tween. Movement speed is clamped to 8–24 studs/s. Solid obstructions are respected. This is straight-line movement, not full pathfinding.
+The nearest directly reachable target within 250 studs on approximately the same level is approached by Tween. Movement speed is clamped to 8–24 studs/s. Solid obstructions are respected. When a direct segment is blocked, PathfindingService computes a waypoint route and Tween follows the segments. Routes are limited to 80 waypoints and 600 total studs, with at most two path computations per approach step. Cancel/death/scan/carry guards remain active; failed pathfinding is reported in lastNavigation.
 
 After input, the script waits up to 3 seconds for carry state or a new inventory egg UID. One unconfirmed input pauses the loop. Names alone are not treated as unique eggs.
 
@@ -49,7 +49,7 @@ Remote names such as AskBaseTierRaise, CoinsGathered and SpeedGained do not esta
 
 ## Reports
 Copy short / Copy all / Save file refresh live state without another Scan. Reports include:
-- autoCollect.phase, lastInput, lastMovement.stopReason and endDistance
+- autoCollect.phase, lastInput, lastMovement.stopReason and endDistance, lastNavigation, nearest.heightDifference
 - deliveryPointSet, lastReturn, deliveriesObserved
 - carryState and fresh carryEvidence
 - inventoryBeforeCount / inventoryAfterCount / inventoryAdded
@@ -64,4 +64,4 @@ python -m unittest discover -s tests -v
 luac5.4 -p Games/StealAnEgg_Diagnostics.lua
 lua5.4 tests/test_egg_collect.lua
 ~~~
-32 simulated Auto Collect cases and 4 Loader contract tests pass locally. Tests cover carry state, inventory deltas, cancellation, disabled prompts, range limits, return, obstacles, false delivery prevention and no-result pauses. They are not a Potassium or Roblox server test.
+36 simulated Auto Collect cases and 4 Loader contract tests pass locally. Tests cover carry state, inventory deltas, cancellation, disabled prompts, range limits, return, obstacles, false delivery prevention and no-result pauses. They are not a Potassium or Roblox server test.
