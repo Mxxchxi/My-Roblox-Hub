@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.20
+-- Steal An Egg: structure diagnostics v1.21
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -53,7 +53,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.20", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.21", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -95,7 +95,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.20 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.21 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -129,7 +129,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.20 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.21 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -174,7 +174,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.20 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.21 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -244,7 +244,7 @@ hatchLabel.TextWrapped = true
 local carryMarker = control(settings,"Mark: I am carrying an egg",0,268,270,34)
 label(settings,"Clear this marker after delivering or dropping the egg.",0,310,568,24,12,colors.muted)
 local setHomeButton = control(settings,"Set delivery point here",0,346,260,30)
-local clearHomeButton = control(settings,"Clear delivery point",270,346,260,30)
+local clearHomeButton = control(settings,"Auto home: ON",270,346,260,30)
 local collectButton = control(rows[2], "Collect: OFF", 410,8,146,34)
 local collectEgg = {enabled = false, attempts = 0, last = "OFF"}
 local collectRunning = false
@@ -420,6 +420,7 @@ end
 local collectTween
 local walkingHumanoid
 local deliveryPoint
+local autoHome={enabled=true,ready=false,reason="Waiting for plot ownership",lastCheck=-math.huge}
 local function cancelCollectTween(reason)
     if walkingHumanoid then
         local character=player.Character
@@ -800,9 +801,100 @@ local function pauseCollect(reason)
     collectEgg.pausedReason, collectEgg.last, collectEgg.phase = reason, reason, "PAUSED"
     if collectButton then collectButton.Text = "Collect: PAUSED"; collectButton.BackgroundColor3 = colors.panel end
 end
+local ownerKeys={"OwnerUserId","OwnerId","Owner","UserId","PlayerUserId","Player","Username","OwnerName"}
+local function ownerMatch(plot)
+    local function matches(value)
+        return value==player or type(value)=="number" and value==player.UserId
+            or type(value)=="string" and (value==tostring(player.UserId) or value==player.Name)
+    end
+    local nodes={plot}
+    for _,child in ipairs(plot:GetChildren()) do
+        if child.Name=="Owner" or child.Name=="OwnerUserId" or child.Name=="OwnerId" then
+            if child:IsA("ObjectValue") or child:IsA("StringValue") or child:IsA("IntValue") or child:IsA("NumberValue") then
+                if matches(child.Value) then return true,"value:"..child.Name end
+            end
+        end
+        if child.Name=="Info" or child.Name=="Config" or child.Name=="Settings" then nodes[#nodes+1]=child end
+    end
+    for _,node in ipairs(nodes) do
+        for _,key in ipairs(ownerKeys) do
+            if matches(node:GetAttribute(key)) then return true,"attribute:"..key end
+        end
+    end
+    return false
+end
+local function resolveAutoHome()
+    local report={ready=false,plots={},reason="Workspace.Plots unavailable"}
+    local plots=workspace:FindFirstChild("Plots")
+    if not plots then return nil,nil,nil,report end
+    local owned={}
+    for i,plot in ipairs(plots:GetChildren()) do
+        if i>16 then report.truncated=true;break end
+        local match,evidence=ownerMatch(plot)
+        local info={path=plot:GetFullName(),ownerMatch=match,children={},ownership={}}
+        for _,key in ipairs(ownerKeys) do
+            local value=plot:GetAttribute(key)
+            if type(value)=="string" or type(value)=="number" or type(value)=="boolean" then info.ownership[key]=value end
+        end
+        for j,child in ipairs(plot:GetChildren()) do
+            if j>24 then break end
+            info.children[#info.children+1]={name=child.Name,class=child.ClassName}
+        end
+        report.plots[#report.plots+1]=info
+        if match then owned[#owned+1]={plot=plot,evidence=evidence} end
+    end
+    if #owned~=1 then
+        report.reason=#owned==0 and "No plot with confirmed local ownership" or "More than one plot matches owner; manual setup required"
+        return nil,nil,nil,report
+    end
+    local plot=owned[1].plot
+    report.plot=plot:GetFullName();report.ownerEvidence=owned[1].evidence
+    local deliveryNames={deliverypoint=true,deliveryzone=true,eggdroppoff=true,eggdropoff=true,
+        eggdeposit=true,eggdepositzone=true,eggredeemzone=true,redeemzone=true}
+    local spawnNames={spawn=true,spawnpoint=true,playerspawn=true,spawnlocation=true}
+    local groups={[1]={},[2]={}}
+    local queue,head={plot},1
+    while head<=#queue and head<=2000 do
+        local obj=queue[head];head=head+1
+        if obj:IsA("BasePart") or obj:IsA("Attachment") then
+            local name=string.lower(obj.Name):gsub("[^%w]","")
+            local rank=deliveryNames[name] and 1 or (spawnNames[name] or obj:IsA("SpawnLocation")) and 2
+            if rank then groups[rank][#groups[rank]+1]=obj end
+        end
+        for _,child in ipairs(obj:GetChildren()) do
+            if #queue<4000 then queue[#queue+1]=child else report.truncated=true end
+        end
+    end
+    if head<=#queue then report.truncated=true end
+    local candidates=#groups[1]>0 and groups[1] or groups[2]
+    if report.truncated or #candidates~=1 then
+        report.reason=report.truncated and "Plot scan incomplete; manual setup required"
+            or #candidates==0 and "Owned plot found but no unique delivery/spawn point"
+            or "Several delivery/spawn points; manual setup required"
+        return nil,nil,nil,report
+    end
+    local target=candidates[1]
+    -- A spawn is an explicit fallback, not a claim that its delivery trigger was verified.
+    local point=target:IsA("Attachment") and target.WorldPosition or target.Position
+    report.ready=true;report.reason=#groups[1]>0 and "Owned plot delivery candidate" or "Owned plot spawn fallback; delivery unverified"
+    report.point=target:GetFullName();report.kind=#groups[1]>0 and "delivery_candidate" or "spawn_fallback"
+    return point,plot,target,report
+end
+local function refreshAutoHome(force)
+    if not autoHome.enabled then return end
+    if not force and os.clock()-autoHome.lastCheck<5 then return end
+    autoHome.lastCheck=os.clock()
+    local point,plot,target,report=resolveAutoHome()
+    autoHome.report=report;autoHome.reason=report.reason;autoHome.ready=point~=nil
+    autoHome.plot,autoHome.target=plot,target
+    deliveryPoint=point
+    if clearHomeButton then clearHomeButton.Text=point and "Auto home: FOUND" or "Auto home: SEARCHING" end
+end
 local function setDeliveryPoint(position)
     if collectRunning then return false, "Stop Collect before changing the delivery point" end
     deliveryPoint = position
+    autoHome.enabled=false;autoHome.ready=false;autoHome.reason="Manual delivery point"
+    if clearHomeButton then clearHomeButton.Text="Auto home: OFF" end
     return true
 end
 local function walkReturn(root,humanoid,character,destination)
@@ -872,7 +964,8 @@ local function walkReturn(root,humanoid,character,destination)
     return true,nav.status
 end
 local function returnHome(root, humanoid, character)
-    if not deliveryPoint then pauseCollect("Holding field egg: set your delivery point in Settings"); return end
+    if autoHome.enabled then refreshAutoHome(true) end
+    if not deliveryPoint then pauseCollect("Holding field egg: set your delivery point in Settings; "..autoHome.reason); return end
     if not root or not humanoid or humanoid.Health <= 0 then pauseCollect("Character unavailable during return"); return end
     collectEgg.phase = "RETURNING"
     collectLabel.Text = "Returning field egg to configured delivery point"
@@ -929,6 +1022,7 @@ local function collectSnapshot(includeEvidence)
         inventoryAdditionsObserved = collectEgg.inventoryAdditionsObserved or 0,
         phase = collectEgg.phase or "IDLE", deliveriesObserved = collectEgg.deliveriesObserved or 0,
         gameEvents = gameEvents, eventObserver = eventObserver,
+        autoHome={enabled=autoHome.enabled,ready=autoHome.ready,reason=autoHome.reason,report=includeEvidence and autoHome.report or nil},
         lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, deliveryPointSet = deliveryPoint ~= nil,
         inputInProgress = collectRunning, carrying = carryVisible(), carryState = carryState(), matchingPrompts = 0,
         scope = "Tween pickup within 250 studs; native ground walking return within 600 studs",
@@ -970,6 +1064,10 @@ local function collectSnapshot(includeEvidence)
 end
 local function collectStep()
     if not active or not collectEgg.enabled or busy or hatchRunning then return end
+    if autoHome.enabled and not deliveryPoint then
+        refreshAutoHome(true)
+        if not deliveryPoint then pauseCollect("Auto home not ready: "..autoHome.reason);return end
+    end
     local carrying = carryState()
     local character = player.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -1127,9 +1225,13 @@ setHomeButton.Activated:Connect(function()
     if ok then setHomeButton.Text="Delivery point SET • click to replace" end
 end)
 clearHomeButton.Activated:Connect(function()
-    local ok,err=setDeliveryPoint(nil)
-    status.Text=ok and "Delivery point cleared" or err
-    if ok then setHomeButton.Text="Set delivery point here" end
+    if collectRunning then status.Text="Stop Collect before changing home mode";return end
+    autoHome.enabled=not autoHome.enabled
+    if autoHome.enabled then
+        refreshAutoHome(true);status.Text=autoHome.reason
+    else
+        clearHomeButton.Text="Auto home: OFF";status.Text="Automatic home disabled; current point retained"
+    end
 end)
 carryMarker.Activated:Connect(function()
     setManualCarry(not manualCarry)
@@ -1205,6 +1307,10 @@ end)
 task.spawn(function()
     while active do
         task.wait(1)
+        if active and autoHome.enabled then
+            local ok,err=pcall(refreshAutoHome,false)
+            if not ok then autoHome.ready=false;autoHome.reason="Auto home error: "..tostring(err):sub(1,100);deliveryPoint=nil end
+        end
         dispatchCollect()
         dispatchHatch(false)
         if active and collectEgg.enabled then
@@ -1235,7 +1341,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.20", placeId = game.PlaceId,
+        local report = {version = "1.21", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -1407,7 +1513,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.20", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.21", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -1437,7 +1543,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.20 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.21 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
