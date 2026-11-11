@@ -50,6 +50,7 @@ function env.workspace:Raycast(origin,delta)
     if type(obstacle) == "function" then return obstacle(origin,delta) and {} or nil end
     return obstacle and {} or nil
 end
+env.Enum.Material={Air="Air"}
 env.Enum.PathStatus={Success="Success",NoPath="NoPath"}
 env.Enum.PathWaypointAction={Walk="Walk",Jump="Jump"}
 env.PathfindingService={CreatePath=function()
@@ -75,7 +76,7 @@ end
 env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -96,6 +97,7 @@ local function reset()
     env.active, env.busy, env.hatchRunning = true, false, false
     carrying, failInput, clock = false, false, 10
     humanoid.Health = 100
+    humanoid.Jump=false;humanoid.Sit=false;humanoid.FloorMaterial="Ground"
     root.Position,root.CFrame = position(0),position(0)
     obstacle,movement,onWait,mockRoute,walkGoal,tweenCreated = false,nil,nil,nil,nil,0
     env.collectRunning=false
@@ -114,7 +116,8 @@ check("reject disabled, unrelated and distant prompts", function()
 end)
 check("reject dead character and unsupported hold", function()
     local p = prompt(4); humanoid.Health = 0; assert(funcs.candidate(p,root,humanoid) == nil)
-    humanoid.Health = 100; p.HoldDuration = 6; assert(funcs.candidate(p,root,humanoid) == nil)
+    humanoid.Health = 100
+    humanoid.Jump=false;humanoid.Sit=false;humanoid.FloorMaterial="Ground"; p.HoldDuration = 6; assert(funcs.candidate(p,root,humanoid) == nil)
 end)
 check("choose closest egg and preserve input record", function()
     local a,b = prompt(6),prompt(2); env.promptCache[a],env.promptCache[b] = true,true
@@ -546,5 +549,25 @@ end)
 check("auto hatch rejects unknown ownership", function()
     local ready=prompt(3);ready.ActionText="Hatch!";env.promptCache[ready]=true
     assert(not funcs.hatchApproach(root,humanoid,character))
+end)
+check("stuck walking jumps out and repeats MoveTo", function()
+    local state={origin=root.Position,checked=clock,lastJump=-math.huge,attempts=0}
+    humanoid.Sit=true;clock=clock+1.2
+    assert(not funcs.recover(state,root,humanoid,position(40)))
+    assert(humanoid.Jump and not humanoid.Sit and state.attempts==1 and walkGoal.X==40)
+end)
+check("unstick jump is rate limited and capped", function()
+    local state={origin=root.Position,checked=clock,lastJump=-math.huge,attempts=0}
+    clock=clock+1.2;funcs.recover(state,root,humanoid,position(40))
+    clock=clock+0.5;funcs.recover(state,root,humanoid,position(40));assert(state.attempts==1)
+    clock=clock+1.6;funcs.recover(state,root,humanoid,position(40));assert(state.attempts==2)
+    clock=clock+2.1;assert(funcs.recover(state,root,humanoid,position(40)))
+end)
+check("walking progress and airborne character do not trigger jumping", function()
+    local state={origin=root.Position,checked=clock,lastJump=-math.huge,attempts=0}
+    clock=clock+1.2;root.Position=position(2)
+    funcs.recover(state,root,humanoid,position(40));assert(not humanoid.Jump)
+    humanoid.FloorMaterial="Air";clock=clock+2
+    funcs.recover(state,root,humanoid,position(40));assert(not humanoid.Jump and state.attempts==0)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
