@@ -72,7 +72,10 @@ env.task.wait = function()
         movement.PlaybackState="Completed"
     end
 end
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase}", "collect-engine", "t", env))()
+env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
+local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
+env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -83,6 +86,7 @@ local function prompt(distance)
     return p
 end
 local function reset()
+    env.hatch.enabled=true;env.attemptState={}
     funcs.mark(false)
     funcs.resetServer()
     equippedChildren,backpackChildren = {},{}
@@ -515,5 +519,32 @@ check("walk approach stops when disabled", function()
     local p=prompt(40);env.promptCache[p]=true
     onWait=function() env.collectEgg.enabled=false;funcs.cancel("Collect OFF") end
     funcs.dispatch();assert(p.began==0 and tweenCreated==0)
+end)
+check("auto hatch excludes another plot's ready egg", function()
+    local ownCenter=node("CenterPoint","Part");ownCenter.Position=position(40)
+    local own=node("1","Model",{OwnerUserId=42},{ownCenter,node("SpawnPoint","Part")})
+    local other=node("2","Model",{OwnerUserId=99},{node("CenterPoint","Part")})
+    plotFixture=node("Plots","Folder",{}, {own,other})
+    local ready=prompt(80);ready.ActionText="Hatch!"
+    assert(not funcs.hatchOwned(ready,own))
+    ready.position=position(40);assert(funcs.hatchOwned(ready,own))
+end)
+check("auto hatch walks to a ready egg in own plot", function()
+    local center=node("CenterPoint","Part");center.Position=position(40)
+    plotFixture=node("Plots","Folder",{}, {node("1","Model",{OwnerUserId=42},{center,node("SpawnPoint","Part")})})
+    local ready=prompt(40);ready.ActionText="Hatch!";env.promptCache[ready]=true
+    local ok=funcs.hatchApproach(root,humanoid,character)
+    assert(ok and root.Position.X>=33 and tweenCreated==0)
+end)
+check("auto hatch cancels native approach when switched off", function()
+    local center=node("CenterPoint","Part");center.Position=position(40)
+    plotFixture=node("Plots","Folder",{}, {node("1","Model",{OwnerUserId=42},{center,node("SpawnPoint","Part")})})
+    local ready=prompt(40);ready.ActionText="Hatch!";env.promptCache[ready]=true
+    onWait=function() env.hatch.enabled=false end
+    assert(not funcs.hatchApproach(root,humanoid,character))
+end)
+check("auto hatch rejects unknown ownership", function()
+    local ready=prompt(3);ready.ActionText="Hatch!";env.promptCache[ready]=true
+    assert(not funcs.hatchApproach(root,humanoid,character))
 end)
 print(string.format("%d Auto Collect tests passed", tests))
