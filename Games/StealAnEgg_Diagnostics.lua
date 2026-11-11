@@ -1,5 +1,6 @@
--- Steal An Egg: structure diagnostics v1.35
+-- Steal An Egg: structure diagnostics v1.36
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
+local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
 local player = Players.LocalPlayer
@@ -53,7 +54,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.35", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.36", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -97,7 +98,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.35 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.36 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -116,9 +117,9 @@ label(settings,"Close stops all automation. Minimize keeps it running.",0,118,56
 label(settings,"Hatch and Collect start OFF. Other systems are unavailable.",0,148,568,24,12,colors.muted)
 label(settings,"Collect: WALK default, optional Tween; range 250 studs.",0,190,568,24,12,colors.cyan)
 label(settings,"Set a delivery point below to enable automatic return.",0,220,568,24,12,colors.muted)
-label(placement,"Place eggs before hatching",0,0,560,30,20)
-label(placement,"Auto Mark scans owned PetArea; manual marking is optional.",0,40,560,24,12,colors.muted)
-local placeToggle=control(placement,"Auto Place: OFF",0,80,170,36)
+label(placement,"Auto Place paused after kick reports",0,0,560,30,20)
+label(placement,"Place eggs manually. Auto Place will not send input.",0,40,560,24,12,colors.muted)
+local placeToggle=control(placement,"Auto Place: DISABLED",0,80,170,36)
 local bindSlot=control(placement,"Mark empty slot",180,80,180,36)
 local clearSlots=control(placement,"Clear slots",370,80,170,36)
 local autoMarkButton=control(placement,"Auto mark empty slots",0,130,260,36)
@@ -139,7 +140,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.35 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.36 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -184,7 +185,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.35 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.36 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -1304,7 +1305,7 @@ local function collectSnapshot(includeEvidence)
         inventoryAdditionsObserved = collectEgg.inventoryAdditionsObserved or 0,
         phase = collectEgg.phase or "IDLE", deliveriesObserved = collectEgg.deliveriesObserved or 0,
         gameEvents = gameEvents, eventObserver = eventObserver,
-        autoPlace={binding=placeState and placeState.binding,preparingBind=placeState and placeState.preparingBind,enabled=placeState and placeState.enabled,attempts=placeState and placeState.attempts,observed=placeState and placeState.observed,last=placeState and placeState.last,lastAttempt=placeState and placeState.lastAttempt,autoMark=placeState and placeState.autoMark,lastSlotPick=placeState and placeState.lastSlotPick},
+        autoPlace={available=AUTO_PLACE_ENABLED,binding=placeState and placeState.binding,preparingBind=placeState and placeState.preparingBind,enabled=placeState and placeState.enabled,attempts=placeState and placeState.attempts,observed=placeState and placeState.observed,last=placeState and placeState.last,lastAttempt=placeState and placeState.lastAttempt,autoMark=placeState and placeState.autoMark,lastSlotPick=placeState and placeState.lastSlotPick},
         autoHome={enabled=autoHome.enabled,ready=autoHome.ready,reason=autoHome.reason,report=includeEvidence and autoHome.report or nil},
         lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, lastWalkingRecovery=lastWalkingRecovery, deliveryPointSet = deliveryPoint ~= nil,
         approachMode=collectEgg.approachMode or "Walk", inputInProgress = collectRunning, carrying = carryVisible(), carryState = carryState(), matchingPrompts = 0,
@@ -1653,6 +1654,11 @@ local function placementUIDGone(uid)
     return inventory.complete and inventory.items[uid]==nil
 end
 local function placeStep()
+    if not AUTO_PLACE_ENABLED then
+        placeState.enabled=false
+        placeState.last="Auto Place disabled after kick reports. Place eggs manually."
+        return
+    end
     if not active or not placeState.enabled or busy or collectRunning or hatchRunning or fieldCarryActive() or manualCarry then return end
     local _,plot=resolveAutoHome()
     if not plot then placeState.last="Owned plot not confirmed";return end
@@ -1763,7 +1769,7 @@ local function dispatchPlace()
     local ok,err=pcall(placeStep)
     placeRunning=false
     if not ok then cancelCollectTween("Placement error");placeState.enabled=false;placeState.last="Place error: "..tostring(err):sub(1,140) end
-    placeToggle.Text=placeState.enabled and "Auto Place: ON" or "Auto Place: OFF"
+    placeToggle.Text=not AUTO_PLACE_ENABLED and "Auto Place: DISABLED" or placeState.enabled and "Auto Place: ON" or "Auto Place: OFF"
     placeLabel.Text=placeState.last.."\nMarked slots: "..#placeState.slots.." | Attempts: "..placeState.attempts.." | UID removals: "..placeState.observed
 end
 -- AUTO_COLLECT_ENGINE_END
@@ -1772,8 +1778,12 @@ autoMarkButton.Activated:Connect(function()
     placeLabel.Text=message
 end)
 placeToggle.Activated:Connect(function()
+    if not AUTO_PLACE_ENABLED then
+        placeState.enabled=false;placeState.last="Auto Place disabled after kick reports. Place eggs manually."
+        placeToggle.Text="Auto Place: DISABLED";placeLabel.Text=placeState.last;return
+    end
     placeState.enabled=not placeState.enabled
-    placeToggle.Text=placeState.enabled and "Auto Place: ON" or "Auto Place: OFF"
+    placeToggle.Text=not AUTO_PLACE_ENABLED and "Auto Place: DISABLED" or placeState.enabled and "Auto Place: ON" or "Auto Place: OFF"
     if not placeState.enabled and placeRunning then cancelCollectTween("Auto Place OFF") end
 end)
 bindSlot.Activated:Connect(function()
@@ -1781,7 +1791,7 @@ bindSlot.Activated:Connect(function()
     if fieldCarryActive() or manualCarry then placeLabel.Text="Deliver the field egg or clear the carrying marker before marking";return end
     placeState.preparingBind=true;placeState.binding=false
     placeState.enabled=false;collectEgg.enabled=false;hatch.enabled=false
-    placeToggle.Text="Auto Place: OFF";collectButton.Text="Collect: OFF";hatchButton.Text="Auto Hatch: OFF"
+    placeToggle.Text=not AUTO_PLACE_ENABLED and "Auto Place: DISABLED" or "Auto Place: OFF";collectButton.Text="Collect: OFF";hatchButton.Text="Auto Hatch: OFF"
     cancelCollectTween("Preparing slot selection")
     if hatchWalking then
         local character=player.Character;local root=character and character:FindFirstChild("HumanoidRootPart")
@@ -1815,7 +1825,7 @@ end)
 clearSlots.Activated:Connect(function()
     if placeRunning then return end
     placeState.slots={};placeState.binding=false;placeState.enabled=false
-    placeToggle.Text="Auto Place: OFF";placeLabel.Text="Slots cleared; mark empty slots again"
+    placeToggle.Text=not AUTO_PLACE_ENABLED and "Auto Place: DISABLED" or "Auto Place: OFF";placeLabel.Text="Slots cleared; mark empty slots again"
 end)
 connections[#connections+1]=UIS.InputBegan:Connect(function(input,processed)
     if not placeState.binding or input.UserInputType~=Enum.UserInputType.MouseButton1 then return end
@@ -2011,7 +2021,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.35", placeId = game.PlaceId,
+        local report = {version = "1.36", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -2183,7 +2193,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.35", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.36", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -2213,7 +2223,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.35 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.36 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
