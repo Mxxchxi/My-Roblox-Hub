@@ -1,6 +1,6 @@
-# Steal An Egg — diagnostics v1.4
+# Steal An Egg — diagnostics + Auto Hatch test v1.5
 
-PlaceId: `107778070777162`. Metadata inspection only; the five gameplay automation features await live game data.
+PlaceId: `107778070777162`. Auto Hatch has an opt-in nearby-prompt test. Egg collection, cash collection, upgrades and speed training await action/argument mapping.
 
 Use the same universal loader in Potassium after the game loads:
 
@@ -36,3 +36,13 @@ The v1.3 user report showed all generic scan budgets exhausted and a short repor
 Copy short now sorts core egg/hatch/treadmill/upgrade/plot/base/cash/coin/speed/PenRoster metadata before unrelated events. It reserves separate JSON budgets for remotes, GUI, prompts and candidates (6,000/3,000/2,000/3,000 bytes plus metadata). Candidate ownership/position is retained; duplicate rows are grouped with a count and omitted totals. The full report remains available through Copy all and Save file. Prompt metadata adds hold duration and position where available to distinguish same-named SmartPromptPart objects. No gameplay remote calls are made.
 
 Validation: supplemental recovery beyond the generic 300-remote cap, priority filtering under a simulated 300-event flood, GUI/prompt preservation, candidate ownership retention and existing clipboard/scan regressions passed. Loader checks passed 4/4. Real-device behavior awaits the next report. Remote names still do not prove call direction or argument contracts.
+
+## v1.5 Auto Hatch test
+
+Run the same universal loader, wait for the initial scan, then enable **Auto Hatch: ON** and stand within seven studs of a ready egg displaying the exact action `Hatch!`. The loop checks once per second and uses ProximityPrompt.InputHoldBegin/InputHoldEnd. It does not invoke guessed remote arguments. Actual hatch success must be observed in-game; input dispatch is not reported as hatch success.
+
+Default OFF; only enabled Hatch! prompts in Workspace are eligible with a living local character and within the smaller of seven studs and MaxActivationDistance. At least four seconds between attempts, maximum three attempts per prompt per toggle. Toggle OFF/ON resets the attempt allowance. Prompts are tracked during scanning and streaming; close/rerun stops the loop, releases held input and disconnects prompt listeners. No movement or egg collection is implemented in this test.
+
+After testing press Scan and Copy short to include attempt counters and status. The current report confirms RF/EggWorld/AskHatch, AskFinishHatch, AskPlaceEgg, RE/Homestead/AskBaseTierRaise and Treadmill-related notification names, but not their argument contracts. Notification names are not treated as client commands. Other four requested systems remain pending.
+
+Validation: syntax and simulated default-OFF, exact action, enabled/alive/range, hold release, cooldown, attempt-cap and closed-loop guards passed. Existing scan/clipboard checks and 4 loader contracts passed. Real Potassium behavior is not verified.
