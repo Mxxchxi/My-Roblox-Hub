@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.22
+-- Steal An Egg: structure diagnostics v1.23
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -53,7 +53,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.22", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.23", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -95,7 +95,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.22 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.23 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -129,7 +129,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.22 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.23 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -174,7 +174,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.22 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.23 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -436,6 +436,7 @@ local function cancelCollectTween(reason)
 end
 local manualCarry = false
 local serverCarry
+local lastRedeem
 local function dropCarryVisible()
     -- This UI was observed in the report. Inspect all ancestors, not just the label.
     local node = pg:FindFirstChild("DropHeldEgg")
@@ -510,6 +511,12 @@ local function eventValue(value, depth, seen)
     return result
 end
 local function recordGameEvent(name, ...)
+    if name=="RE/EggWorld/FieldEggRedeemVerdict" then
+        local payload=(...)
+        if type(payload)=="table" and type(payload.DisplayName)=="string" then
+            lastRedeem={clock=os.clock(),displayName=payload.DisplayName}
+        end
+    end
     if name=="RE/EggWorld/FieldEggCarry" then updateServerCarry((...)) end
     local args={}
     for i=1,math.min(select("#",...),6) do args[i]=eventValue(select(i,...),0,{}) end
@@ -547,6 +554,14 @@ local function newInventoryEggs(before, after)
     end
     table.sort(added,function(a,b) return a.uid < b.uid end)
     return added
+end
+local function redeemedEggs()
+    if fieldCarryActive() or not lastRedeem or not collectEgg.tripStartedClock or not collectEgg.tripInventory
+        or lastRedeem.clock<collectEgg.tripStartedClock or os.clock()-lastRedeem.clock>5 then return nil end
+    local added=newInventoryEggs(collectEgg.tripInventory,eggInventory())
+    for _,egg in ipairs(added) do
+        if egg.name==lastRedeem.displayName then return added end
+    end
 end
 local function collectCandidate(prompt, root, humanoid)
     if not prompt.Parent or not prompt:IsDescendantOf(workspace) then return nil, "Removed" end
@@ -959,6 +974,21 @@ local function walkReturn(root,humanoid,character,destination)
         recordGameEvent("return.walk.stop",reason)
         return false,reason
     end
+    local function carryEnded()
+        cancelCollectTween("Checking redemption")
+        local deadline=os.clock()+0.35
+        repeat
+            local added=redeemedEggs()
+            if added then
+                collectEgg.earlyDelivery=added
+                nav.status="Redeemed before spawnpoint"
+                return true,nav.status
+            end
+            if not active or not collectEgg.enabled or player.Character~=character then return stop("Return cancelled") end
+            task.wait(0.05)
+        until os.clock()>=deadline
+        return stop("Game no longer reports field egg carrying")
+    end
     for i,point in ipairs(route) do
         local goal=i==#route and destination or point.Position
         local started=os.clock()
@@ -966,7 +996,7 @@ local function walkReturn(root,humanoid,character,destination)
         nav.currentWaypoint=i
         if not active or not collectEgg.enabled then return stop("Return cancelled") end
         if player.Character~=character or not root.Parent or humanoid.Health<=0 then return stop("Character changed during return") end
-        if not fieldCarryActive() and (root.Position-destination).Magnitude>4 then return stop("Game no longer reports field egg carrying") end
+        if not fieldCarryActive() and (root.Position-destination).Magnitude>4 then return carryEnded() end
         walkingHumanoid=humanoid
         collectEgg.moving=true
         humanoid:MoveTo(goal)
@@ -982,7 +1012,7 @@ local function walkReturn(root,humanoid,character,destination)
             if not active or not collectEgg.enabled then return stop("Return cancelled") end
             if player.Character~=character or not root.Parent or humanoid.Health<=0 then return stop("Character changed during return") end
             if busy then return stop("Return interrupted by scan") end
-            if not fieldCarryActive() and (root.Position-destination).Magnitude>4 then return stop("Game no longer reports field egg carrying") end
+            if not fieldCarryActive() and (root.Position-destination).Magnitude>4 then return carryEnded() end
             if os.clock()-started>deadline then return stop("Ground return stalled at waypoint "..i) end
             if os.clock()-refreshed>=1 then humanoid:MoveTo(goal);refreshed=os.clock() end
             nav.status="Walking home";collectLabel.Text=string.format("Walking home %d/%d",i,#route)
@@ -1005,6 +1035,7 @@ local function returnHome(root, humanoid, character)
     local record = {at = os.time(), status = "Returning", startDistance = delta.Magnitude,
         destination = {x=deliveryPoint.X,y=deliveryPoint.Y,z=deliveryPoint.Z}}
     collectEgg.lastReturn = record
+    collectEgg.earlyDelivery=nil
     record.startedClock=os.clock()
     if serverCarry and serverCarry.character==character and serverCarry.isCarrying then
         record.confirmationToReturnMs=math.max(0,(record.startedClock-serverCarry.clock)*1000)
@@ -1013,6 +1044,24 @@ local function returnHome(root, humanoid, character)
     if delta.Magnitude > 1.5 then
         local reached,reason=walkReturn(root,humanoid,character,deliveryPoint)
         record.status,record.endDistance=reason,(root.Position-deliveryPoint).Magnitude
+        if reached and collectEgg.earlyDelivery then
+            record.inventoryAdded=collectEgg.earlyDelivery
+            record.status="Delivery observed: redeem event and new egg UID before spawnpoint"
+            collectEgg.deliveriesObserved=(collectEgg.deliveriesObserved or 0)+1
+            local acquired={}
+            for _,egg in ipairs(collectEgg.earlyDelivery) do acquired[egg.uid]=true end
+            for _,tool in ipairs(character:GetChildren()) do
+                if tool:IsA("Tool") and acquired[tool:GetAttribute("UID")] then
+                    local ok,err=pcall(function() humanoid:UnequipTools() end)
+                    if not ok then record.unequipError=tostring(err):sub(1,100) end
+                    break
+                end
+            end
+            collectEgg.tripInventory=nil;collectEgg.earlyDelivery=nil
+            collectEgg.phase="SEEKING";collectEgg.last=record.status
+            recordGameEvent("return.redeemed",record.status)
+            return
+        end
         if not reached then
             record.routeReason=reason
             if active and collectEgg.enabled then pauseCollect(reason) end
@@ -1130,6 +1179,7 @@ local function collectStep()
         if not best then return end
     end
     collectEgg.phase="PICKUP"
+    collectEgg.tripStartedClock=os.clock()
     local inventoryBefore = eggInventory()
     local state = collectAttempts[best] or {count = 0, time = -math.huge}
     collectAttempts[best] = state
@@ -1274,6 +1324,7 @@ end)
 connections[#connections+1] = player.CharacterAdded:Connect(function()
     cancelCollectTween("Character changed")
     serverCarry=nil
+    lastRedeem=nil
     collectEgg.enabled=false
     collectEgg.tripInventory=nil
     collectEgg.phase="PAUSED"
@@ -1373,7 +1424,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.22", placeId = game.PlaceId,
+        local report = {version = "1.23", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -1545,7 +1596,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.22", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.23", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -1575,7 +1626,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.22 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.23 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
