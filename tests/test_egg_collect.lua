@@ -2,10 +2,18 @@
 local file = assert(io.open("Games/StealAnEgg_Diagnostics.lua", "r"))
 local source = file:read("*a"); file:close()
 local engine = assert(source:match("%-%- AUTO_COLLECT_ENGINE_BEGIN(.-)%-%- AUTO_COLLECT_ENGINE_END"))
-local function position(x)
-    return setmetatable({x = x}, {__sub = function(a,b) return {Magnitude = math.abs(a.x-b.x)} end})
+local function position(x,y,z)
+    local mt = {}
+    mt.__sub = function(a,b) return position(a.X-b.X,a.Y-b.Y,a.Z-b.Z) end
+    mt.__add = function(a,b) return position(a.X+b.X,a.Y+b.Y,a.Z+b.Z) end
+    mt.__mul = function(a,b) return position(a.X*b,a.Y*b,a.Z*b) end
+    mt.__index = function(a,key)
+        if key == "Magnitude" then return math.sqrt(a.X*a.X+a.Y*a.Y+a.Z*a.Z) end
+        if key == "Unit" then local n=a.Magnitude; return position(a.X/n,a.Y/n,a.Z/n) end
+    end
+    return setmetatable({X=x,Y=y or 0,Z=z or 0},mt)
 end
-local root, humanoid = {Position = position(0)}, {Health = 100}
+local root, humanoid = {Position = position(0),CFrame = position(0),Parent = {}}, {Health = 100,WalkSpeed = 16}
 local carrying, clock, failInput = false, 10, false
 local pg = {}
 local drop = {Enabled = true, Parent = pg}
@@ -22,7 +30,29 @@ local env = setmetatable({pg = pg, workspace = {}, player = {Character = charact
     collectEgg = {enabled = true, attempts = 0}, collectAttempts = {}, promptCache = {},
     os = {clock = function() return clock end, time = function() return 123 end},
     task = {wait = function() end}, promptPosition = function(p) return p.position end}, {__index = _G})
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot}", "collect-engine", "t", env))()
+env.RaycastParams = {new=function() return {} end}
+env.Vector3 = {new=position}
+env.Enum = {RaycastFilterType={Exclude="Exclude"},EasingStyle={Linear="Linear"},PlaybackState={Playing="Playing",Completed="Completed",Cancelled="Cancelled"}}
+env.TweenInfo = {new=function(duration) return {duration=duration} end}
+env.collectLabel = {}
+env.math = setmetatable({clamp=function(n,lo,hi) return math.max(lo,math.min(hi,n)) end},{__index=math})
+local obstacle, movement, onWait
+function env.workspace:Raycast() return obstacle and {} or nil end
+env.TweenService = {Create=function(_,target,info,goal)
+    local t = {target=target,goal=goal,info=info}
+    function t:Play() self.PlaybackState="Playing"; movement=self end
+    function t:Cancel() self.PlaybackState="Cancelled" end
+    return t
+end}
+env.task.wait = function()
+    clock=clock+0.1
+    if onWait then onWait() end
+    if movement and movement.PlaybackState == "Playing" then
+        root.Position,root.CFrame = movement.goal.CFrame,movement.goal.CFrame
+        movement.PlaybackState="Completed"
+    end
+end
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -38,6 +68,9 @@ local function reset()
     env.active, env.busy, env.hatchRunning = true, false, false
     carrying, failInput, clock = false, false, 10
     humanoid.Health = 100
+    root.Position,root.CFrame = position(0),position(0)
+    obstacle,movement,onWait = false,nil,nil
+    env.collectRunning=false
 end
 local tests = 0
 local function check(name, fn) reset(); fn(); tests = tests + 1; print("PASS " .. name) end
@@ -83,5 +116,26 @@ check("hidden carry UI does not block pickup", function()
     assert(funcs.snapshot().carrying == false)
     button.Visible=true; assert(funcs.snapshot().carrying == true)
     drop.Enabled=false; assert(funcs.snapshot().carrying == false); drop.Enabled=true
+end)
+check("Tween arrives before sending pickup input", function()
+    local p=prompt(40); env.promptCache[p]=true
+    funcs.dispatch()
+    assert(movement and movement.info.duration > 0)
+    assert(p.began == 1 and root.Position.X > 30)
+    assert(env.collectEgg.lastMovement.status == "In pickup range")
+    assert(env.collectEgg.moving == false)
+end)
+check("wall blocks Tween and pickup", function()
+    local p=prompt(40); env.promptCache[p]=true; obstacle=true
+    funcs.dispatch(); assert(not movement and p.began == 0)
+end)
+check("OFF during movement cancels without pickup", function()
+    local p=prompt(40); env.promptCache[p]=true
+    onWait=function() env.collectEgg.enabled=false; funcs.cancel("Collect OFF") end
+    funcs.dispatch(); assert(movement.PlaybackState == "Cancelled" and p.began == 0)
+end)
+check("skip distant and other-floor eggs", function()
+    local p=prompt(251); assert(funcs.approach(p,root,humanoid) == nil)
+    p.position=position(20,7,0); assert(funcs.approach(p,root,humanoid) == nil)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
