@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.36
+-- Steal An Egg: structure diagnostics v1.37
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -54,7 +54,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.36", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.37", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -87,8 +87,8 @@ for i, name in ipairs({"Auto Hatch", "Collect Eggs", "Upgrade Base / Treadmill",
     local row = create("Frame",automation,{Position = UDim2.fromOffset(0,60+(i-1)*54), Size = UDim2.fromOffset(568,50), BackgroundColor3 = colors.panel})
     round(row,8)
     label(row,name,14,0,280,50,14,i <= 2 and colors.text or colors.muted)
-    label(row,i <= 2 and "TEST" or "SOON",316,0,62,50,11,i <= 2 and colors.cyan or colors.muted)
-    if i > 2 then label(row,"Unavailable",422,0,130,50,12,colors.muted) end
+    label(row,i <= 2 and "TEST" or "",316,0,62,50,11,i <= 2 and colors.cyan or colors.muted)
+    if i > 2 then label(row,"SETUP / TEST",316,0,100,50,10,colors.muted) end
     rows[i] = row
 end
 local scan = control(diagnostics,"Scan / Refresh",0,0,136)
@@ -98,7 +98,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.36 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.37 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -114,7 +114,7 @@ label(settings,"Settings",0,0,400,30,22)
 label(settings,"Interface",0,50,400,24,14,colors.cyan)
 label(settings,"Drag header to move. Alt or RightShift toggles the window.",0,88,568,24,12)
 label(settings,"Close stops all automation. Minimize keeps it running.",0,118,568,24,12)
-label(settings,"Hatch and Collect start OFF. Other systems are unavailable.",0,148,568,24,12,colors.muted)
+label(settings,"All automation starts OFF. Upgrades use game currency only.",0,148,568,24,12,colors.muted)
 label(settings,"Collect: WALK default, optional Tween; range 250 studs.",0,190,568,24,12,colors.cyan)
 label(settings,"Set a delivery point below to enable automatic return.",0,220,568,24,12,colors.muted)
 label(placement,"Auto Place paused after kick reports",0,0,560,30,20)
@@ -140,7 +140,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.36 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.37 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -159,7 +159,7 @@ local function splitPages(text)
     showPage()
 end
 local function capability(name)
-    local direct = ({setclipboard = setclipboard, toclipboard = toclipboard,
+    local direct = ({firesignal=firesignal,getconnections=getconnections,setclipboard = setclipboard, toclipboard = toclipboard,
         set_clipboard = set_clipboard, getclipboard = getclipboard,
         readclipboard = readclipboard, writefile = writefile, readfile = readfile})[name]
     if type(direct) == "function" then return direct end
@@ -185,7 +185,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.36 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.37 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -256,8 +256,13 @@ local carryMarker = control(settings,"Mark: I am carrying an egg",0,268,270,34)
 local approachButton=control(settings,"Approach: WALK",0,310,270,30)
 local setHomeButton = control(settings,"Set delivery point here",0,346,260,30)
 local clearHomeButton = control(settings,"Auto home: ON",270,346,260,30)
+local upgradeToggle=control(rows[3],"Upgrade: OFF",410,8,146,34)
+local trainToggle=control(rows[4],"Train: OFF",410,8,146,34)
 local collectButton = control(rows[2], "Collect: OFF", 410,8,146,34)
 local collectEgg = {enabled = false, attempts = 0, last = "OFF", approachMode="Walk"}
+local upgrades={mode="Off",observed=0,last="OFF",lastAction=-math.huge}
+local training={enabled=false,last="OFF",events=0}
+local systemRunning=false
 local collectRunning = false
 local placeRunning=false
 local placeState={enabled=false,binding=false,slots={},attempts=0,observed=0,last="OFF"}
@@ -334,7 +339,7 @@ local function eligible(prompt, root, humanoid)
 end
 local function hatchStep(manual)
     if not active or (not hatch.enabled and not manual) then return end
-    if collectRunning or placeRunning then return end
+    if collectRunning or placeRunning or systemRunning then return end
     if busy then hatch.last = "Paused during scan"; hatchLabel.Text = hatch.last; return end
     local character = player.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -545,6 +550,9 @@ local function eventValue(value, depth, seen)
     return result
 end
 local function recordGameEvent(name, ...)
+    if name=="RE/Treadmill/SpeedGained" then
+        training.events=training.events+1;training.lastEventAt=os.time()
+    end
     if name=="RE/EggWorld/FieldEggRedeemVerdict" then
         local payload=(...)
         if type(payload)=="table" and type(payload.DisplayName)=="string" then
@@ -1009,7 +1017,11 @@ local function recoverWalking(tracker,root,humanoid,goal)
     return false
 end
 walkReturn=function(root,humanoid,character,destination,requireCarry,target,allowEquipped)
-    local function movementAllowed() return allowEquipped and placeState.enabled or not allowEquipped and collectEgg.enabled end
+    local function movementAllowed()
+        if allowEquipped=="training" then return training.enabled and not collectEgg.enabled and not hatchRunning end
+        if allowEquipped=="upgrade" then return upgrades.mode~="Off" and not collectEgg.enabled and not hatchRunning end
+        return allowEquipped and placeState.enabled or not allowEquipped and collectEgg.enabled
+    end
     if requireCarry==nil then requireCarry=true end
     local nav={at=os.time(),mode="Humanoid.MoveTo",status="Planning ground return",completed=0}
     collectEgg.lastNavigation=nav
@@ -1087,7 +1099,7 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target,allo
             if recoverWalking(recovery,root,humanoid,goal) then return stop("Walking stuck after two jump attempts") end
             if os.clock()-started>deadline then return stop("Ground return stalled at waypoint "..i) end
             if os.clock()-refreshed>=1 then humanoid:MoveTo(goal);refreshed=os.clock() end
-            nav.status=requireCarry and "Walking home" or "Walking to egg";collectLabel.Text=string.format("%s %d/%d",nav.status,i,#route)
+            nav.status=requireCarry and "Walking home" or allowEquipped=="training" and "Walking to treadmill" or allowEquipped=="upgrade" and "Walking to upgrade sign" or "Walking to egg";collectLabel.Text=string.format("%s %d/%d",nav.status,i,#route)
             task.wait(0.1)
         end
         nav.completed=i
@@ -1305,6 +1317,7 @@ local function collectSnapshot(includeEvidence)
         inventoryAdditionsObserved = collectEgg.inventoryAdditionsObserved or 0,
         phase = collectEgg.phase or "IDLE", deliveriesObserved = collectEgg.deliveriesObserved or 0,
         gameEvents = gameEvents, eventObserver = eventObserver,
+        upgrades=upgrades,training=training,
         autoPlace={available=AUTO_PLACE_ENABLED,binding=placeState and placeState.binding,preparingBind=placeState and placeState.preparingBind,enabled=placeState and placeState.enabled,attempts=placeState and placeState.attempts,observed=placeState and placeState.observed,last=placeState and placeState.last,lastAttempt=placeState and placeState.lastAttempt,autoMark=placeState and placeState.autoMark,lastSlotPick=placeState and placeState.lastSlotPick},
         autoHome={enabled=autoHome.enabled,ready=autoHome.ready,reason=autoHome.reason,report=includeEvidence and autoHome.report or nil},
         lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, lastWalkingRecovery=lastWalkingRecovery, deliveryPointSet = deliveryPoint ~= nil,
@@ -1347,7 +1360,7 @@ local function collectSnapshot(includeEvidence)
     return snapshot
 end
 local function collectStep()
-    if not active or not collectEgg.enabled or busy or hatchRunning or placeRunning then return end
+    if not active or not collectEgg.enabled or busy or hatchRunning or placeRunning or systemRunning then return end
     if autoHome.enabled and not deliveryPoint then
         refreshAutoHome(true)
         if not deliveryPoint then pauseCollect("Auto home not ready: "..autoHome.reason);return end
@@ -1772,7 +1785,175 @@ local function dispatchPlace()
     placeToggle.Text=not AUTO_PLACE_ENABLED and "Auto Place: DISABLED" or placeState.enabled and "Auto Place: ON" or "Auto Place: OFF"
     placeLabel.Text=placeState.last.."\nMarked slots: "..#placeState.slots.." | Attempts: "..placeState.attempts.." | UID removals: "..placeState.observed
 end
+local function parseSoftCost(text)
+    local amount,suffix=string.upper(text:gsub("<[^>]*>",""):gsub(",","")):match("^%s*%$%s*([%d%.]+)%s*([KMBT]?)%s*$")
+    local number=tonumber(amount)
+    if not number or number<0 then return nil end
+    return number*(({K=1000,M=1000000,B=1000000000,T=1000000000000})[suffix] or 1)
+end
+local function readCash()
+    local found
+    local function add(value)
+        if type(value)~="number" or value<0 then return true end
+        if found and value~=found then return false end
+        found=value;return true
+    end
+    local stats=player:FindFirstChild("leaderstats")
+    for _,name in ipairs({"Cash","Money","Coins"}) do
+        if not add(player:GetAttribute(name)) then return nil,"Conflicting currency values" end
+        local value=stats and stats:FindFirstChild(name)
+        if value and (value:IsA("IntValue") or value:IsA("NumberValue")) and not add(value.Value) then return nil,"Conflicting currency values" end
+    end
+    return found,found and nil or "Currency not mapped: Cash/Money/Coins unavailable"
+end
+local function upgradeInfo(plot,kind)
+    local model=plot:FindFirstChild(kind=="Base" and "PlotUpgrade" or "TreadmillUpgrade")
+    local sign=model and model:FindFirstChild("Sign")
+    local surface=sign and sign:FindFirstChild("SurfaceGui")
+    local frame=surface and surface:FindFirstChild("Frame")
+    -- Exact observed soft-currency controls only. Never select RobuxUpgrade.
+    local button
+    if frame then
+        for _,name in ipairs({"Upgrade","FirstUpgrade"}) do
+            local candidate=frame:FindFirstChild(name)
+            if candidate and candidate:IsA("GuiButton") and candidate.Visible and candidate.Active~=false then button=candidate;break end
+        end
+    end
+    local cost=button and button:FindFirstChild("Cost")
+    local level=surface and surface:FindFirstChild("Level")
+    if not button or not button:IsA("GuiButton") or not cost or not level then return nil,"Upgrade UI not mapped" end
+    local price=parseSoftCost(cost.Text)
+    local current=tonumber(level.Text:match("Level%s+(%d+)"))
+    if not price or not current then return nil,"Cost/level not recognized; no purchase sent" end
+    local node=button
+    while node and node~=plot do
+        if node:IsA("GuiObject") and not node.Visible or node:IsA("LayerCollector") and not node.Enabled then return nil,"Upgrade UI hidden" end
+        node=node.Parent
+    end
+    if button.Active==false then return nil,"Upgrade button inactive" end
+    return {button=button,price=price,level=current,levelLabel=level,sign=sign,kind=kind}
+end
+local function upgradeSignal(button)
+    local fire=capability("firesignal")
+    local connections=capability("getconnections")
+    if not fire or not connections then return nil,nil,"Executor UI callbacks unavailable; use normal game button" end
+    for _,name in ipairs({"MouseButton1Click","Activated"}) do
+        local signal=button[name]
+        if signal then
+            local ok,list=pcall(connections,signal)
+            if ok and type(list)=="table" and #list>0 then return signal,fire end
+        end
+    end
+    return nil,nil,"No observed upgrade callback; no purchase sent"
+end
+local function upgradeStep()
+    if upgrades.mode=="Off" or fieldCarryActive() or manualCarry then return end
+    local _,plot=resolveAutoHome()
+    if not plot then upgrades.last="Owned plot not confirmed";return end
+    if upgrades.pending then
+        local pending=upgrades.pending
+        local info=upgradeInfo(plot,pending.kind)
+        if info and info.level>pending.level then
+            upgrades.observed=upgrades.observed+1;upgrades.last="Level increase observed: "..pending.kind;upgrades.pending=nil
+        elseif os.clock()-pending.clock>10 then
+            upgrades.last="Upgrade unconfirmed; stopped without retry";upgrades.mode="Off";upgrades.pending=nil
+        else upgrades.last="Waiting for level change: "..pending.kind end
+        return
+    end
+    if os.clock()-upgrades.lastAction<8 then return end
+    local cash,reason=readCash()
+    if not cash then upgrades.last=reason;return end
+    local options={}
+    local mapped=false
+    for _,kind in ipairs({"Base","Treadmill"}) do
+        if upgrades.mode=="Both" or upgrades.mode==kind then
+            local info,err=upgradeInfo(plot,kind)
+            if info then mapped=true;if info.price<=cash then options[#options+1]=info end elseif err then upgrades.last=err end
+        end
+    end
+    table.sort(options,function(a,b) return a.price<b.price end)
+    local info=options[1]
+    if not info then if mapped then upgrades.last="Not enough game currency" end;return end
+    local signal,fire,why=upgradeSignal(info.button)
+    if not signal then upgrades.last=why;return end
+    local character=player.Character
+    local root=character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid or humanoid.Health<=0 then return end
+    if (root.Position-info.sign.Position).Magnitude>12 then
+        humanoid:UnequipTools()
+        local delta=info.sign.Position-root.Position
+        local goal=root.Position+delta.Unit*math.max(0,delta.Magnitude-6)
+        local reached,err=walkReturn(root,humanoid,character,goal,false,info.sign,"upgrade")
+        if not reached then upgrades.last=err;return end
+    end
+    if not active or upgrades.mode=="Off" or collectEgg.enabled then return end
+    -- Recheck ownership, affordability and level after moving.
+    local _,currentPlot=resolveAutoHome()
+    local latest=currentPlot==plot and upgradeInfo(plot,info.kind)
+    local balance=readCash()
+    if not latest or not balance or latest.level~=info.level or latest.price>balance then upgrades.last="Upgrade state changed; rechecking next cycle";return end
+    upgrades.lastAction=os.clock()
+    local ok,result=pcall(fire,signal)
+    if not ok or result==false then upgrades.last="Upgrade callback failed; stopped";upgrades.mode="Off";return end
+    upgrades.pending={kind=info.kind,level=info.level,price=info.price,clock=os.clock()}
+    upgrades.last="Upgrade input sent; waiting for level increase"
+end
+local function trainingStep()
+    if not training.enabled or fieldCarryActive() or manualCarry or upgrades.pending then return end
+    local _,plot=resolveAutoHome()
+    local belt=plot and plot:FindFirstChild("TreadmillBottom")
+    if not belt or not belt:IsA("BasePart") then training.last="Owned TreadmillBottom unavailable";return end
+    local character=player.Character
+    local root=character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid or humanoid.Health<=0 then return end
+    local height=(humanoid.HipHeight or 2)+(root.Size and root.Size.Y/2 or 1)
+    local target=belt.Position+Vector3.new(0,belt.Size.Y/2+height,0)
+    local delta=root.Position-target
+    if math.sqrt(delta.X*delta.X+delta.Z*delta.Z)>3 then
+        humanoid:UnequipTools()
+        local reached,err=walkReturn(root,humanoid,character,target,false,belt,"training")
+        if not reached then training.last=err;return end
+    end
+    training.last=training.events>0 and "On treadmill; SpeedGained notification observed" or "On treadmill; waiting for speed notification"
+    training.position={x=root.Position.X,y=root.Position.Y,z=root.Position.Z}
+end
+local function dispatchSystems()
+    if systemRunning or collectRunning or hatchRunning or placeRunning or busy then return end
+    if collectEgg.enabled then
+        if training.enabled then training.last="Paused while Collect is enabled" end
+        if upgrades.mode~="Off" then upgrades.last="Paused while Collect is enabled" end
+        return
+    end
+    systemRunning=true
+    local ok,err=pcall(function() upgradeStep();trainingStep() end)
+    systemRunning=false
+    if not ok then
+        cancelCollectTween("System error")
+        upgrades.mode="Off";training.enabled=false
+        training.last="System error: "..tostring(err):sub(1,140)
+    end
+    upgradeToggle.Text="Upgrade: "..string.upper(upgrades.mode)
+    trainToggle.Text=training.enabled and "Train: ON" or "Train: OFF"
+    if upgrades.mode~="Off" or training.enabled then status.Text=(upgrades.mode~="Off" and upgrades.last or "").." | "..(training.enabled and training.last or "") end
+end
 -- AUTO_COLLECT_ENGINE_END
+upgradeToggle.Activated:Connect(function()
+    if systemRunning then
+        if upgrades.mode~="Off" then upgrades.mode="Off";cancelCollectTween("Upgrade OFF");upgradeToggle.Text="Upgrade: OFF"
+        else status.Text="Wait for training movement to stop before changing upgrade mode" end
+        return
+    end
+    local nextMode={Off="Base",Base="Treadmill",Treadmill="Both",Both="Off"}
+    upgrades.mode=nextMode[upgrades.mode] or "Off"
+    upgradeToggle.Text="Upgrade: "..string.upper(upgrades.mode)
+end)
+trainToggle.Activated:Connect(function()
+    training.enabled=not training.enabled
+    trainToggle.Text=training.enabled and "Train: ON" or "Train: OFF"
+    if not training.enabled and systemRunning then cancelCollectTween("Training OFF") end
+end)
 autoMarkButton.Activated:Connect(function()
     local _,message=autoMarkSlots(false)
     placeLabel.Text=message
@@ -1859,7 +2040,7 @@ end)
 local watchedEvents = {
     ["RE/EggWorld/FieldEggCarry"]=true, ["RE/EggWorld/FieldEggGone"]=true,
     ["RE/EggWorld/FieldEggRedeemVerdict"]=true, ["RE/EggWorld/OwnerDropped"]=true,
-    ["RE/EggWorld/OwnerShifted"]=true, ["RE/GuardPatrol/SpeedTollWarning"]=true,
+    ["RE/EggWorld/OwnerShifted"]=true, ["RE/GuardPatrol/SpeedTollWarning"]=true, ["RE/Treadmill/SpeedGained"]=true,
 }
 local hookedEvents=setmetatable({}, {__mode="k"})
 local storage=game:GetService("ReplicatedStorage")
@@ -1969,6 +2150,7 @@ local function stopHatch()
     active = false
     hatch.enabled = false
     placeState.enabled=false;placeState.binding=false
+    upgrades.mode="Off";training.enabled=false
     if hatchWalking then
         local character=player.Character;local root=character and character:FindFirstChild("HumanoidRootPart")
         if root then pcall(function() hatchWalking:MoveTo(root.Position) end) end
@@ -1993,6 +2175,7 @@ task.spawn(function()
         dispatchPlace()
         dispatchCollect()
         dispatchHatch(false)
+        dispatchSystems()
         if active and collectEgg.enabled then
             local ok, snapshot = pcall(collectSnapshot)
             if ok then
@@ -2021,7 +2204,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.36", placeId = game.PlaceId,
+        local report = {version = "1.37", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -2193,7 +2376,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.36", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.37", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -2223,7 +2406,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.36 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.37 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
