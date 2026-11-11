@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.27
+-- Steal An Egg: structure diagnostics v1.28
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -53,7 +53,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.27", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.28", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -62,16 +62,18 @@ label(sidebar, "WORKSPACE",12,10,125,22,10,colors.muted)
 local automation = create("Frame", frame, {Position = UDim2.fromOffset(176,76), Size = UDim2.fromOffset(568,382), BackgroundTransparency = 1})
 local diagnostics = create("Frame", frame, {Position = automation.Position, Size = automation.Size, BackgroundTransparency = 1, Visible = false})
 local settings = create("Frame", frame, {Position = automation.Position, Size = automation.Size, BackgroundTransparency = 1, Visible = false})
+local placement = create("Frame", frame, {Position=automation.Position,Size=automation.Size,BackgroundTransparency=1,Visible=false})
 local tabs = {}
 local function showTab(name)
     automation.Visible = name == "Automation"
     diagnostics.Visible = name == "Diagnostics"
     settings.Visible = name == "Settings"
+    placement.Visible = name == "Placement"
     for key, b in pairs(tabs) do
         b.BackgroundColor3 = key == name and colors.purple or colors.panel
     end
 end
-for i, name in ipairs({"Automation", "Diagnostics", "Settings"}) do
+for i, name in ipairs({"Automation", "Placement", "Diagnostics", "Settings"}) do
     local b = control(sidebar,name,8,42+(i-1)*44,132,36)
     tabs[name] = b
     b.Activated:Connect(function() showTab(name) end)
@@ -95,7 +97,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.27 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.28 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -114,6 +116,13 @@ label(settings,"Close stops all automation. Minimize keeps it running.",0,118,56
 label(settings,"Hatch and Collect start OFF. Other systems are unavailable.",0,148,568,24,12,colors.muted)
 label(settings,"Collect: WALK default, optional Tween; range 250 studs.",0,190,568,24,12,colors.cyan)
 label(settings,"Set a delivery point below to enable automatic return.",0,220,568,24,12,colors.muted)
+label(placement,"Place eggs before hatching",0,0,560,30,20)
+label(placement,"Mark empty slots once with no egg equipped.",0,40,560,24,12,colors.muted)
+local placeToggle=control(placement,"Auto Place: OFF",0,80,170,36)
+local bindSlot=control(placement,"Mark empty slot",180,80,180,36)
+local clearSlots=control(placement,"Clear slots",370,80,170,36)
+local placeLabel=label(placement,"No slots marked. Slots are used once per session.",0,136,560,200,13,colors.muted)
+placeLabel.TextWrapped=true;placeLabel.TextYAlignment=Enum.TextYAlignment.Top
 local restore = control(gui,"YUU HUB",16,120,108,36)
 restore.Visible = false
 local function setShown(shown)
@@ -129,7 +138,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.27 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.28 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -174,7 +183,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.27 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.28 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -248,6 +257,8 @@ local clearHomeButton = control(settings,"Auto home: ON",270,346,260,30)
 local collectButton = control(rows[2], "Collect: OFF", 410,8,146,34)
 local collectEgg = {enabled = false, attempts = 0, last = "OFF", approachMode="Walk"}
 local collectRunning = false
+local placeRunning=false
+local placeState={enabled=false,binding=false,slots={},attempts=0,observed=0,last="OFF"}
 local hatchApproach, hatchOwned
 local hatchWalking
 local collectAttempts = setmetatable({}, {__mode = "k"})
@@ -321,7 +332,7 @@ local function eligible(prompt, root, humanoid)
 end
 local function hatchStep(manual)
     if not active or (not hatch.enabled and not manual) then return end
-    if collectRunning then return end
+    if collectRunning or placeRunning then return end
     if busy then hatch.last = "Paused during scan"; hatchLabel.Text = hatch.last; return end
     local character = player.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -995,7 +1006,8 @@ local function recoverWalking(tracker,root,humanoid,goal)
     recordGameEvent("walking.unstick.jump",tracker.attempts)
     return false
 end
-walkReturn=function(root,humanoid,character,destination,requireCarry,target)
+walkReturn=function(root,humanoid,character,destination,requireCarry,target,allowEquipped)
+    local function movementAllowed() return allowEquipped and placeState.enabled or not allowEquipped and collectEgg.enabled end
     if requireCarry==nil then requireCarry=true end
     local nav={at=os.time(),mode="Humanoid.MoveTo",status="Planning ground return",completed=0}
     collectEgg.lastNavigation=nav
@@ -1036,7 +1048,7 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target)
                 nav.status="Redeemed before spawnpoint"
                 return true,nav.status
             end
-            if not active or not collectEgg.enabled or player.Character~=character then return stop("Return cancelled") end
+            if not active or not movementAllowed() or player.Character~=character then return stop("Return cancelled") end
             task.wait(0.05)
         until os.clock()>=deadline
         return stop("Game no longer reports field egg carrying")
@@ -1046,10 +1058,10 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target)
         local started=os.clock()
         local deadline=(root.Position-goal).Magnitude/math.max(humanoid.WalkSpeed,1)+5
         nav.currentWaypoint=i
-        if not active or not collectEgg.enabled then return stop("Return cancelled") end
+        if not active or not movementAllowed() then return stop("Return cancelled") end
         if player.Character~=character or not root.Parent or humanoid.Health<=0 then return stop("Character changed during return") end
         if requireCarry and not fieldCarryActive() and (root.Position-destination).Magnitude>4 then return carryEnded() end
-        if not requireCarry and carryVisible() then return stop("Holding state detected during approach") end
+        if not requireCarry and (fieldCarryActive() or manualCarry or not allowEquipped and carryVisible()) then return stop("Holding state detected during approach") end
         if target and not target.Parent then return stop("Approach target removed") end
         walkingHumanoid=humanoid
         collectEgg.moving=true
@@ -1064,11 +1076,11 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target)
         end
         -- MoveTo handles physics and natural height. Never tween CFrame or force a jump while carrying.
         while not reached() do
-            if not active or not collectEgg.enabled then return stop("Return cancelled") end
+            if not active or not movementAllowed() then return stop("Return cancelled") end
             if player.Character~=character or not root.Parent or humanoid.Health<=0 then return stop("Character changed during return") end
             if busy then return stop("Return interrupted by scan") end
             if requireCarry and not fieldCarryActive() and (root.Position-destination).Magnitude>4 then return carryEnded() end
-        if not requireCarry and carryVisible() then return stop("Holding state detected during approach") end
+        if not requireCarry and (fieldCarryActive() or manualCarry or not allowEquipped and carryVisible()) then return stop("Holding state detected during approach") end
         if target and not target.Parent then return stop("Approach target removed") end
             if recoverWalking(recovery,root,humanoid,goal) then return stop("Walking stuck after two jump attempts") end
             if os.clock()-started>deadline then return stop("Ground return stalled at waypoint "..i) end
@@ -1078,7 +1090,7 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target)
         end
         nav.completed=i
     end
-    if not active or not collectEgg.enabled then return stop("Return cancelled") end
+    if not active or not movementAllowed() then return stop("Return cancelled") end
     cancelCollectTween("At delivery point")
     nav.status="Ground return reached delivery point"
     return true,nav.status
@@ -1291,6 +1303,7 @@ local function collectSnapshot(includeEvidence)
         inventoryAdditionsObserved = collectEgg.inventoryAdditionsObserved or 0,
         phase = collectEgg.phase or "IDLE", deliveriesObserved = collectEgg.deliveriesObserved or 0,
         gameEvents = gameEvents, eventObserver = eventObserver,
+        autoPlace={enabled=placeState and placeState.enabled,attempts=placeState and placeState.attempts,observed=placeState and placeState.observed,last=placeState and placeState.last,lastAttempt=placeState and placeState.lastAttempt},
         autoHome={enabled=autoHome.enabled,ready=autoHome.ready,reason=autoHome.reason,report=includeEvidence and autoHome.report or nil},
         lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, lastWalkingRecovery=lastWalkingRecovery, deliveryPointSet = deliveryPoint ~= nil,
         approachMode=collectEgg.approachMode or "Walk", inputInProgress = collectRunning, carrying = carryVisible(), carryState = carryState(), matchingPrompts = 0,
@@ -1332,7 +1345,7 @@ local function collectSnapshot(includeEvidence)
     return snapshot
 end
 local function collectStep()
-    if not active or not collectEgg.enabled or busy or hatchRunning then return end
+    if not active or not collectEgg.enabled or busy or hatchRunning or placeRunning then return end
     if autoHome.enabled and not deliveryPoint then
         refreshAutoHome(true)
         if not deliveryPoint then pauseCollect("Auto home not ready: "..autoHome.reason);return end
@@ -1451,7 +1464,139 @@ local function setManualCarry(value)
         collectEgg.last = "User marked carrying; Collect OFF"
     end
 end
+local function addPlacementSlot(part,point)
+    local _,plot=resolveAutoHome()
+    if not plot then return false,"Owned plot not confirmed" end
+    if not part or not part:IsA("BasePart") or not part:IsDescendantOf(plot) then return false,"Click a part inside your own plot" end
+    if #placeState.slots>=12 then return false,"Maximum 12 marked slots" end
+    for _,slot in ipairs(placeState.slots) do if (slot.point-point).Magnitude<4 then return false,"Slot already marked nearby" end end
+    placeState.slots[#placeState.slots+1]={part=part,point=point,plot=plot,used=false}
+    return true,"Empty slot marked: "..#placeState.slots
+end
+local function selectPlacementEgg()
+    local candidates={}
+    local backpack=player:FindFirstChildOfClass("Backpack")
+    for _,container in pairs({character=player.Character,backpack=backpack}) do
+        for _,tool in ipairs(container:GetChildren()) do
+            local uid=tool:GetAttribute("UID")
+            if tool:IsA("Tool") and tool:GetAttribute("ItemType")=="AssetEgg" and type(uid)=="string" and uid~="" then
+                candidates[#candidates+1]={tool=tool,uid=uid}
+            end
+        end
+    end
+    table.sort(candidates,function(a,b) return a.uid<b.uid end)
+    return candidates[1]
+end
+local function placementUIDGone(uid)
+    local inventory=eggInventory()
+    return inventory.complete and inventory.items[uid]==nil
+end
+local function placeStep()
+    if not active or not placeState.enabled or busy or collectRunning or hatchRunning or fieldCarryActive() or manualCarry then return end
+    local _,plot=resolveAutoHome()
+    if not plot then placeState.last="Owned plot not confirmed";return end
+    local slot
+    for _,item in ipairs(placeState.slots) do if not item.used and item.plot==plot and item.part.Parent then slot=item;break end end
+    if not slot then placeState.last="Mark an empty slot in Placement";return end
+    local egg=selectPlacementEgg()
+    if not egg then placeState.last="No inventory egg available";return end
+    local character=player.Character
+    local root=character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid or humanoid.Health<=0 then return end
+    humanoid:EquipTool(egg.tool)
+    local delta=Vector3.new(slot.point.X-root.Position.X,0,slot.point.Z-root.Position.Z)
+    if delta.Magnitude>6 then
+        local goal=root.Position+delta.Unit*(delta.Magnitude-4)
+        local reached,reason=walkReturn(root,humanoid,character,goal,false,slot.part,true)
+        if not reached then placeState.last=reason;placeState.enabled=false;return end
+    end
+    if not active or not placeState.enabled or player.Character~=character or humanoid.Health<=0 or egg.tool.Parent~=character then return end
+    local camera=workspace.CurrentCamera
+    if not camera then placeState.last="Camera unavailable";return end
+    local oldType,oldFrame=camera.CameraType,camera.CFrame
+    slot.used=true
+    placeState.attempts=placeState.attempts+1
+    local record={uid=egg.uid,part=slot.part:GetFullName(),at=os.time(),inputOK=false,worldPlacementVerified=false}
+    placeState.lastAttempt=record
+    local inputManager
+    local mouseDown=false
+    local x,y
+    local ok,err=pcall(function()
+        camera.CameraType=Enum.CameraType.Scriptable
+        camera.CFrame=CFrame.lookAt(slot.point+Vector3.new(0,12,12),slot.point)
+        task.wait(0.1)
+        if not active or not placeState.enabled then error("Placement cancelled") end
+        local screen,onScreen=camera:WorldToScreenPoint(slot.point+Vector3.new(0,0.05,0))
+        if not onScreen then error("Marked slot is off-screen") end
+        local params=RaycastParams.new()
+        params.FilterType=Enum.RaycastFilterType.Exclude;params.FilterDescendantsInstances={character}
+        local hit=workspace:Raycast(camera.CFrame.Position,slot.point-camera.CFrame.Position,params)
+        if hit and hit.Instance~=slot.part and (hit.Position-slot.point).Magnitude>1 then error("Marked slot is obstructed") end
+        inputManager=game:GetService("VirtualInputManager")
+        x,y=screen.X,screen.Y
+        inputManager:SendMouseMoveEvent(x,y,game)
+        mouseDown=true
+        inputManager:SendMouseButtonEvent(x,y,0,true,game,0)
+        task.wait(0.08)
+        inputManager:SendMouseButtonEvent(x,y,0,false,game,0)
+        mouseDown=false
+    end)
+    if mouseDown and inputManager then pcall(function() inputManager:SendMouseButtonEvent(x,y,0,false,game,0) end) end
+    pcall(function() camera.CFrame=oldFrame;camera.CameraType=oldType end)
+    record.inputOK=ok
+    if not ok then record.error=tostring(err):sub(1,160);placeState.last="Placement click failed: "..record.error;placeState.enabled=false;return end
+    local deadline=os.clock()+3
+    local goneSince
+    while active and placeState.enabled and player.Character==character and humanoid.Health>0 and os.clock()<deadline do
+        if placementUIDGone(egg.uid) then goneSince=goneSince or os.clock() else goneSince=nil end
+        if goneSince and os.clock()-goneSince>=0.5 then
+            record.inventoryUIDRemoved=true
+            placeState.observed=placeState.observed+1
+            placeState.last="Egg UID left inventory after slot click; placement inferred"
+            recordGameEvent("placement.observed",egg.uid,record.part)
+            return
+        end
+        task.wait(0.1)
+    end
+    placeState.enabled=false
+    placeState.last="Placement unconfirmed; slot reserved to avoid duplicate clicks"
+end
+local function dispatchPlace()
+    if placeRunning or hatchRunning or collectRunning then return end
+    placeRunning=true
+    local ok,err=pcall(placeStep)
+    placeRunning=false
+    if not ok then cancelCollectTween("Placement error");placeState.enabled=false;placeState.last="Place error: "..tostring(err):sub(1,140) end
+    placeToggle.Text=placeState.enabled and "Auto Place: ON" or "Auto Place: OFF"
+    placeLabel.Text=placeState.last.."\nMarked slots: "..#placeState.slots.." | Attempts: "..placeState.attempts.." | UID removals: "..placeState.observed
+end
 -- AUTO_COLLECT_ENGINE_END
+placeToggle.Activated:Connect(function()
+    placeState.enabled=not placeState.enabled
+    placeToggle.Text=placeState.enabled and "Auto Place: ON" or "Auto Place: OFF"
+    if not placeState.enabled and placeRunning then cancelCollectTween("Auto Place OFF") end
+end)
+bindSlot.Activated:Connect(function()
+    if placeRunning or collectRunning or hatchRunning or carryVisible() then placeLabel.Text="Stop automation and unequip the egg before marking a slot";return end
+    placeState.binding=true;placeLabel.Text="Click an EMPTY slot inside your own plot. No placement input will be generated."
+end)
+clearSlots.Activated:Connect(function()
+    if placeRunning then return end
+    placeState.slots={};placeState.binding=false;placeState.enabled=false
+    placeToggle.Text="Auto Place: OFF";placeLabel.Text="Slots cleared; mark empty slots again"
+end)
+connections[#connections+1]=UIS.InputBegan:Connect(function(input,processed)
+    if not placeState.binding or processed or input.UserInputType~=Enum.UserInputType.MouseButton1 then return end
+    for _,obj in ipairs(pg:GetGuiObjectsAtPosition(input.Position.X,input.Position.Y)) do
+        if obj:IsDescendantOf(gui) then return end
+    end
+    if carryVisible() then placeState.binding=false;placeLabel.Text="Unequip the egg before marking";return end
+    local mouse=player:GetMouse()
+    local ok,message=addPlacementSlot(mouse.Target,mouse.Hit.Position)
+    placeLabel.Text=message
+    if ok then placeState.binding=false end
+end)
 approachButton.Activated:Connect(function()
     if collectRunning then status.Text="Stop Collect before changing movement mode";return end
     collectEgg.approachMode=collectEgg.approachMode=="Tween" and "Walk" or "Tween"
@@ -1571,6 +1716,7 @@ end
 local function stopHatch()
     active = false
     hatch.enabled = false
+    placeState.enabled=false;placeState.binding=false
     if hatchWalking then
         local character=player.Character;local root=character and character:FindFirstChild("HumanoidRootPart")
         if root then pcall(function() hatchWalking:MoveTo(root.Position) end) end
@@ -1592,6 +1738,7 @@ task.spawn(function()
             local ok,err=pcall(refreshAutoHome,false)
             if not ok then autoHome.ready=false;autoHome.reason="Auto home error: "..tostring(err):sub(1,100);deliveryPoint=nil end
         end
+        dispatchPlace()
         dispatchCollect()
         dispatchHatch(false)
         if active and collectEgg.enabled then
@@ -1622,7 +1769,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.27", placeId = game.PlaceId,
+        local report = {version = "1.28", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -1794,7 +1941,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.27", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.28", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -1824,7 +1971,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.27 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.28 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
