@@ -42,7 +42,8 @@ env.Enum = {RaycastFilterType={Exclude="Exclude"},EasingStyle={Linear="Linear"},
 env.TweenInfo = {new=function(duration) return {duration=duration} end}
 env.collectLabel = {}
 env.math = setmetatable({clamp=function(n,lo,hi) return math.max(lo,math.min(hi,n)) end},{__index=math})
-local obstacle, movement, onWait, mockRoute
+local obstacle, movement, onWait, mockRoute, walkGoal, tweenCreated
+function humanoid:MoveTo(goal) walkGoal=goal end
 function env.workspace:Raycast(origin,delta)
     if type(obstacle) == "function" then return obstacle(origin,delta) and {} or nil end
     return obstacle and {} or nil
@@ -54,6 +55,7 @@ env.PathfindingService={CreatePath=function()
         GetWaypoints=function() return mockRoute end}
 end}
 env.TweenService = {Create=function(_,target,info,goal)
+    tweenCreated=(tweenCreated or 0)+1
     local t = {target=target,goal=goal,info=info}
     function t:Play() self.PlaybackState="Playing"; movement=self end
     function t:Cancel() self.PlaybackState="Cancelled" end
@@ -62,12 +64,13 @@ end}
 env.task.wait = function()
     clock=clock+0.1
     if onWait then onWait() end
+    if walkGoal then root.Position=walkGoal;root.CFrame=walkGoal end
     if movement and movement.PlaybackState == "Playing" then
         root.Position,root.CFrame = movement.goal.CFrame,movement.goal.CFrame
         movement.PlaybackState="Completed"
     end
 end
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil end}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -79,6 +82,7 @@ local function prompt(distance)
 end
 local function reset()
     funcs.mark(false)
+    funcs.resetServer()
     equippedChildren,backpackChildren = {},{}
     function character:GetChildren() return equippedChildren end
     env.promptCache, env.collectAttempts = {}, {}
@@ -87,7 +91,7 @@ local function reset()
     carrying, failInput, clock = false, false, 10
     humanoid.Health = 100
     root.Position,root.CFrame = position(0),position(0)
-    obstacle,movement,onWait,mockRoute = false,nil,nil,nil
+    obstacle,movement,onWait,mockRoute,walkGoal,tweenCreated = false,nil,nil,nil,nil,0
     env.collectRunning=false
     funcs.home(nil)
 end
@@ -267,7 +271,7 @@ check("return to configured home and observe inventory delivery", function()
     funcs.home(position(40)); carrying=true
     env.collectEgg.tripInventory=funcs.inventory()
     onWait=function()
-        if movement then carrying=false; backpackChildren={eggTool("AssetEgg")} end
+        if walkGoal then carrying=false; backpackChildren={eggTool("AssetEgg")} end
     end
     funcs.dispatch()
     assert(root.Position.X == 40 and env.collectEgg.deliveriesObserved == 1)
@@ -278,17 +282,17 @@ check("carry clearing away from home is not delivery", function()
     env.collectEgg.tripInventory=funcs.inventory()
     onWait=function()
         carrying=false
-        if movement then movement.goal.CFrame=position(20) end
+        if walkGoal then walkGoal=position(20) end
     end
     funcs.dispatch()
     assert(not env.collectEgg.deliveriesObserved and not env.collectEgg.enabled)
-    assert(env.collectEgg.lastReturn.status == "Field carry state disappeared before delivery")
+    assert(env.collectEgg.lastReturn.status == "Game no longer reports field egg carrying")
 end)
 check("return blocked by wall pauses with no delivery claim", function()
     funcs.home(position(40)); carrying=true; obstacle=true
     funcs.dispatch()
     assert(not movement and not env.collectEgg.enabled and not env.collectEgg.deliveriesObserved)
-    assert(env.collectEgg.lastReturn.status == "Return path obstructed")
+    assert(env.collectEgg.lastReturn.status == "No ground return path")
 end)
 check("arrival without game accepting egg pauses", function()
     funcs.home(position(40)); carrying=true
@@ -317,7 +321,7 @@ check("pathfinding returns home around a blocked straight line", function()
     obstacle=function(_,delta) return delta.Magnitude>10 end
     mockRoute=detour(40)
     onWait=function()
-        if movement and movement.goal.CFrame.X==40 and movement.goal.CFrame.Z==0 then
+        if walkGoal and walkGoal.X==40 and walkGoal.Z==0 then
             carrying=false;backpackChildren={eggTool("AssetEgg")}
         end
     end
@@ -351,5 +355,42 @@ check("event payload cycles and long strings are bounded", function()
     funcs.record("mock",cycle,string.rep("x",1000))
     local log=funcs.snapshot().gameEvents;local last=log[#log]
     assert(last.args[1].self == "<cycle>" and #last.args[2] == 180)
+end)
+check("observed carry event overrides a stale visible GUI", function()
+    carrying=true
+    funcs.updateCarry({IsCarrying=false,SpeedMultiplier=1})
+    local state=funcs.snapshot().carryState
+    assert(state.fieldCarryUI and not state.fieldCarrying and not state.blocked)
+end)
+check("carry event detects held field egg before UI updates", function()
+    funcs.updateCarry({IsCarrying=true,Uid="field-egg",RunBackWakeDelayRequired=true})
+    local state=funcs.snapshot().carryState
+    assert(state.fieldCarrying and state.serverCarrying and state.source == "field_carry_event")
+    assert(not state.fieldCarryUI and state.fieldEggUid == "field-egg")
+end)
+check("native home return creates no CFrame Tween", function()
+    funcs.home(position(40));carrying=true;env.collectEgg.tripInventory=funcs.inventory()
+    onWait=function() if walkGoal then carrying=false;backpackChildren={eggTool("AssetEgg")} end end
+    funcs.dispatch()
+    assert(tweenCreated == 0 and env.collectEgg.deliveriesObserved == 1)
+    assert(env.collectEgg.lastNavigation.mode == "Humanoid.MoveTo")
+end)
+check("invalid carry payload cannot overwrite known server state", function()
+    funcs.updateCarry({IsCarrying=true,Uid="field-egg"})
+    funcs.updateCarry({IsCarrying="false"})
+    assert(funcs.snapshot().carryState.serverCarrying == true)
+end)
+check("cancelling native walking stops before delivery", function()
+    funcs.home(position(40));carrying=true
+    onWait=function() env.collectEgg.enabled=false;funcs.cancel("Collect OFF") end
+    funcs.dispatch()
+    assert(tweenCreated == 0 and not env.collectEgg.deliveriesObserved)
+    assert(env.collectEgg.lastNavigation.status == "Return cancelled")
+end)
+check("server carry state does not survive character replacement", function()
+    funcs.updateCarry({IsCarrying=true})
+    env.player.Character={GetChildren=function() return {} end,FindFirstChild=function() return nil end,FindFirstChildOfClass=function() return nil end}
+    assert(not funcs.snapshot().carryState.serverCarrying)
+    env.player.Character=character
 end)
 print(string.format("%d Auto Collect tests passed", tests))
