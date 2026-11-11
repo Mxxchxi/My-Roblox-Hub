@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.8
+-- Steal An Egg: structure diagnostics v1.9
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -14,6 +14,7 @@ gui.Name = "EggDiagnostics"
 gui.ResetOnSpawn = false
 gui.Parent = pg
 local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local colors = {bg = Color3.fromRGB(13, 17, 32), panel = Color3.fromRGB(22, 28, 48),
     purple = Color3.fromRGB(153, 100, 255), cyan = Color3.fromRGB(67, 218, 246),
     text = Color3.fromRGB(235, 240, 255), muted = Color3.fromRGB(151, 164, 190)}
@@ -51,7 +52,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.8", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.9", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -76,7 +77,7 @@ for i, name in ipairs({"Automation", "Diagnostics", "Settings"}) do
 end
 label(sidebar,"By Yuu Walker",12,344,130,22,11,colors.muted)
 label(automation,"Automation",0,0,400,30,22)
-label(automation,"Nearby egg tests • remaining systems in development",0,32,565,22,12,colors.muted)
+label(automation,"Egg collection with Tween • remaining systems in development",0,32,565,22,12,colors.muted)
 local rows = {}
 for i, name in ipairs({"Auto Hatch", "Collect Eggs", "Collect Coins", "Upgrade Base", "Speed Training"}) do
     local row = create("Frame",automation,{Position = UDim2.fromOffset(0,60+(i-1)*54), Size = UDim2.fromOffset(568,50), BackgroundColor3 = colors.panel})
@@ -93,7 +94,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.8 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.9 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -102,7 +103,7 @@ local box = create("TextBox",reportScroll,{Position = UDim2.fromOffset(10,8), Si
     AutomaticSize = Enum.AutomaticSize.XY, BackgroundTransparency = 1, MultiLine = true, ClearTextOnFocus = false,
     TextEditable = true, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
     Font = Enum.Font.Code, TextSize = 12, TextColor3 = colors.text, TextWrapped = false, Text = "Loading..."})
-local collectLabel = label(automation,"Collect OFF • nearby pickup only",0,340,568,18,11,colors.muted)
+local collectLabel = label(automation,"Collect OFF • Tween to nearest egg",0,340,568,18,11,colors.muted)
 local status = label(frame,"Preparing diagnostics...",176,472,568,52,12,colors.muted)
 status.TextWrapped = true
 label(settings,"Settings",0,0,400,30,22)
@@ -110,6 +111,8 @@ label(settings,"Interface",0,50,400,24,14,colors.cyan)
 label(settings,"Drag the header to move. RightShift toggles the window.",0,88,568,24,12)
 label(settings,"Close stops all automation. Minimize keeps it running.",0,118,568,24,12)
 label(settings,"Hatch and Collect start OFF. Other systems are unavailable.",0,148,568,24,12,colors.muted)
+label(settings,"Collect: Tween within 250 studs, speed up to 24 studs/s.",0,190,568,24,12,colors.cyan)
+label(settings,"Stops at walls, on death, or when carrying. Delivery is manual.",0,220,568,24,12,colors.muted)
 local restore = control(gui,"YUU HUB",16,120,108,36)
 restore.Visible = false
 local function setShown(shown)
@@ -125,7 +128,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.8 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.9 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -170,7 +173,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.8 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.9 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -398,6 +401,14 @@ local function liveHatchSnapshot()
     return snapshot
 end
 -- AUTO_COLLECT_ENGINE_BEGIN
+local collectTween
+local function cancelCollectTween(reason)
+    if collectTween then collectTween:Cancel(); collectTween = nil end
+    if collectEgg.moving then
+        collectEgg.moving = false
+        if collectEgg.lastMovement then collectEgg.lastMovement.status = reason or "Cancelled" end
+    end
+end
 local function carryVisible()
     -- This UI was observed in the report. Inspect all ancestors, not just the label.
     local node = pg:FindFirstChild("DropHeldEgg")
@@ -425,11 +436,86 @@ local function collectCandidate(prompt, root, humanoid)
     if distance > math.min(prompt.MaxActivationDistance, 8) then return nil, "Outside activation range" end
     return distance, "Ready to attempt"
 end
+local function approachCandidate(prompt, root, humanoid)
+    if not prompt.Parent or not prompt:IsDescendantOf(workspace) then return nil end
+    if prompt.Name ~= "CarryAreaEgg" or prompt.ActionText ~= "Steal" or prompt.ObjectText ~= "Egg"
+        or not prompt.Enabled or prompt.HoldDuration < 0 or prompt.HoldDuration > 5 then return nil end
+    if not root or not humanoid or humanoid.Health <= 0 or prompt.MaxActivationDistance < 1 then return nil end
+    local position = promptPosition(prompt)
+    if not position or math.abs(position.Y - root.Position.Y) > 6 then return nil end
+    local distance = (root.Position - position).Magnitude
+    if distance > 250 then return nil end
+    local state = collectAttempts[prompt]
+    if state and (state.count >= 3 or os.clock() - state.time < 4) then return nil end
+    return distance, position
+end
+local function approachEgg(root, humanoid)
+    if not root or not humanoid then return false end
+    local choices = {}
+    for prompt in pairs(promptCache) do
+        local distance, position = approachCandidate(prompt, root, humanoid)
+        if distance then choices[#choices + 1] = {prompt = prompt, distance = distance, position = position} end
+    end
+    table.sort(choices, function(a,b) return a.distance < b.distance end)
+    local character = player.Character
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {character}
+    params.RespectCanCollide = true
+    for _, choice in ipairs(choices) do
+        local prompt, position = choice.prompt, choice.position
+        local horizontal = Vector3.new(position.X-root.Position.X, 0, position.Z-root.Position.Z)
+        local radius = math.min(prompt.MaxActivationDistance, 8)
+        -- Stay at the character's current height; skip targets on another floor.
+        local vertical = math.abs(position.Y-root.Position.Y)
+        if vertical < radius then
+            local stop = math.min(5, math.sqrt(radius*radius - vertical*vertical) * 0.8)
+            local travel = math.max(0,horizontal.Magnitude-stop)
+            if travel > 0.2 then
+                local offset = horizontal.Unit * travel
+                local obstacle = workspace:Raycast(root.Position, offset, params)
+                if not obstacle then
+                    local speed = math.clamp(humanoid.WalkSpeed,8,24)
+                    local duration = travel/speed
+                    local record = {path = prompt:GetFullName(), distance = choice.distance,
+                        speed = speed, at = os.time(), status = "Moving"}
+                    collectEgg.lastMovement, collectEgg.moving = record, true
+                    collectEgg.last = "Tweening to nearest reachable egg"
+                    collectLabel.Text = collectEgg.last
+                    collectTween = TweenService:Create(root,TweenInfo.new(duration,Enum.EasingStyle.Linear),
+                        {CFrame = root.CFrame + offset})
+                    collectTween:Play()
+                    local started = os.clock()
+                    while active and collectEgg.enabled and not busy and player.Character == character
+                        and root.Parent and humanoid.Health > 0 and prompt.Parent and prompt.Enabled
+                        and not carryVisible() and os.clock()-started < duration+1 do
+                        if collectCandidate(prompt,root,humanoid) then break end
+                        if collectTween.PlaybackState ~= Enum.PlaybackState.Playing then break end
+                        local current = promptPosition(prompt)
+                        if not current or (current-position).Magnitude > 3 then break end
+                        -- Recheck the next short segment for obstacles appearing during motion.
+                        local ahead = offset.Unit * math.min(3, (position-root.Position).Magnitude)
+                        if workspace:Raycast(root.Position,ahead,params) then break end
+                        task.wait(0.1)
+                    end
+                    local arrived = active and collectEgg.enabled and player.Character == character
+                        and collectCandidate(prompt,root,humanoid) ~= nil
+                    cancelCollectTween(arrived and "In pickup range" or "Stopped before pickup range")
+                    collectEgg.last = record.status
+                    return arrived
+                end
+            end
+        end
+    end
+    collectEgg.last = "No reachable enabled egg within 250 studs on this level"
+    return false
+end
 local function collectSnapshot()
     local snapshot = {enabled = collectEgg.enabled, attempts = collectEgg.attempts,
         last = collectEgg.last, lastInput = collectEgg.lastInput, scanning = busy,
         inputInProgress = collectRunning, carrying = carryVisible(), matchingPrompts = 0,
-        scope = "Nearby CarryAreaEgg / Steal only; no walking or delivery",
+        scope = "Tween to enabled CarryAreaEgg / Steal within 250 studs; manual delivery",
+        moving = collectEgg.moving == true, lastMovement = collectEgg.lastMovement,
         result = "Input attempts only; pickup success is not verified"}
     local character = player.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -474,7 +560,18 @@ local function collectStep()
             best, bestDistance = prompt, distance
         end
     end
-    if not best then collectEgg.last = "Waiting for nearby enabled CarryAreaEgg / Steal"; return end
+    if not best then
+        if approachEgg(root, humanoid) and active and collectEgg.enabled and not busy and not carryVisible() then
+            -- Re-evaluate range and target after movement, never press from a stale snapshot.
+            for prompt in pairs(promptCache) do
+                local distance = collectCandidate(prompt,root,humanoid)
+                local state = collectAttempts[prompt]
+                if distance and (not state or state.count < 3 and os.clock()-state.time >= 4)
+                    and (not bestDistance or distance < bestDistance) then best,bestDistance = prompt,distance end
+            end
+        end
+        if not best then return end
+    end
     local state = collectAttempts[best] or {count = 0, time = -math.huge}
     collectAttempts[best] = state
     state.count, state.time = state.count + 1, os.clock()
@@ -498,6 +595,7 @@ local function dispatchCollect()
     collectRunning = true
     local ok, err = pcall(collectStep)
     collectRunning = false
+    if not ok then cancelCollectTween("Movement error") end
     if not ok and active then collectEgg.last = "Collect error: " .. tostring(err):sub(1,100) end
 end
 -- AUTO_COLLECT_ENGINE_END
@@ -508,6 +606,7 @@ collectButton.Activated:Connect(function()
     collectButton.BackgroundColor3 = collectEgg.enabled and colors.purple or colors.panel
     collectEgg.last = collectEgg.enabled and "Waiting for nearby egg" or "OFF"
     collectLabel.Text = collectEgg.last
+    if not collectEgg.enabled then cancelCollectTween("Collect OFF") end
     if not collectEgg.enabled and collectRunning and holding then
         pcall(function() holding:InputHoldEnd() end); holding = nil
     end
@@ -545,6 +644,7 @@ local function stopHatch()
     active = false
     hatch.enabled = false
     collectEgg.enabled = false
+    cancelCollectTween("UI closed")
     if cameraConnection then cameraConnection:Disconnect() end
     if holding then pcall(function() holding:InputHoldEnd() end); holding = nil end
     for _, connection in ipairs(connections) do connection:Disconnect() end
@@ -585,7 +685,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.8", placeId = game.PlaceId,
+        local report = {version = "1.9", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -757,7 +857,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot()
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.8", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.9", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -787,7 +887,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.8 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.9 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
