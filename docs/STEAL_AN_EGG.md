@@ -1,16 +1,17 @@
-# Steal An Egg — diagnostics
+# Steal An Egg — diagnostics v1.1
 
-PlaceId: `107778070777162`. This module inspects local object metadata; it does not automate gameplay yet. Egg collection, hatching, cash collection, upgrades and speed training await in-game diagnostics.
+PlaceId: `107778070777162`. Metadata inspection only; the five gameplay automation features await live game data.
 
-Run in Potassium after the game loads:
+Use the same universal loader in Potassium after the game loads:
 
 ```lua
-getgenv().MyRobloxHubRef = "feature/steal-an-egg-diagnostics"
-loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub/feature/steal-an-egg-diagnostics/Loader.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub/main/Loader.lua"))()
 ```
 
-Press **Copy report** and return the JSON report for review. Scan again after opening the hatch, upgrade and treadmill interfaces. Scans yield every 150 objects, stop at 12,000 objects, and cap each result list at 400 entries; `truncated` indicates incomplete results. UI `visible` is the object's own flag, not effective ancestor visibility. Remote names do not establish their argument contracts.
+If a prior test set a branch override, clear it once with `getgenv().MyRobloxHubRef = nil` before running the loader.
 
-Static loader contract checks: 4 passed locally. Potassium execution and in-game behavior have not been verified.
+Press **Copy report** and return the JSON for review. Scan again after opening hatch, upgrade and treadmill interfaces.
 
-For normal main-branch use after testing, clear the override with `getgenv().MyRobloxHubRef = nil`.
+v1.1 fixes the v1.0 shared-budget depth-first traversal: separate FIFO scans reserve 6,000 objects for PlayerGui, 12,000 for Workspace and 6,000 for ReplicatedStorage. ReplicatedStorage.Assets is intentionally excluded and listed in root skipped metadata. Each root has a five-second limit and 30,000 queue entries; each category is limited to 300 results per root. Per-root metadata records limits and dropped results. Scans yield every 150 objects. Candidate classes exclude cosmetic constraints. PlayerGui visibility checks ancestor Visible/Enabled flags; it does not establish on-screen occlusion or clipping. Remote names alone do not establish argument contracts.
+
+Validation: Lua 5.4 syntax check, simulated 13,000-asset starvation regression, result-overflow regression, and all 4 existing loader contract tests passed locally. Roblox APIs and Potassium execution require in-game verification.
