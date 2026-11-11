@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.25
+-- Steal An Egg: structure diagnostics v1.26
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -53,7 +53,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.25", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.26", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -95,7 +95,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.25 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.26 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -129,7 +129,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.25 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.26 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -174,7 +174,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.25 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.26 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -239,7 +239,7 @@ local busy = false
 -- AUTO_HATCH_BEGIN
 local hatchButton = control(rows[1], "Auto Hatch: OFF", 410,8,146,34)
 local testHatch = control(automation,"Test Hatch once",0,358,150,24)
-local hatchLabel = label(automation,"Stand within 7 studs of your ready egg.",160,354,408,28,11,colors.muted)
+local hatchLabel = label(automation,"Auto approaches ready eggs in your base.",160,354,408,28,11,colors.muted)
 hatchLabel.TextWrapped = true
 local carryMarker = control(settings,"Mark: I am carrying an egg",0,268,270,34)
 local approachButton=control(settings,"Approach: WALK",0,310,270,30)
@@ -248,6 +248,8 @@ local clearHomeButton = control(settings,"Auto home: ON",270,346,260,30)
 local collectButton = control(rows[2], "Collect: OFF", 410,8,146,34)
 local collectEgg = {enabled = false, attempts = 0, last = "OFF", approachMode="Walk"}
 local collectRunning = false
+local hatchApproach, hatchOwned
+local hatchWalking
 local collectAttempts = setmetatable({}, {__mode = "k"})
 local hatch = {enabled = false, attempts = 0, last = "OFF"}
 local promptCache = setmetatable({}, {__mode = "k"})
@@ -325,14 +327,22 @@ local function hatchStep(manual)
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     if not root or not humanoid then hatch.last = "Waiting for character"; return end
+    local ownedPlot
+    if not manual then
+        if not hatchApproach then hatch.last="Hatch navigation not ready";return end
+        local _,plot=hatchApproach(root,humanoid,character)
+        ownedPlot=plot
+        if not active or not hatch.enabled then return end
+    end
     for prompt in pairs(promptCache) do
-        if eligible(prompt, root, humanoid) then
+        if (manual or ownedPlot and hatchOwned(prompt,ownedPlot)) and eligible(prompt, root, humanoid) then
             local state = attemptState[prompt] or {count = 0, time = -math.huge}
             attemptState[prompt] = state
             if state.count < 3 and os.clock() - state.time >= 4 then
                 state.count = state.count + 1
                 state.time = os.clock()
                 hatch.attempts = hatch.attempts + 1
+                hatch.lastAttempt={at=os.time(),path=prompt:GetFullName(),inputOK=false,resultVerified=false}
                 local ok, err = pcall(function()
                     holding = prompt
                     prompt:InputHoldBegin()
@@ -342,6 +352,11 @@ local function hatchStep(manual)
                 end)
                 if holding then pcall(function() holding:InputHoldEnd() end); holding = nil end
                 if not active then return end
+                hatch.lastAttempt.inputOK=ok
+                local deadline=os.clock()+2
+                while ok and active and (manual or hatch.enabled) and prompt.Parent and prompt.Enabled
+                    and prompt.ActionText=="Hatch!" and os.clock()<deadline do task.wait(0.1) end
+                hatch.lastAttempt.promptChanged=not prompt.Parent or not prompt.Enabled or prompt.ActionText~="Hatch!"
                 hatch.last = ok and "Hatch input sent; check game result" or ("Input failed: " .. tostring(err):sub(1, 80))
                 hatchLabel.Text = hatch.last .. " | Attempts " .. hatch.attempts
                 return
@@ -363,6 +378,11 @@ hatchButton.Activated:Connect(function()
     hatchButton.Text = hatch.enabled and "Auto Hatch: ON" or "Auto Hatch: OFF"
     hatch.last = hatch.enabled and "Waiting for nearby Hatch!" or "OFF"
     hatchLabel.Text = hatch.last
+    if not hatch.enabled and hatchWalking then
+        local character=player.Character;local root=character and character:FindFirstChild("HumanoidRootPart")
+        if root then pcall(function() hatchWalking:MoveTo(root.Position) end) end
+        hatchWalking=nil
+    end
     if not hatch.enabled and holding then pcall(function() holding:InputHoldEnd() end); holding = nil end
 end)
 local hatchRunning = false
@@ -381,7 +401,7 @@ local function liveHatchSnapshot()
     local character = player.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    local snapshot = {enabled = hatch.enabled, attempts = hatch.attempts, last = hatch.last,
+    local snapshot = {enabled = hatch.enabled, attempts = hatch.attempts, last = hatch.last, lastAttempt=hatch.lastAttempt,
         scanning = busy, inputInProgress = hatchRunning, cacheCount = 0,
         result = "Input attempts only; hatch success is not verified"}
     if root then snapshot.characterPosition = {x = root.Position.X, y = root.Position.Y, z = root.Position.Z} end
@@ -1111,6 +1131,85 @@ local function returnHome(root, humanoid, character)
     record.status="Home reached but game did not accept the egg"
     if active and collectEgg.enabled then pauseCollect(record.status .. "; check delivery point") end
 end
+-- HATCH_NAV_BEGIN
+hatchOwned=function(prompt,ownPlot)
+    if not prompt.Parent or not prompt:IsDescendantOf(workspace) then return false end
+    if prompt:IsDescendantOf(ownPlot) then return true end
+    local position=promptPosition(prompt)
+    local plots=workspace:FindFirstChild("Plots")
+    if not position or not plots then return false end
+    local nearest,first,second=nil,math.huge,math.huge
+    for _,plot in ipairs(plots:GetChildren()) do
+        local center=plot:FindFirstChild("CenterPoint") or plot:FindFirstChild("SpawnPoint")
+        if center and center:IsA("BasePart") then
+            local distance=(position-center.Position).Magnitude
+            if distance<first then second=first;first=distance;nearest=plot
+            elseif distance<second then second=distance end
+        end
+    end
+    return nearest==ownPlot and first<=35 and second-first>=5
+end
+hatchApproach=function(root,humanoid,character)
+    local _,plot=resolveAutoHome()
+    if not plot then hatch.last="Auto Hatch needs a confirmed owned plot";return false,nil end
+    if carryVisible() then hatch.last="Holding an egg; Hatch movement waits";return false,plot end
+    local target,distance
+    for prompt in pairs(promptCache) do
+        if prompt.ActionText=="Hatch!" and prompt.Enabled and prompt.HoldDuration>=0 and prompt.HoldDuration<=5
+            and hatchOwned(prompt,plot) then
+            local state=attemptState[prompt]
+            local pos=promptPosition(prompt)
+            local d=pos and (root.Position-pos).Magnitude
+            if d and d<=150 and (not state or state.count<3 and os.clock()-state.time>=4)
+                and (not distance or d<distance) then target,distance=prompt,d end
+        end
+    end
+    if not target then hatch.last="Waiting for ready Hatch! in your base";return false,plot end
+    if eligible(target,root,humanoid) then return true,plot end
+    local pos=promptPosition(target)
+    local offset=Vector3.new(pos.X-root.Position.X,0,pos.Z-root.Position.Z)
+    if offset.Magnitude<0.1 then return false,plot end
+    local goal=root.Position+offset.Unit*math.max(0,offset.Magnitude-3)
+    local params=RaycastParams.new()
+    params.FilterType=Enum.RaycastFilterType.Exclude;params.FilterDescendantsInstances={character};params.RespectCanCollide=true
+    local route
+    if workspace:Raycast(root.Position,goal-root.Position,params) then
+        local ok,result=pcall(function()
+            local path=PathfindingService:CreatePath({AgentRadius=2,AgentHeight=5,AgentCanJump=false,WaypointSpacing=5})
+            path:ComputeAsync(root.Position,goal)
+            return path.Status==Enum.PathStatus.Success and path:GetWaypoints() or nil
+        end)
+        if not ok or not result or #result>60 then hatch.last="No ground path to ready egg";return false,plot end
+        route=result
+    else route={{Position=goal}} end
+    local function stop(reason)
+        pcall(function() humanoid:MoveTo(root.Position) end)
+        hatchWalking=nil;hatch.last=reason;hatchLabel.Text=reason
+        return false,plot
+    end
+    local started=os.clock()
+    for i,point in ipairs(route) do
+        if not active or not hatch.enabled or busy or collectRunning or carryVisible() then return stop("Hatch movement paused") end
+        if player.Character~=character or humanoid.Health<=0 or not target.Parent or not target.Enabled then return stop("Ready egg or character changed") end
+        local nextGoal=i==#route and goal or point.Position
+        hatchWalking=humanoid;humanoid:MoveTo(nextGoal)
+        local refreshed=os.clock()
+        while true do
+            if not active or not hatch.enabled or busy or collectRunning or carryVisible() then return stop("Hatch movement paused") end
+            if player.Character~=character or humanoid.Health<=0 or not target.Parent or not target.Enabled then return stop("Ready egg or character changed") end
+            if eligible(target,root,humanoid) then stop("Ready to hatch");return true,plot end
+            if os.clock()-started>30 then return stop("Hatch approach timed out") end
+            local delta=root.Position-nextGoal
+            if math.sqrt(delta.X*delta.X+delta.Z*delta.Z)<=2.5 then break end
+            if os.clock()-refreshed>=1 then humanoid:MoveTo(nextGoal);refreshed=os.clock() end
+            hatch.last="Walking to ready egg in your base";hatchLabel.Text=hatch.last
+            task.wait(0.1)
+        end
+    end
+    stop("Hatch approach ended")
+    return eligible(target,root,humanoid),plot
+end
+-- HATCH_NAV_END
 local function inspectOwnedBase()
     local _,plot,_,ownership=resolveAutoHome()
     local result={found=plot~=nil,reason=ownership.reason,visited=0,truncated=false,
@@ -1447,6 +1546,11 @@ end
 local function stopHatch()
     active = false
     hatch.enabled = false
+    if hatchWalking then
+        local character=player.Character;local root=character and character:FindFirstChild("HumanoidRootPart")
+        if root then pcall(function() hatchWalking:MoveTo(root.Position) end) end
+        hatchWalking=nil
+    end
     collectEgg.enabled = false
     cancelCollectTween("UI closed")
     if cameraConnection then cameraConnection:Disconnect() end
@@ -1493,7 +1597,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.25", placeId = game.PlaceId,
+        local report = {version = "1.26", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -1665,7 +1769,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.25", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.26", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -1695,7 +1799,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.25 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.26 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
