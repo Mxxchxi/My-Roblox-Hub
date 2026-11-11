@@ -1,4 +1,4 @@
-# Steal An Egg — v1.18
+# Steal An Egg — v1.19
 PlaceId: 107778070777162. Uses the existing universal Loader.
 
 ## Setup
@@ -64,7 +64,12 @@ python -m unittest discover -s tests -v
 luac5.4 -p Games/StealAnEgg_Diagnostics.lua
 lua5.4 tests/test_egg_collect.lua
 ~~~
-39 simulated Auto Collect cases and 4 Loader contract tests pass locally. Tests cover carry state, inventory deltas, cancellation, disabled prompts, range limits, return, obstacles, false delivery prevention and no-result pauses. They are not a Potassium or Roblox server test.
+45 simulated Auto Collect cases and 4 Loader contract tests pass locally. Tests cover carry state, inventory deltas, cancellation, disabled prompts, range limits, return, obstacles, false delivery prevention and no-result pauses. They are not a Potassium or Roblox server test.
 
-## v1.18 carry-loss event observations
+## v1.19 carry-loss event observations
 A real report reached the field-carry UI after pickup, computed a 24-waypoint return, then lost carry state after the first waypoint. This does not prove delivery, a guard action, or an anti-cheat response. Carry loss now has a distinct return-interruption label. Up to 16 bounded records retain observed FieldEggCarry, FieldEggGone, FieldEggRedeemVerdict, OwnerDropped, OwnerShifted and SpeedTollWarning events plus collection/navigation milestones. Listeners only observe OnClientEvent; no Remote command is sent and payload contracts are not guessed. Copy short includes gameEvents and eventObserver. These records diagnose the loss; they do not repair or bypass it.
+
+## v1.19 native walking return
+A real FieldEggCarry payload establishes IsCarrying as a boolean, with Uid and RunBackWakeDelayRequired present on pickup. The following event explicitly set IsCarrying=false while return Tween was lifting the character. This establishes actual game-reported carry loss, but does not prove why the game cleared it. The client now uses the observed IsCarrying field for the current character, falling back to GUI evidence only before a carry event is received. Other payload flags are recorded without guessing their behavior.
+
+The entire loaded return uses Humanoid:MoveTo and optional ground-only pathfinding (AgentCanJump=false). It never tweens the carrying character's CFrame, changes WalkSpeed, or forces a jump. Floor waypoint arrival uses horizontal distance; the final delivery point requires 1.5 studs horizontal proximity. Cancellation stops MoveTo. The outbound approach remains Tween-based. Real Potassium return and delivery remain unverified until tested.
