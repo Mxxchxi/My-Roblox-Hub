@@ -73,10 +73,10 @@ env.task.wait = function()
         movement.PlaybackState="Completed"
     end
 end
-env.placeState={enabled=false,slots={},attempts=0,observed=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
+env.placeState={enabled=false,slots={},attempts=0,observed=0};env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -89,6 +89,7 @@ end
 local function reset()
     env.hatch.enabled=true;env.attemptState={}
     env.placeState={enabled=false,slots={},attempts=0,observed=0}
+    env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0}
     env.AUTO_PLACE_ENABLED=true
     env.frame=nil;env.restore=nil
     funcs.mark(false)
@@ -423,7 +424,7 @@ check("pickup starts native return inside the same dispatch", function()
     assert(env.collectEgg.lastInput.returnDispatchedClock)
 end)
 local function node(name,class,attrs,children)
-    local obj={Name=name,ClassName=class,Position=position(80),children=children or {},attrs=attrs or {}}
+    local obj={Name=name,ClassName=class,Position=position(80),children=children or {},attrs=attrs or {},Visible=true,Enabled=true,Active=true}
     function obj:IsDescendantOf(root) local n=self.Parent;while n do if n==root then return true end;n=n.Parent end;return false end
     for _,child in ipairs(obj.children) do child.Parent=obj end
     function obj:GetChildren() return self.children end
@@ -431,7 +432,7 @@ local function node(name,class,attrs,children)
     function obj:GetAttribute(key) return self.attrs[key] end
     function obj:GetAttributes() return self.attrs end
     function obj:GetFullName() return "Workspace.Plots."..self.Name end
-    function obj:IsA(kind) return kind==self.ClassName or kind=="BasePart" and (self.ClassName=="Part" or self.ClassName=="SpawnLocation") end
+    function obj:IsA(kind) return kind==self.ClassName or kind=="GuiButton" and (self.ClassName=="ImageButton" or self.ClassName=="TextButton") or kind=="GuiObject" and (self.ClassName=="ImageButton" or self.ClassName=="TextButton" or self.ClassName=="TextLabel" or self.ClassName=="Frame") or kind=="LayerCollector" and self.ClassName=="SurfaceGui" or kind=="BasePart" and (self.ClassName=="Part" or self.ClassName=="SpawnLocation") end
     return obj
 end
 check("auto home selects owned plot delivery before spawn", function()
@@ -783,5 +784,78 @@ check("disabled Auto Place performs no equip movement or click", function()
     assert(not equipped and not walkGoal and clicks()==0 and not env.placeState.enabled)
     assert(env.placeState.last:find("disabled",1,true))
     assert(camera.CFrame==original)
+end)
+local function setupUpgrade(cash)
+    root.Position=position(80);env.collectEgg.enabled=false
+    local level=node("Level","TextLabel");level.Text="Level 1 > Level 2"
+    local price=node("Cost","TextLabel");price.Text="$1M"
+    local button=node("Upgrade","ImageButton",{}, {price});button.MouseButton1Click={};button.Activated={}
+    local robux=node("RobuxUpgrade","ImageButton");robux.MouseButton1Click={}
+    local surface=node("SurfaceGui","SurfaceGui",{}, {level,node("Frame","Frame",{}, {button,robux})})
+    local own=node("1","Model",{OwnerUserId=42},{node("SpawnPoint","Part"),node("PlotUpgrade","Model",{}, {node("Sign","Part",{}, {surface})})})
+    plotFixture=node("Plots","Folder",{}, {own})
+    function env.player:GetAttribute(key) if key=="Cash" then return cash end end
+    function env.player:FindFirstChild() return nil end
+    local fired=0
+    env.capability=function(name)
+        if name=="getconnections" then return function(signal) return signal==button.MouseButton1Click and {{}} or {} end end
+        if name=="firesignal" then return function(signal)
+            assert(signal==button.MouseButton1Click and signal~=robux.MouseButton1Click)
+            fired=fired+1;level.Text="Level 2 > Level 3"
+        end end
+    end
+    env.upgrades.mode="Base"
+    return function() return fired end,level,button
+end
+check("soft currency parser rejects Robux glyphs and malformed amounts", function()
+    assert(funcs.cost("$15K")==15000 and funcs.cost("$75M")==75000000)
+    assert(funcs.cost("19 Robux")==nil and funcs.cost("free")==nil and funcs.cost("$bad")==nil)
+end)
+check("upgrade uses only observed soft button and confirms level increase", function()
+    local calls=setupUpgrade(2000000)
+    funcs.upgrade();assert(calls()==1 and env.upgrades.pending)
+    funcs.upgrade();assert(env.upgrades.observed==1 and not env.upgrades.pending)
+end)
+check("upgrade does not purchase with insufficient or unknown cash", function()
+    local calls=setupUpgrade(500)
+    funcs.upgrade();assert(calls()==0)
+    calls=setupUpgrade(nil);funcs.upgrade();assert(calls()==0)
+end)
+check("upgrade without a mapped callback sends no input", function()
+    local calls=setupUpgrade(2000000)
+    env.capability=function() return nil end
+    funcs.upgrade();assert(calls()==0 and not env.upgrades.pending)
+end)
+check("training stands on owned treadmill and observes speed notification", function()
+    root.Position=position(80);env.collectEgg.enabled=false
+    local belt=node("TreadmillBottom","Part");belt.Size=position(10,1,10)
+    plotFixture=node("Plots","Folder",{}, {node("1","Model",{OwnerUserId=42},{node("SpawnPoint","Part"),belt})})
+    env.training.enabled=true
+    funcs.train();assert(env.training.last:find("waiting",1,true))
+    funcs.record("RE/Treadmill/SpeedGained",1)
+    funcs.train();assert(env.training.events==1 and env.training.last:find("observed",1,true))
+end)
+check("unconfirmed upgrade stops without a second purchase", function()
+    local calls,level=setupUpgrade(2000000)
+    funcs.upgrade();level.Text="Level 1 > Level 2";clock=clock+11
+    funcs.upgrade();assert(calls()==1 and env.upgrades.mode=="Off")
+end)
+check("conflicting currency signals block purchases", function()
+    local calls=setupUpgrade(2000000)
+    function env.player:GetAttribute(key) if key=="Cash" then return 2000000 elseif key=="Money" then return 100 end end
+    funcs.upgrade();assert(calls()==0)
+end)
+check("first upgrade uses only its observed soft currency control", function()
+    local calls,_,button=setupUpgrade(2000000)
+    button.Name="FirstUpgrade"
+    funcs.upgrade();assert(calls()==1)
+end)
+check("training approaches own treadmill by native walking", function()
+    root.Position=position(0);env.collectEgg.enabled=false
+    function humanoid:UnequipTools() equippedChildren={} end
+    local belt=node("TreadmillBottom","Part");belt.Size=position(10,1,10)
+    plotFixture=node("Plots","Folder",{}, {node("1","Model",{OwnerUserId=42},{node("SpawnPoint","Part"),belt})})
+    env.training.enabled=true
+    funcs.train();assert(root.Position.X==80 and tweenCreated==0)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
