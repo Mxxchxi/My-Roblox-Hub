@@ -76,7 +76,7 @@ end
 env.placeState={enabled=false,slots={},attempts=0,observed=0};env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -666,5 +666,28 @@ check("rejected slot clicks preserve object ancestry for mapping", function()
     assert(env.placeState.lastSlotPick.ancestry[1].name=="GeneratedTile")
     assert(env.placeState.lastSlotPick.ancestry[1].attributes.SlotNumber==2)
     assert(not env.placeState.lastSlotPick.accepted and #env.placeState.slots==0)
+end)
+check("placement ray skips observed SpawnDetector overlay", function()
+    local original=env.workspace.Raycast
+    local detector=node("SpawnDetector","Part");detector.Transparency=0;detector.CanCollide=true
+    local slot=node("Slot1","Part");slot.Transparency=0;slot.CanCollide=true
+    local calls=0
+    function env.workspace:Raycast(origin,direction,params)
+        calls=calls+1
+        if calls==1 then return {Instance=detector,Position=position(10)} end
+        assert(params.FilterDescendantsInstances[1]==detector)
+        return {Instance=slot,Position=position(20)}
+    end
+    local hit,skipped=funcs.placeRay(position(0),position(100),{})
+    assert(hit.Instance==slot and #skipped==1 and calls==2)
+    env.workspace.Raycast=original
+end)
+check("placement ray keeps opaque collidable parts", function()
+    local original=env.workspace.Raycast
+    local floor=node("Floor","Part");floor.Transparency=0;floor.CanCollide=true
+    function env.workspace:Raycast() return {Instance=floor,Position=position(10)} end
+    local hit,skipped=funcs.placeRay(position(0),position(100),{})
+    assert(hit.Instance==floor and #skipped==0)
+    env.workspace.Raycast=original
 end)
 print(string.format("%d Auto Collect tests passed", tests))
