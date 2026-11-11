@@ -1,4 +1,4 @@
-# Steal An Egg — v1.20
+# Steal An Egg — v1.21
 PlaceId: 107778070777162. Uses the existing universal Loader.
 
 ## Setup
@@ -64,7 +64,7 @@ python -m unittest discover -s tests -v
 luac5.4 -p Games/StealAnEgg_Diagnostics.lua
 lua5.4 tests/test_egg_collect.lua
 ~~~
-46 simulated Auto Collect cases and 4 Loader contract tests pass locally. Tests cover carry state, inventory deltas, cancellation, disabled prompts, range limits, return, obstacles, false delivery prevention and no-result pauses. They are not a Potassium or Roblox server test.
+51 simulated Auto Collect cases and 4 Loader contract tests pass locally. Tests cover carry state, inventory deltas, cancellation, disabled prompts, range limits, return, obstacles, false delivery prevention and no-result pauses. They are not a Potassium or Roblox server test.
 
 ## v1.19 carry-loss event observations
 A real report reached the field-carry UI after pickup, computed a 24-waypoint return, then lost carry state after the first waypoint. This does not prove delivery, a guard action, or an anti-cheat response. Carry loss now has a distinct return-interruption label. Up to 16 bounded records retain observed FieldEggCarry, FieldEggGone, FieldEggRedeemVerdict, OwnerDropped, OwnerShifted and SpeedTollWarning events plus collection/navigation milestones. Listeners only observe OnClientEvent; no Remote command is sent and payload contracts are not guessed. Copy short includes gameEvents and eventObserver. These records diagnose the loss; they do not repair or bypass it.
@@ -76,3 +76,10 @@ The entire loaded return uses Humanoid:MoveTo and optional ground-only pathfindi
 
 ## v1.20 immediate return
 After confirmed pickup, the same collection dispatch calls the native ground-return routine directly instead of waiting for the next one-second scheduler tick. Normal input hold completion and path computation still apply. WalkSpeed is unchanged. lastReturn.confirmationToReturnMs measures elapsed time from the observed carrying=true event to return routine entry; this is not the time to first physical movement. A same-dispatch regression test passes.
+
+## v1.21 automatic home
+Auto home defaults ON. It resolves a unique Workspace.Plots child using explicit owner attributes (OwnerUserId/OwnerId/Owner/UserId/PlayerUserId/Player/Username/OwnerName) or direct Owner/OwnerUserId/OwnerId value objects, matched exactly to the local Player, UserId, numeric UserId string or username. Info/Config/Settings metadata attributes are also considered. The nearest plot or a display name is never used as ownership evidence.
+
+Inside the uniquely owned plot, a single explicitly named delivery candidate is preferred; a single named spawn or SpawnLocation is a disclosed, unverified delivery fallback. Missing/ambiguous owners, missing/ambiguous points or scan truncation prevent automatic selection. The resolver checks periodically and before return; reports include autoHome.reason and ownership/child metadata. The game-specific owner schema and destination are not yet verified. Collection pauses if Auto Home is ON but unresolved.
+
+Settings -> Auto home toggles automatic selection. Set delivery point here overrides it manually. Re-run automatic resolution on each script session rather than reusing coordinates across servers.
