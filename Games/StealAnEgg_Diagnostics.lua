@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.26
+-- Steal An Egg: structure diagnostics v1.27
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -53,7 +53,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.26", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.27", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -95,7 +95,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.26 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.27 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -129,7 +129,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.26 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.27 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -174,7 +174,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.26 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.27 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -974,6 +974,27 @@ local function setDeliveryPoint(position)
     if clearHomeButton then clearHomeButton.Text="Auto home: OFF" end
     return true
 end
+local lastWalkingRecovery
+local function recoverWalking(tracker,root,humanoid,goal)
+    local now=os.clock()
+    if (root.Position-goal).Magnitude<=3 then return false end
+    if (root.Position-tracker.origin).Magnitude>=0.75 then
+        tracker.origin=root.Position;tracker.checked=now
+        return false
+    end
+    if now-tracker.checked<1.1 or now-tracker.lastJump<2 then return false end
+    if humanoid.Health<=0 or humanoid.FloorMaterial==Enum.Material.Air then return false end
+    if tracker.attempts>=2 then return true end
+    tracker.attempts=tracker.attempts+1
+    tracker.lastJump=now;tracker.checked=now;tracker.origin=root.Position
+    if humanoid.Sit then humanoid.Sit=false end
+    humanoid.Jump=true
+    humanoid:MoveTo(goal)
+    lastWalkingRecovery={at=os.time(),attempt=tracker.attempts,reason="Walking stalled; jump to leave treadmill/obstacle",
+        position={x=root.Position.X,y=root.Position.Y,z=root.Position.Z}}
+    recordGameEvent("walking.unstick.jump",tracker.attempts)
+    return false
+end
 walkReturn=function(root,humanoid,character,destination,requireCarry,target)
     if requireCarry==nil then requireCarry=true end
     local nav={at=os.time(),mode="Humanoid.MoveTo",status="Planning ground return",completed=0}
@@ -1034,6 +1055,7 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target)
         collectEgg.moving=true
         humanoid:MoveTo(goal)
         local refreshed=os.clock()
+        local recovery={origin=root.Position,checked=os.clock(),lastJump=-math.huge,attempts=0}
         -- Waypoints lie on the floor; compare horizontal arrival without lifting the root.
         local function reached()
             local offset=root.Position-goal
@@ -1048,6 +1070,7 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target)
             if requireCarry and not fieldCarryActive() and (root.Position-destination).Magnitude>4 then return carryEnded() end
         if not requireCarry and carryVisible() then return stop("Holding state detected during approach") end
         if target and not target.Parent then return stop("Approach target removed") end
+            if recoverWalking(recovery,root,humanoid,goal) then return stop("Walking stuck after two jump attempts") end
             if os.clock()-started>deadline then return stop("Ground return stalled at waypoint "..i) end
             if os.clock()-refreshed>=1 then humanoid:MoveTo(goal);refreshed=os.clock() end
             nav.status=requireCarry and "Walking home" or "Walking to egg";collectLabel.Text=string.format("%s %d/%d",nav.status,i,#route)
@@ -1194,10 +1217,12 @@ hatchApproach=function(root,humanoid,character)
         local nextGoal=i==#route and goal or point.Position
         hatchWalking=humanoid;humanoid:MoveTo(nextGoal)
         local refreshed=os.clock()
+        local recovery={origin=root.Position,checked=os.clock(),lastJump=-math.huge,attempts=0}
         while true do
             if not active or not hatch.enabled or busy or collectRunning or carryVisible() then return stop("Hatch movement paused") end
             if player.Character~=character or humanoid.Health<=0 or not target.Parent or not target.Enabled then return stop("Ready egg or character changed") end
             if eligible(target,root,humanoid) then stop("Ready to hatch");return true,plot end
+            if recoverWalking(recovery,root,humanoid,nextGoal) then return stop("Hatch approach stuck after two jump attempts") end
             if os.clock()-started>30 then return stop("Hatch approach timed out") end
             local delta=root.Position-nextGoal
             if math.sqrt(delta.X*delta.X+delta.Z*delta.Z)<=2.5 then break end
@@ -1267,7 +1292,7 @@ local function collectSnapshot(includeEvidence)
         phase = collectEgg.phase or "IDLE", deliveriesObserved = collectEgg.deliveriesObserved or 0,
         gameEvents = gameEvents, eventObserver = eventObserver,
         autoHome={enabled=autoHome.enabled,ready=autoHome.ready,reason=autoHome.reason,report=includeEvidence and autoHome.report or nil},
-        lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, deliveryPointSet = deliveryPoint ~= nil,
+        lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, lastWalkingRecovery=lastWalkingRecovery, deliveryPointSet = deliveryPoint ~= nil,
         approachMode=collectEgg.approachMode or "Walk", inputInProgress = collectRunning, carrying = carryVisible(), carryState = carryState(), matchingPrompts = 0,
         scope = "Walk/default or Tween pickup within 250 studs; ground return within 600 studs",
         moving = collectEgg.moving == true, lastMovement = collectEgg.lastMovement,
@@ -1597,7 +1622,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.26", placeId = game.PlaceId,
+        local report = {version = "1.27", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -1769,7 +1794,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.26", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.27", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -1799,7 +1824,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.26 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.27 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
