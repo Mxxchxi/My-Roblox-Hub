@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.28
+-- Steal An Egg: structure diagnostics v1.29
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -53,7 +53,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.28", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.29", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -97,7 +97,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.28 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.29 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -121,7 +121,8 @@ label(placement,"Mark empty slots once with no egg equipped.",0,40,560,24,12,col
 local placeToggle=control(placement,"Auto Place: OFF",0,80,170,36)
 local bindSlot=control(placement,"Mark empty slot",180,80,180,36)
 local clearSlots=control(placement,"Clear slots",370,80,170,36)
-local placeLabel=label(placement,"No slots marked. Slots are used once per session.",0,136,560,200,13,colors.muted)
+local autoMarkButton=control(placement,"Auto mark empty slots",0,130,260,36)
+local placeLabel=label(placement,"Auto Place scans empty slots automatically, or mark them manually.",0,180,560,190,13,colors.muted)
 placeLabel.TextWrapped=true;placeLabel.TextYAlignment=Enum.TextYAlignment.Top
 local restore = control(gui,"YUU HUB",16,120,108,36)
 restore.Visible = false
@@ -138,7 +139,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.28 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.29 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -183,7 +184,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.28 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.29 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -1303,7 +1304,7 @@ local function collectSnapshot(includeEvidence)
         inventoryAdditionsObserved = collectEgg.inventoryAdditionsObserved or 0,
         phase = collectEgg.phase or "IDLE", deliveriesObserved = collectEgg.deliveriesObserved or 0,
         gameEvents = gameEvents, eventObserver = eventObserver,
-        autoPlace={enabled=placeState and placeState.enabled,attempts=placeState and placeState.attempts,observed=placeState and placeState.observed,last=placeState and placeState.last,lastAttempt=placeState and placeState.lastAttempt},
+        autoPlace={enabled=placeState and placeState.enabled,attempts=placeState and placeState.attempts,observed=placeState and placeState.observed,last=placeState and placeState.last,lastAttempt=placeState and placeState.lastAttempt,autoMark=placeState and placeState.autoMark},
         autoHome={enabled=autoHome.enabled,ready=autoHome.ready,reason=autoHome.reason,report=includeEvidence and autoHome.report or nil},
         lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, lastWalkingRecovery=lastWalkingRecovery, deliveryPointSet = deliveryPoint ~= nil,
         approachMode=collectEgg.approachMode or "Walk", inputInProgress = collectRunning, carrying = carryVisible(), carryState = carryState(), matchingPrompts = 0,
@@ -1473,6 +1474,81 @@ local function addPlacementSlot(part,point)
     placeState.slots[#placeState.slots+1]={part=part,point=point,plot=plot,used=false}
     return true,"Empty slot marked: "..#placeState.slots
 end
+local function emptySlotEvidence(obj)
+    local name=string.lower(obj.Name)
+    if not name:find("slot",1,true) and obj:GetAttribute("SlotId")==nil and obj:GetAttribute("SlotIndex")==nil then return nil end
+    local confirmed
+    for _,key in ipairs({"Empty","IsEmpty"}) do
+        local value=obj:GetAttribute(key)
+        if value==false then return nil end
+        if value==true then confirmed=key.."=true" end
+    end
+    for _,key in ipairs({"Occupied","IsOccupied","HasEgg","HasPet"}) do
+        local value=obj:GetAttribute(key)
+        if value==true then return nil end
+        if value==false then confirmed=key.."=false" end
+    end
+    for _,key in ipairs({"EggUID","EggUid","AssetUID","AssetUid"}) do
+        local value=obj:GetAttribute(key)
+        if value~=nil and value~="" then return nil end
+    end
+    return confirmed
+end
+local function autoMarkSlots(insidePlacement)
+    if insidePlacement and placeState.autoScanAt and os.clock()-placeState.autoScanAt<5 then return false,placeState.autoMark and placeState.autoMark.reason or "Waiting for slot scan" end
+    placeState.autoScanAt=os.clock()
+    if collectRunning or hatchRunning or placeRunning and not insidePlacement then return false,"Stop other automation before scanning slots" end
+    local _,plot=resolveAutoHome()
+    if not plot then return false,"Owned plot not confirmed" end
+    local report={plot=plot:GetFullName(),candidates={},confirmed=0,added=0,truncated=false}
+    placeState.autoMark=report
+    local candidates={}
+    local queue,head={plot},1
+    while head<=#queue and head<=2000 do
+        local obj=queue[head];head=head+1
+        local name=string.lower(obj.Name)
+        local clue=name:find("slot",1,true) or name:find("pad",1,true) or name:find("stand",1,true)
+            or obj:GetAttribute("SlotId")~=nil or obj:GetAttribute("SlotIndex")~=nil
+        if clue and #report.candidates<40 then
+            local attrs={}
+            for key,value in pairs(obj:GetAttributes()) do
+                if type(value)=="boolean" or type(value)=="number" or type(value)=="string" then
+                    attrs[key]=type(value)=="string" and value:sub(1,80) or value
+                end
+            end
+            report.candidates[#report.candidates+1]={path=obj:GetFullName(),class=obj.ClassName,attributes=attrs}
+        end
+        local evidence=emptySlotEvidence(obj)
+        if evidence then
+            local part=obj:IsA("BasePart") and obj or nil
+            if not part and obj:IsA("Model") then
+                local parts={}
+                for _,child in ipairs(obj:GetChildren()) do if child:IsA("BasePart") then parts[#parts+1]=child end end
+                if #parts==1 then part=parts[1] end
+            end
+            if part then candidates[#candidates+1]={part=part,evidence=evidence,source=obj} end
+        end
+        for _,child in ipairs(obj:GetChildren()) do
+            if #queue<4000 then queue[#queue+1]=child else report.truncated=true end
+        end
+    end
+    if head<=#queue then report.truncated=true end
+    if report.truncated then report.reason="Slot scan incomplete; automatic marking skipped";return false,report.reason end
+    table.sort(candidates,function(a,b) return a.part:GetFullName()<b.part:GetFullName() end)
+    report.confirmed=#candidates
+    for _,item in ipairs(candidates) do
+        local ok=addPlacementSlot(item.part,item.part.Position)
+        if ok then
+            report.added=report.added+1
+            placeState.slots[#placeState.slots].autoEvidence=item.evidence
+            placeState.slots[#placeState.slots].emptySource=item.source
+        end
+    end
+    report.reason=report.added>0 and ("Auto marked "..report.added.." empty slots")
+        or report.confirmed>0 and "Confirmed slots already marked or slot limit reached"
+        or "No slots with explicit empty state; send Copy short for slot mapping"
+    return report.added>0,report.reason
+end
 local function selectPlacementEgg()
     local candidates={}
     local backpack=player:FindFirstChildOfClass("Backpack")
@@ -1495,9 +1571,10 @@ local function placeStep()
     if not active or not placeState.enabled or busy or collectRunning or hatchRunning or fieldCarryActive() or manualCarry then return end
     local _,plot=resolveAutoHome()
     if not plot then placeState.last="Owned plot not confirmed";return end
+    if #placeState.slots==0 then autoMarkSlots(true) end
     local slot
     for _,item in ipairs(placeState.slots) do if not item.used and item.plot==plot and item.part.Parent then slot=item;break end end
-    if not slot then placeState.last="Mark an empty slot in Placement";return end
+    if not slot then placeState.last=placeState.autoMark and placeState.autoMark.reason or "Mark an empty slot in Placement";return end
     local egg=selectPlacementEgg()
     if not egg then placeState.last="No inventory egg available";return end
     local character=player.Character
@@ -1512,6 +1589,11 @@ local function placeStep()
         if not reached then placeState.last=reason;placeState.enabled=false;return end
     end
     if not active or not placeState.enabled or player.Character~=character or humanoid.Health<=0 or egg.tool.Parent~=character then return end
+    local _,currentPlot=resolveAutoHome()
+    if currentPlot~=slot.plot or not slot.part:IsDescendantOf(currentPlot) then placeState.enabled=false;placeState.last="Slot ownership changed";return end
+    if slot.autoEvidence and (not slot.emptySource.Parent or not emptySlotEvidence(slot.emptySource)) then
+        slot.used=true;placeState.last="Automatic slot is no longer confirmed empty; skipped";return
+    end
     local camera=workspace.CurrentCamera
     if not camera then placeState.last="Camera unavailable";return end
     local oldType,oldFrame=camera.CameraType,camera.CFrame
@@ -1572,6 +1654,10 @@ local function dispatchPlace()
     placeLabel.Text=placeState.last.."\nMarked slots: "..#placeState.slots.." | Attempts: "..placeState.attempts.." | UID removals: "..placeState.observed
 end
 -- AUTO_COLLECT_ENGINE_END
+autoMarkButton.Activated:Connect(function()
+    local _,message=autoMarkSlots(false)
+    placeLabel.Text=message
+end)
 placeToggle.Activated:Connect(function()
     placeState.enabled=not placeState.enabled
     placeToggle.Text=placeState.enabled and "Auto Place: ON" or "Auto Place: OFF"
@@ -1769,7 +1855,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.28", placeId = game.PlaceId,
+        local report = {version = "1.29", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -1941,7 +2027,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.28", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.29", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -1971,7 +2057,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.28 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.29 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
