@@ -1,85 +1,49 @@
-# Steal An Egg — v1.21
+# Steal An Egg — v1.28
 PlaceId: 107778070777162. Uses the existing universal Loader.
 
-## Setup
-1. Run the Loader in Potassium after the map loads.
-2. Stand on your own base's actual egg delivery trigger.
-3. Open Settings and press **Set delivery point here**, while Collect is stopped.
-4. Unequip inventory eggs. Enable Collect.
-5. Use Alt (press and release) or RightShift to hide/show the hub. Hiding keeps automation running; Close stops it.
+## Current workflow
+Collect -> game redeems egg at the base boundary -> new egg UID appears -> Auto Place equips it and clicks a marked empty slot -> wait for Hatch! -> Auto Hatch approaches and holds the prompt.
 
-The delivery point lasts for this script session. It is not guessed from the nearest plot. On a new server or after reloading, set it again.
+Collection, placement and hatching start OFF and run sequentially. Close stops all movement and held input. Alt / RightShift hide or show the UI without stopping enabled automation.
 
-## Collection cycle
-The exact observed CarryAreaEgg / Steal / Egg prompt is tracked. Targets may have a disabled distance-dependent prompt while approaching, but input requires an enabled prompt and a living character inside the smaller of 8 studs and MaxActivationDistance.
+## Auto Home and Collect
+Auto Home identifies a uniquely owned plot from owner metadata or the exact account username on PlotSign. A unique delivery candidate is preferred over a SpawnPoint fallback. A spawn fallback is not a verified delivery trigger; observed game redemption can finish a trip before reaching the spawn. No nearest-plot ownership guess is made.
 
-The nearest directly reachable target within 250 studs on approximately the same level is approached by Tween. Movement speed is clamped to 8–24 studs/s. Solid obstructions are respected. When a direct segment is blocked, PathfindingService computes a waypoint route and Tween follows the segments. Routes are limited to 80 waypoints and 600 total studs, with at most two path computations per approach step. Cancel/death/scan/carry guards remain active; failed pathfinding is reported in lastNavigation.
+Walk is the default outbound mode; optional Tween is available. Loaded return uses Humanoid:MoveTo, without changing WalkSpeed. When walking stalls, up to two normal jump attempts per waypoint are allowed, with two seconds between attempts. Airborne characters are not repeatedly forced to jump.
 
-After input, the script waits up to 3 seconds for carry state or a new inventory egg UID. One unconfirmed input pauses the loop. Names alone are not treated as unique eggs.
+FieldEggCarry.IsCarrying is read from an observed server event for the current character. GUI is fallback evidence. Equipped AssetEgg inventory tools are distinguished from field eggs. Successful boundary redemption is inferred from a recent FieldEggRedeemVerdict plus a newly added egg UID with a matching name; field carry disappearing alone is not success. An uncertain pickup pauses.
 
-When the field carry UI is active, Collect returns to the explicitly configured delivery point within 600 studs. Return stops on cancellation, death, respawn, an obstruction, or field carry disappearing before arrival.
+Manual delivery-point setup remains available in Settings. Automatic selection refreshes each session.
 
-At home the script waits up to 5 seconds for the game to accept the egg. A delivery is inferred only after field carry clears continuously for at least 1 second and a new AssetEgg UID appears compared with the pre-pickup inventory. The state then returns to SEEKING. Carry disappearing without a new UID does not count as delivery.
+## Placement setup
+1. Stop automation and unequip the egg.
+2. Open Placement -> Mark empty slot.
+3. Click an actual EMPTY slot in your own plot.
+4. Repeat for additional empty slots, up to twelve; markers must be at least four studs apart.
+5. Enable Auto Place. Enable Auto Hatch if desired.
 
-No placement Remote is invoked. If the game requires a manual placement prompt instead of a delivery trigger, the loop pauses and reports that the game did not accept the egg. The current dataset does not establish that prompt or Remote argument contract.
+Slots are marked per session and consumed once. The script does not infer that arbitrary floor parts are empty slots. Only clicked parts descended from the confirmed owned plot are accepted. Clear slots resets all markers; use it only after confirming they are empty.
 
-## Carry detection
-- DropHeldEgg.Button with all GUI ancestors visible/enabled: field-carry UI evidence.
-- Equipped Tool with ItemType=AssetEgg: an inventory egg is equipped; collection waits until it is unequipped.
-- Explicit user marker: a manual stop signal, not a verified game result.
+Auto Place selects a Tool with ItemType=AssetEgg and a nonempty UID from character/Backpack, equips it, and uses native ground movement to approach. It temporarily aims the camera at the marked position, checks for occlusion, and sends a mouse click through VirtualInputManager. Camera state and mouse release are restored on failure. Executor support is not guaranteed; errors appear in the placement report.
 
-A reported Raccoon Egg Tool proved the old UI-only detector could miss inventory eggs. These sources are now separated in carryState. Equipped inventory eggs alone do not establish field pickup success.
+A UID disappearing from both character and Backpack after the click, while the same living character remains, is recorded as placement inference. This is not direct verification of a world egg. Unequipping alone does not count. Missing confirmation stops the feature and reserves that slot to avoid repeated clicks.
 
-UID snapshots include the character and Backpack. Moving an existing UID between those containers is not a new acquisition. Missing UIDs or truncated inventories suppress acquisition claims. A new UID observed after input is temporal evidence; it does not by itself prove which game action caused the addition.
+## Auto Hatch
+Only enabled exact Hatch! prompts in the confirmed owned base are targeted automatically. Detached SmartPromptPart prompts are accepted only when uniquely closest to the owned plot center, within 35 studs and at least five studs clearer than the next plot. Auto Hatch walks toward ready eggs within 150 studs, then holds within the smaller of seven studs and MaxActivationDistance. Three attempts per prompt and a four-second cooldown remain.
 
-## Hatch and other systems
-Auto Hatch remains an opt-in nearby Hatch! prompt test, default OFF, max 7 studs, 4-second cooldown and 3 attempts per prompt per toggle. It does not verify the resulting pet.
+Prompt disappearance or disabling after input is logged, but is not reported as verified pet creation. Eggs must first be placed and finish growing. Hatching pauses while collecting, placing, carrying field eggs or holding an inventory egg.
 
-| Feature | Current implementation |
-|---|---|
-| Neon UI, Alt/RightShift, drag/minimize | Implemented; requires client verification |
-| Collect + Tween | Game reports show input and field-carry UI evidence |
-| Configured return + delivery loop | Implemented; simulated tests only |
-| Hatch | Input test; actual hatch result unverified |
-| Collect money | Not implemented; interaction mapping missing |
-| Upgrade base/treadmill | Not implemented; UI/Remote contracts missing |
-| Speed training | Not implemented; interaction mapping missing |
+## Reports and remaining work
+Copy short / Copy all refresh live state. Reports include autoPlace attempts and UID removals, lastAttempt error/inputOK/worldPlacementVerified, carry state, home mapping, movement/jump recovery, inventory deltas, deliveries and bounded game-event history.
 
-Remote names such as AskBaseTierRaise, CoinsGathered and SpeedGained do not establish callable client commands. This version does not send guessed arguments or label unavailable features as working.
-
-## Reports
-Copy short / Copy all / Save file refresh live state without another Scan. Reports include:
-- autoCollect.phase, lastInput, lastMovement.stopReason and endDistance, lastNavigation, nearest.heightDifference
-- deliveryPointSet, lastReturn, deliveriesObserved
-- carryState and fresh carryEvidence
-- inventoryBeforeCount / inventoryAfterCount / inventoryAdded
-- autoHatch live state
-
-If clipboard readback cannot be verified, the full text is selected for Ctrl+C. Clipboard transfer between PCs is separate. Generic report scans are bounded and may omit GUI/world data; live carry and inventory checks do not rely on that scan.
+Automatic money collection was removed because the game already collects money.
+Base/treadmill upgrades and speed training remain unimplemented pending game interaction mapping.
 
 ## Validation
-Run from repository root:
+From repository root:
 ~~~sh
 python -m unittest discover -s tests -v
 luac5.4 -p Games/StealAnEgg_Diagnostics.lua
 lua5.4 tests/test_egg_collect.lua
 ~~~
-51 simulated Auto Collect cases and 4 Loader contract tests pass locally. Tests cover carry state, inventory deltas, cancellation, disabled prompts, range limits, return, obstacles, false delivery prevention and no-result pauses. They are not a Potassium or Roblox server test.
-
-## v1.19 carry-loss event observations
-A real report reached the field-carry UI after pickup, computed a 24-waypoint return, then lost carry state after the first waypoint. This does not prove delivery, a guard action, or an anti-cheat response. Carry loss now has a distinct return-interruption label. Up to 16 bounded records retain observed FieldEggCarry, FieldEggGone, FieldEggRedeemVerdict, OwnerDropped, OwnerShifted and SpeedTollWarning events plus collection/navigation milestones. Listeners only observe OnClientEvent; no Remote command is sent and payload contracts are not guessed. Copy short includes gameEvents and eventObserver. These records diagnose the loss; they do not repair or bypass it.
-
-## v1.19 native walking return
-A real FieldEggCarry payload establishes IsCarrying as a boolean, with Uid and RunBackWakeDelayRequired present on pickup. The following event explicitly set IsCarrying=false while return Tween was lifting the character. This establishes actual game-reported carry loss, but does not prove why the game cleared it. The client now uses the observed IsCarrying field for the current character, falling back to GUI evidence only before a carry event is received. Other payload flags are recorded without guessing their behavior.
-
-The entire loaded return uses Humanoid:MoveTo and optional ground-only pathfinding (AgentCanJump=false). It never tweens the carrying character's CFrame, changes WalkSpeed, or forces a jump. Floor waypoint arrival uses horizontal distance; the final delivery point requires 1.5 studs horizontal proximity. Cancellation stops MoveTo. The outbound approach remains Tween-based. Real Potassium return and delivery remain unverified until tested.
-
-## v1.20 immediate return
-After confirmed pickup, the same collection dispatch calls the native ground-return routine directly instead of waiting for the next one-second scheduler tick. Normal input hold completion and path computation still apply. WalkSpeed is unchanged. lastReturn.confirmationToReturnMs measures elapsed time from the observed carrying=true event to return routine entry; this is not the time to first physical movement. A same-dispatch regression test passes.
-
-## v1.21 automatic home
-Auto home defaults ON. It resolves a unique Workspace.Plots child using explicit owner attributes (OwnerUserId/OwnerId/Owner/UserId/PlayerUserId/Player/Username/OwnerName) or direct Owner/OwnerUserId/OwnerId value objects, matched exactly to the local Player, UserId, numeric UserId string or username. Info/Config/Settings metadata attributes are also considered. The nearest plot or a display name is never used as ownership evidence.
-
-Inside the uniquely owned plot, a single explicitly named delivery candidate is preferred; a single named spawn or SpawnLocation is a disclosed, unverified delivery fallback. Missing/ambiguous owners, missing/ambiguous points or scan truncation prevent automatic selection. The resolver checks periodically and before return; reports include autoHome.reason and ownership/child metadata. The game-specific owner schema and destination are not yet verified. Collection pauses if Auto Home is ON but unresolved.
-
-Settings -> Auto home toggles automatic selection. Set delivery point here overrides it manually. Re-run automatic resolution on each script session rather than reusing coordinates across servers.
+73 simulated cases plus 4 Loader contracts pass locally, covering placement ownership, duplicate markers, egg selection, UID verification, single clicks, input failure and camera restoration as well as collection/hatch regressions. These are not Potassium/Roblox end-to-end tests. Forest collection has user report evidence; placement and automatic hatching still require in-game validation.
