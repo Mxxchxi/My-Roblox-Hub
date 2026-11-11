@@ -8,4 +8,9 @@ return {
         revisionPattern = "Combined Auto V1%.2 R(%d+)",
         uiName = "RollStickman_Combined_V1_2",
     },
+    [107778070777162] = {
+        name = "Steal An Egg (Diagnostics)",
+        script = "Games/StealAnEgg_Diagnostics.lua",
+        uiName = "EggDiagnostics",
+    },
 }
