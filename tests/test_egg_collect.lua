@@ -42,7 +42,9 @@ env.Enum = {RaycastFilterType={Exclude="Exclude"},EasingStyle={Linear="Linear"},
 env.TweenInfo = {new=function(duration) return {duration=duration} end}
 env.collectLabel = {}
 env.math = setmetatable({clamp=function(n,lo,hi) return math.max(lo,math.min(hi,n)) end},{__index=math})
-local obstacle, movement, onWait, mockRoute, walkGoal, tweenCreated
+local obstacle, movement, onWait, mockRoute, walkGoal, tweenCreated, plotFixture
+function env.workspace:FindFirstChild(name) if name == "Plots" then return plotFixture end end
+env.player.UserId=42;env.player.Name="TestPlayer"
 function humanoid:MoveTo(goal) walkGoal=goal end
 function env.workspace:Raycast(origin,delta)
     if type(obstacle) == "function" then return obstacle(origin,delta) and {} or nil end
@@ -70,7 +72,7 @@ env.task.wait = function()
         movement.PlaybackState="Completed"
     end
 end
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil end}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil end,resolveHome=resolveAutoHome}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -93,6 +95,7 @@ local function reset()
     root.Position,root.CFrame = position(0),position(0)
     obstacle,movement,onWait,mockRoute,walkGoal,tweenCreated = false,nil,nil,nil,nil,0
     env.collectRunning=false
+    plotFixture=nil
     funcs.home(nil)
 end
 local tests = 0
@@ -408,5 +411,43 @@ check("pickup starts native return inside the same dispatch", function()
     assert(env.collectEgg.lastReturn and env.collectEgg.deliveriesObserved == 1)
     assert(env.collectEgg.lastReturn.confirmationToReturnMs <= 1)
     assert(env.collectEgg.lastInput.returnDispatchedClock)
+end)
+local function node(name,class,attrs,children)
+    local obj={Name=name,ClassName=class,Position=position(80),children=children or {},attrs=attrs or {}}
+    function obj:GetChildren() return self.children end
+    function obj:GetAttribute(key) return self.attrs[key] end
+    function obj:GetFullName() return "Workspace.Plots."..self.Name end
+    function obj:IsA(kind) return kind==self.ClassName or kind=="BasePart" and (self.ClassName=="Part" or self.ClassName=="SpawnLocation") end
+    return obj
+end
+check("auto home selects owned plot delivery before spawn", function()
+    local delivery=node("DeliveryPoint","Part")
+    local own=node("3","Model",{OwnerUserId=42},{delivery,node("Spawn","SpawnLocation")})
+    local other=node("1","Model",{OwnerUserId=99},{node("DeliveryPoint","Part")})
+    plotFixture=node("Plots","Folder",nil,{other,own})
+    local point,plot,target,report=funcs.resolveHome()
+    assert(point and plot==own and target==delivery and report.kind == "delivery_candidate")
+end)
+check("auto home never chooses an unowned nearest plot", function()
+    plotFixture=node("Plots","Folder",nil,{node("1","Model",{}, {node("Spawn","SpawnLocation")})})
+    local point,_,_,report=funcs.resolveHome()
+    assert(not point and report.reason:find("confirmed local ownership",1,true))
+end)
+check("auto home refuses ambiguous owner matches", function()
+    plotFixture=node("Plots","Folder",nil,{node("1","Model",{OwnerId=42}),node("2","Model",{OwnerId=42})})
+    local point,_,_,report=funcs.resolveHome()
+    assert(not point and report.reason:find("More than one",1,true))
+end)
+check("auto home supports explicit owner value and spawn fallback", function()
+    local owner=node("Owner","ObjectValue");owner.Value=env.player
+    local spawn=node("Spawn","SpawnLocation")
+    plotFixture=node("Plots","Folder",nil,{node("2","Model",{}, {owner,spawn})})
+    local point,_,target,report=funcs.resolveHome()
+    assert(point and target==spawn and report.kind == "spawn_fallback")
+end)
+check("auto home refuses several candidate delivery points", function()
+    plotFixture=node("Plots","Folder",nil,{node("2","Model",{OwnerUserId=42},
+        {node("DeliveryPoint","Part"),node("DeliveryZone","Part")})})
+    local point=funcs.resolveHome();assert(not point)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
