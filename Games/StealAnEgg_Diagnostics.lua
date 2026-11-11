@@ -1,5 +1,5 @@
--- Steal An Egg: structure diagnostics v1.4
--- Collects local object metadata only. Does not invoke remotes or buy items.
+-- Steal An Egg: structure diagnostics v1.5
+-- Auto Hatch test via nearby enabled prompts; other automation awaits argument mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
 local player = Players.LocalPlayer
@@ -41,17 +41,17 @@ pageLabel.Position = UDim2.new(0.60, 0, 0, 50)
 pageLabel.Size = UDim2.new(0.39, 0, 0, 38)
 pageLabel.BackgroundTransparency = 1
 pageLabel.TextColor3 = Color3.new(1, 1, 1)
-pageLabel.Text = "v1.4 | Waiting for scan"
+pageLabel.Text = "v1.5 | Waiting for scan"
 local status = Instance.new("TextLabel", frame)
-status.Position = UDim2.new(0.01, 0, 0, 90)
+status.Position = UDim2.new(0.01, 0, 0, 137)
 status.Size = UDim2.new(0.98, 0, 0, 38)
 status.BackgroundTransparency = 1
 status.TextColor3 = Color3.new(1, 1, 1)
 status.TextWrapped = true
-status.Text = "Diagnostics only. All five automation features await game data."
+status.Text = "Auto Hatch test available (OFF). Other four systems await action mapping."
 local box = Instance.new("TextBox", frame)
-box.Position = UDim2.new(0.01, 0, 0, 135)
-box.Size = UDim2.new(0.98, 0, 1, -145)
+box.Position = UDim2.new(0.01, 0, 0, 182)
+box.Size = UDim2.new(0.98, 0, 1, -192)
 box.MultiLine = true
 box.ClearTextOnFocus = false
 box.TextEditable = true
@@ -66,7 +66,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.4 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.5 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -110,7 +110,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.4 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.5 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -172,9 +172,103 @@ local function copyPayload(text, label)
     warn("[Egg Diagnostics] " .. table.concat(errors, "; "))
 end
 local busy = false
-local lifetime = gui.AncestryChanged:Connect(function(_, parent)
-    if parent == nil then active = false end
+-- AUTO_HATCH_BEGIN
+local hatchButton = button("Auto Hatch: OFF", 0.01, 0.38)
+hatchButton.Position = UDim2.new(0.01, 0, 0, 94)
+local hatchLabel = Instance.new("TextLabel", frame)
+hatchLabel.Position = UDim2.new(0.40, 0, 0, 94)
+hatchLabel.Size = UDim2.new(0.59, 0, 0, 38)
+hatchLabel.BackgroundTransparency = 1
+hatchLabel.TextColor3 = Color3.new(1, 1, 1)
+hatchLabel.TextWrapped = true
+hatchLabel.Text = "Stand within 7 studs of your ready egg."
+local hatch = {enabled = false, attempts = 0, last = "OFF"}
+local promptCache = setmetatable({}, {__mode = "k"})
+local attemptState = setmetatable({}, {__mode = "k"})
+local connections = {}
+local holding
+local function trackPrompt(obj)
+    if obj:IsA("ProximityPrompt") then promptCache[obj] = true end
+end
+local function promptPosition(prompt)
+    local parent = prompt.Parent
+    if parent and parent:IsA("Attachment") then return parent.WorldPosition end
+    if parent and parent:IsA("BasePart") then return parent.Position end
+    if parent and parent:IsA("Model") then return parent:GetPivot().Position end
+end
+local function eligible(prompt, root, humanoid)
+    if not prompt.Parent or not prompt:IsDescendantOf(workspace) then return false end
+    -- Only the exact action observed in the report. Never target Steal/Skip/Mutation.
+    if prompt.ActionText ~= "Hatch!" or not prompt.Enabled then return false end
+    if not root or not humanoid or humanoid.Health <= 0 then return false end
+    if prompt.HoldDuration < 0 or prompt.HoldDuration > 5 then return false end
+    local position = promptPosition(prompt)
+    if not position then return false end
+    return (root.Position - position).Magnitude <= math.min(prompt.MaxActivationDistance, 7)
+end
+local function hatchStep()
+    if not active or not hatch.enabled or busy then return end
+    local character = player.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid then hatch.last = "Waiting for character"; return end
+    for prompt in pairs(promptCache) do
+        if eligible(prompt, root, humanoid) then
+            local state = attemptState[prompt] or {count = 0, time = -math.huge}
+            attemptState[prompt] = state
+            if state.count < 3 and os.clock() - state.time >= 4 then
+                state.count = state.count + 1
+                state.time = os.clock()
+                hatch.attempts = hatch.attempts + 1
+                local ok, err = pcall(function()
+                    holding = prompt
+                    prompt:InputHoldBegin()
+                    task.wait(prompt.HoldDuration + 0.1)
+                    prompt:InputHoldEnd()
+                    holding = nil
+                end)
+                if holding then pcall(function() holding:InputHoldEnd() end); holding = nil end
+                if not active then return end
+                hatch.last = ok and "Hatch input sent; check game result" or ("Input failed: " .. tostring(err):sub(1, 80))
+                hatchLabel.Text = hatch.last .. " | Attempts " .. hatch.attempts
+                return
+            end
+        end
+    end
+    hatch.last = "Waiting for nearby Hatch! (max 3 attempts per prompt per toggle)"
+    hatchLabel.Text = hatch.last
+end
+connections[#connections + 1] = workspace.DescendantAdded:Connect(trackPrompt)
+connections[#connections + 1] = workspace.DescendantRemoving:Connect(function(obj)
+    promptCache[obj] = nil
+    attemptState[obj] = nil
 end)
+connections[#connections + 1] = game:GetService("ProximityPromptService").PromptShown:Connect(trackPrompt)
+hatchButton.Activated:Connect(function()
+    hatch.enabled = not hatch.enabled
+    attemptState = setmetatable({}, {__mode = "k"})
+    hatchButton.Text = hatch.enabled and "Auto Hatch: ON" or "Auto Hatch: OFF"
+    hatch.last = hatch.enabled and "Waiting for nearby Hatch!" or "OFF"
+    hatchLabel.Text = hatch.last
+    if not hatch.enabled and holding then pcall(function() holding:InputHoldEnd() end); holding = nil end
+end)
+local function stopHatch()
+    active = false
+    hatch.enabled = false
+    if holding then pcall(function() holding:InputHoldEnd() end); holding = nil end
+    for _, connection in ipairs(connections) do connection:Disconnect() end
+end
+local lifetime = gui.AncestryChanged:Connect(function(_, parent)
+    if parent == nil then stopHatch() end
+end)
+task.spawn(function()
+    while active do
+        task.wait(1)
+        local ok, err = pcall(hatchStep)
+        if not ok and active then hatchLabel.Text = "Hatch test error: " .. tostring(err):sub(1, 100) end
+    end
+end)
+-- AUTO_HATCH_END
 local function path(obj)
     return obj:GetFullName()
 end
@@ -183,7 +277,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.4", placeId = game.PlaceId,
+        local report = {version = "1.5", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -247,6 +341,7 @@ local function collect()
                         item.visible = visible(obj)
                         add("gui", item)
                     elseif root.label == "Workspace" and obj:IsA("ProximityPrompt") then
+                        trackPrompt(obj)
                         item.action = obj.ActionText
                         item.object = obj.ObjectText
                         item.enabled = obj.Enabled
@@ -351,9 +446,11 @@ local function collect()
             end)
             return items
         end
+        report.autoHatch = {enabled = hatch.enabled, attempts = hatch.attempts, last = hatch.last,
+            result = "Input attempts only; hatch success is not verified"}
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.4", placeId = report.placeId, summaryOnly = true,
-            scanned = report.scanned, truncated = report.truncated, networking = report.networking,
+        local summary = {version = "1.5", placeId = report.placeId, summaryOnly = true,
+            scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
         -- Each category owns its own space: remote spam cannot erase GUI/prompts.
@@ -382,7 +479,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.4 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.5 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
@@ -435,8 +532,9 @@ end)
 selectText.Activated:Connect(selectAll)
 previous.Activated:Connect(function() pageIndex = math.max(1, pageIndex - 1); showPage() end)
 following.Activated:Connect(function() pageIndex = math.max(1, math.min(#pages, pageIndex + 1)); showPage() end)
-close.Activated:Connect(function() active = false; lifetime:Disconnect(); gui:Destroy() end)
+close.Activated:Connect(function() stopHatch(); lifetime:Disconnect(); gui:Destroy() end)
 task.spawn(collect)
+
 
 
 
