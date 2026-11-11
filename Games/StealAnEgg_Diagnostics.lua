@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.13
+-- Steal An Egg: structure diagnostics v1.14
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -52,7 +52,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.13", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.14", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -94,7 +94,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.13 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.14 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -108,7 +108,7 @@ local status = label(frame,"Preparing diagnostics...",176,472,568,52,12,colors.m
 status.TextWrapped = true
 label(settings,"Settings",0,0,400,30,22)
 label(settings,"Interface",0,50,400,24,14,colors.cyan)
-label(settings,"Drag the header to move. RightShift toggles the window.",0,88,568,24,12)
+label(settings,"Drag header to move. Alt or RightShift toggles the window.",0,88,568,24,12)
 label(settings,"Close stops all automation. Minimize keeps it running.",0,118,568,24,12)
 label(settings,"Hatch and Collect start OFF. Other systems are unavailable.",0,148,568,24,12,colors.muted)
 label(settings,"Collect: Tween within 250 studs, speed up to 24 studs/s.",0,190,568,24,12,colors.cyan)
@@ -128,7 +128,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.13 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.14 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -173,7 +173,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.13 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.14 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -251,7 +251,14 @@ local promptCache = setmetatable({}, {__mode = "k"})
 local attemptState = setmetatable({}, {__mode = "k"})
 local connections = {}
 local dragging, dragStart, initialPosition
+local altPending = false
 connections[#connections + 1] = UIS.InputBegan:Connect(function(input, processed)
+    if input.KeyCode == Enum.KeyCode.LeftAlt or input.KeyCode == Enum.KeyCode.RightAlt then
+        altPending = not processed and not UIS:GetFocusedTextBox()
+    else
+        -- Alt+Tab and other combinations must not also hide the hub.
+        altPending = false
+    end
     if input.KeyCode == Enum.KeyCode.RightShift and not processed and not UIS:GetFocusedTextBox() then
         setShown(not frame.Visible)
     end
@@ -271,6 +278,10 @@ connections[#connections + 1] = UIS.InputChanged:Connect(function(input)
     end
 end)
 connections[#connections + 1] = UIS.InputEnded:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.LeftAlt or input.KeyCode == Enum.KeyCode.RightAlt then
+        if altPending and not UIS:GetFocusedTextBox() then setShown(not frame.Visible) end
+        altPending = false
+    end
     if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
 end)
 local camera = workspace.CurrentCamera
@@ -826,7 +837,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.13", placeId = game.PlaceId,
+        local report = {version = "1.14", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -998,7 +1009,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.13", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.14", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -1028,7 +1039,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.13 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.14 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
