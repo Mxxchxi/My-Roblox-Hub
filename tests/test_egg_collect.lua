@@ -76,7 +76,7 @@ end
 env.placeState={enabled=false,slots={},attempts=0,observed=0};env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -689,5 +689,39 @@ check("placement ray keeps opaque collidable parts", function()
     local hit,skipped=funcs.placeRay(position(0),position(100),{})
     assert(hit.Instance==floor and #skipped==0)
     env.workspace.Raycast=original
+end)
+check("transparent PetArea is retained by placement ray", function()
+    local old=env.workspace.Raycast
+    local area=node("PetArea","Part");area.Transparency=1;area.CanCollide=false
+    function env.workspace:Raycast() return {Instance=area,Position=position(80)} end
+    local hit,ignored=funcs.placeRay(position(0),position(100),{})
+    assert(hit.Instance==area and #ignored==0)
+    env.workspace.Raycast=old
+end)
+check("PetArea grid excludes occupied volumes and marks owned candidates", function()
+    local oldRay,oldFind,oldBounds=env.workspace.Raycast,env.workspace.FindFirstChild,env.workspace.GetPartBoundsInBox
+    env.Players={GetPlayers=function() return {env.player} end}
+    env.OverlapParams={new=function() return {} end}
+    env.CFrame={new=function(p) return {Position=p} end}
+    local build=node("Build","Folder")
+    local world={FindFirstChild=function(_,name) if name=="Build" then return build end end}
+    function env.workspace:FindFirstChild(name) if name=="World" then return world end;return oldFind(self,name) end
+    local floor=node("Part","Part");floor.Transparency=0;floor.CanCollide=true
+    function floor:GetFullName() return "Workspace.World.Build.MainMap.Bases.Part" end
+    function env.workspace:Raycast(origin) return {Instance=floor,Position=position(origin.X,0,origin.Z)} end
+    local count=0
+    function env.workspace:GetPartBoundsInBox(cf,size,params)
+        count=count+1
+        assert(#params.FilterDescendantsInstances==3)
+        if count==1 then return {{Transparency=0,CanCollide=true}} end
+        return {}
+    end
+    local area=node("PetArea","Part");area.Size=position(20,1,20)
+    area.CFrame={PointToWorldSpace=function(_,p) return position(80+p.X,p.Y,p.Z) end}
+    plotFixture=node("Plots","Folder",{}, {node("1","Model",{OwnerUserId=42},{node("SpawnPoint","Part"),area})})
+    local ok=funcs.autoMark(false)
+    assert(ok and #env.placeState.slots==3)
+    assert(env.placeState.autoMark.areas[1].blocked==1 and env.placeState.slots[1].spatial)
+    env.workspace.Raycast,env.workspace.FindFirstChild,env.workspace.GetPartBoundsInBox=oldRay,oldFind,oldBounds
 end)
 print(string.format("%d Auto Collect tests passed", tests))
