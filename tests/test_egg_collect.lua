@@ -76,7 +76,7 @@ end
 env.placeState={enabled=false,slots={},attempts=0,observed=0};env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -91,7 +91,7 @@ local function reset()
     env.placeState={enabled=false,slots={},attempts=0,observed=0}
     env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0}
     env.AUTO_PLACE_ENABLED=true
-    env.frame=nil;env.restore=nil
+    env.frame=nil;env.restore=nil;env.holding=nil;env.hatchWalking=nil;env.systemRunning=false;env.placeRunning=false
     funcs.mark(false)
     funcs.resetServer()
     equippedChildren,backpackChildren = {},{}
@@ -857,5 +857,45 @@ check("training approaches own treadmill by native walking", function()
     plotFixture=node("Plots","Folder",{}, {node("1","Model",{OwnerUserId=42},{node("SpawnPoint","Part"),belt})})
     env.training.enabled=true
     funcs.train();assert(root.Position.X==80 and tweenCreated==0)
+end)
+check("manual handoff stops every automation without placement input", function()
+    local camera,original,clicks=setupPlaceClick(false)
+    env.AUTO_PLACE_ENABLED=false
+    env.collectEgg.enabled=true;env.hatch.enabled=true;env.upgrades.mode="Both";env.training.enabled=true
+    local equipped=false
+    function humanoid:EquipTool() equipped=true end
+    function humanoid:UnequipTools() error("Manual handoff must leave tools alone") end
+    local ready,message=funcs.manualPlace()
+    assert(ready and message:find("click an empty slot yourself",1,true))
+    assert(not env.collectEgg.enabled and not env.hatch.enabled and env.upgrades.mode=="Off" and not env.training.enabled)
+    assert(not env.placeState.enabled and not equipped and clicks()==0 and tweenCreated==0 and camera.CFrame==original)
+    env.placeState.last=message;funcs.place();assert(env.placeState.last==message)
+end)
+check("manual handoff waits for active work to finish", function()
+    env.collectRunning=true;env.systemRunning=true
+    local waits=0
+    onWait=function() waits=waits+1;if waits==3 then env.collectRunning=false;env.systemRunning=false end end
+    assert(funcs.manualPlace() and waits==3)
+end)
+check("manual handoff refuses a stalled worker", function()
+    env.placeRunning=true
+    local ready,message=funcs.manualPlace()
+    assert(not ready and message:find("has not stopped",1,true) and clock>=18)
+end)
+check("manual handoff releases pending prompt and stops hatch walking", function()
+    local releases,stops=0,0
+    env.holding={InputHoldEnd=function() releases=releases+1 end}
+    env.hatchWalking={MoveTo=function(_,goal) assert(goal==root.Position);stops=stops+1 end}
+    assert(funcs.manualPlace() and releases==1 and stops==1 and not env.holding and not env.hatchWalking)
+end)
+check("manual handoff rejects changed character and field carry", function()
+    onWait=function() env.player.Character={} end
+    local ready=funcs.manualPlace();env.player.Character=character;assert(not ready)
+    onWait=nil;carrying=true
+    local ok,message=funcs.manualPlace();assert(not ok and message:find("Deliver the field egg",1,true))
+end)
+check("manual handoff cannot overlap slot preparation", function()
+    env.placeState.preparingBind=true
+    local ready=funcs.manualPlace();assert(not ready and env.placeState.preparingBind)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
