@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.3
+-- Steal An Egg: structure diagnostics v1.4
 -- Collects local object metadata only. Does not invoke remotes or buy items.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -41,7 +41,7 @@ pageLabel.Position = UDim2.new(0.60, 0, 0, 50)
 pageLabel.Size = UDim2.new(0.39, 0, 0, 38)
 pageLabel.BackgroundTransparency = 1
 pageLabel.TextColor3 = Color3.new(1, 1, 1)
-pageLabel.Text = "v1.3 | Waiting for scan"
+pageLabel.Text = "v1.4 | Waiting for scan"
 local status = Instance.new("TextLabel", frame)
 status.Position = UDim2.new(0.01, 0, 0, 90)
 status.Size = UDim2.new(0.98, 0, 0, 38)
@@ -66,7 +66,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.3 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.4 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -110,7 +110,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.3 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.4 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -183,7 +183,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.3", placeId = game.PlaceId,
+        local report = {version = "1.4", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -251,6 +251,13 @@ local function collect()
                         item.object = obj.ObjectText
                         item.enabled = obj.Enabled
                         item.distance = obj.MaxActivationDistance
+                        item.holdDuration = obj.HoldDuration
+                        local parent = obj.Parent
+                        local location
+                        if parent and parent:IsA("Attachment") then location = parent.WorldPosition
+                        elseif parent and parent:IsA("BasePart") then location = parent.Position
+                        elseif parent and parent:IsA("Model") then location = parent:GetPivot().Position end
+                        if location then item.position = {x = location.X, y = location.Y, z = location.Z} end
                         add("prompts", item)
                     elseif obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("UnreliableRemoteEvent") then
                         add("remotes", item)
@@ -289,33 +296,93 @@ local function collect()
             report.scanned = report.scanned + info.scanned
             report.truncated = report.truncated or info.truncated
         end
-        reportText = Http:JSONEncode(report)
-        -- Optional smaller export is explicitly labeled, never substituted for Copy all.
-        local summary = {version = "1.3", placeId = report.placeId, summaryOnly = true,
-            scanned = report.scanned, truncated = report.truncated,
-            gui = {}, prompts = {}, remotes = {}, omitted = {gui = 0, prompts = 0, remotes = 0}}
-        local seen = {}
-        for _, kind in ipairs({"gui", "prompts", "remotes"}) do
-            for _, item in ipairs(report[kind]) do
-                local useful = kind == "remotes" or kind == "prompts" and item.enabled
-                    or kind == "gui" and item.visible
-                local key = kind .. Http:JSONEncode(item)
-                if useful and not seen[key] then
-                    seen[key] = true
-                    table.insert(summary[kind], item)
-                    if #Http:JSONEncode(summary) > 10000 then
-                        table.remove(summary[kind])
-                        summary.omitted[kind] = summary.omitted[kind] + 1
+        -- Inventory the observed networking folder directly, bypassing the generic
+        -- result cap. This only reads Instances; no Remote is invoked.
+        local storage = game:GetService("ReplicatedStorage")
+        local packages = storage:FindFirstChild("Packages")
+        local networking = packages and packages:FindFirstChild("Networking")
+        report.networking = {found = networking ~= nil, scanned = 0, truncated = false}
+        if networking then
+            local known = {}
+            for _, item in ipairs(report.remotes) do known[item.path] = true end
+            local queue, head = {networking}, 1
+            while head <= #queue and report.networking.scanned < 4000 and active do
+                local obj = queue[head]
+                head = head + 1
+                report.networking.scanned = report.networking.scanned + 1
+                if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("UnreliableRemoteEvent") then
+                    local fullPath = path(obj)
+                    if not known[fullPath] then
+                        table.insert(report.remotes, {path = fullPath, name = obj.Name, class = obj.ClassName})
+                        known[fullPath] = true
                     end
-                else
-                    summary.omitted[kind] = summary.omitted[kind] + 1
                 end
+                for _, child in ipairs(obj:GetChildren()) do
+                    if #queue < 8000 then table.insert(queue, child)
+                    else report.networking.truncated = true end
+                end
+                if report.networking.scanned % 150 == 0 then task.wait() end
+            end
+            if head <= #queue then report.networking.truncated = true end
+        end
+        -- Rank gameplay systems ahead of unrelated live events and cosmetics.
+        local function rank(item, kind)
+            local name = string.lower((item.path or "") .. " " .. (item.text or "") .. " " .. (item.action or ""))
+            local score = 0
+            for _, word in ipairs({"hatch", "treadmill", "upgrade", "egg", "plot", "base", "cash", "money", "coin", "speed", "penroster"}) do
+                if name:find(word, 1, true) then score = score + 10 end
+            end
+            if name:find("trainevent", 1, true) or name:find("liveevents", 1, true)
+                or name:find("sammy", 1, true) or name:find("lightvsdarkness", 1, true)
+                or name:find("beanstalk", 1, true) or name:find("observability", 1, true)
+                or name:find("adgrowth", 1, true) or name:find("adegg", 1, true)
+                or name:find("cmdr", 1, true) or name:find("ghostboss", 1, true) then score = score - 100 end
+            if kind == "gui" and item.visible then score = score + 3 end
+            if kind == "prompts" and item.enabled then score = score + 5 end
+            return score
+        end
+        local function sorted(kind)
+            local items = {}
+            for _, item in ipairs(report[kind]) do table.insert(items, item) end
+            table.sort(items, function(a, b)
+                local ar, br = rank(a, kind), rank(b, kind)
+                if ar ~= br then return ar > br end
+                return a.path < b.path
+            end)
+            return items
+        end
+        reportText = Http:JSONEncode(report)
+        local summary = {version = "1.4", placeId = report.placeId, summaryOnly = true,
+            scanned = report.scanned, truncated = report.truncated, networking = report.networking,
+            gui = {}, prompts = {}, remotes = {}, candidates = {},
+            omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
+        -- Each category owns its own space: remote spam cannot erase GUI/prompts.
+        local limits = {remotes = 6000, gui = 3000, prompts = 2000, candidates = 3000}
+        for _, kind in ipairs({"remotes", "gui", "prompts", "candidates"}) do
+            local seen, used = {}, 0
+            for _, item in ipairs(sorted(kind)) do
+                local useful = rank(item, kind) > 0 or kind == "prompts" and item.enabled
+                local small = {}
+                for key, value in pairs(item) do small[key] = value end
+                -- Ownership/position retained on candidates; duplicates retain count.
+                local key = Http:JSONEncode(item)
+                if useful and seen[key] then
+                    seen[key].count = (seen[key].count or 1) + 1
+                    summary.omitted[kind] = summary.omitted[kind] + 1
+                elseif useful then
+                    local bytes = #Http:JSONEncode(small) + 24
+                    if used + bytes <= limits[kind] then
+                        table.insert(summary[kind], small)
+                        seen[key] = small
+                        used = used + bytes
+                    else summary.omitted[kind] = summary.omitted[kind] + 1 end
+                else summary.omitted[kind] = summary.omitted[kind] + 1 end
             end
         end
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.3 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.4 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
@@ -370,6 +437,7 @@ previous.Activated:Connect(function() pageIndex = math.max(1, pageIndex - 1); sh
 following.Activated:Connect(function() pageIndex = math.max(1, math.min(#pages, pageIndex + 1)); showPage() end)
 close.Activated:Connect(function() active = false; lifetime:Disconnect(); gui:Destroy() end)
 task.spawn(collect)
+
 
 
 
