@@ -72,7 +72,7 @@ env.task.wait = function()
         movement.PlaybackState="Completed"
     end
 end
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase}", "collect-engine", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -417,6 +417,7 @@ local function node(name,class,attrs,children)
     function obj:GetChildren() return self.children end
     function obj:FindFirstChild(name) for _,v in ipairs(self.children) do if v.Name==name then return v end end end
     function obj:GetAttribute(key) return self.attrs[key] end
+    function obj:GetAttributes() return self.attrs end
     function obj:GetFullName() return "Workspace.Plots."..self.Name end
     function obj:IsA(kind) return kind==self.ClassName or kind=="BasePart" and (self.ClassName=="Part" or self.ClassName=="SpawnLocation") end
     return obj
@@ -489,5 +490,18 @@ check("redeem event without new UID does not claim delivery", function()
         funcs.record("RE/EggWorld/FieldEggRedeemVerdict",{DisplayName="Raccoon Egg"})
     end
     funcs.dispatch();assert(not env.collectEgg.deliveriesObserved and not env.collectEgg.enabled)
+end)
+check("base inspection only reads the uniquely owned plot", function()
+    local tile=node("CashTile","Part",{Cash=100},{node("TouchInterest","TouchTransmitter")})
+    local own=node("3","Model",{OwnerUserId=42},{node("SpawnPoint","Part"),tile})
+    local other=node("1","Model",{OwnerUserId=99},{node("OtherCashTile","Part")})
+    plotFixture=node("Plots","Folder",{}, {own,other})
+    local report=funcs.inspectBase()
+    assert(report.found and #report.touchParts==1)
+    assert(report.touchParts[1].name == "CashTile" and report.touchParts[1].attributes.Cash == 100)
+end)
+check("base inspection refuses unknown ownership", function()
+    plotFixture=node("Plots","Folder",{}, {node("3","Model",{}, {node("CashTile","Part")})})
+    local report=funcs.inspectBase();assert(not report.found and #report.touchParts==0)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
