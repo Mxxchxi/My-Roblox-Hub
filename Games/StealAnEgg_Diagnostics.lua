@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.1
+-- Steal An Egg: structure diagnostics v1.2
 -- Collects local object metadata only. Does not invoke remotes or buy items.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -25,19 +25,31 @@ local function button(label, x, w)
     b.TextSize = 14
     return b
 end
-local scan = button("Scan / Refresh", 0.01, 0.3)
-local copy = button("Copy report", 0.32, 0.3)
-local close = button("Close", 0.89, 0.1)
+local scan = button("Scan", 0.01, 0.18)
+local copy = button("Copy all", 0.20, 0.19)
+local save = button("Save file", 0.40, 0.19)
+local selectText = button("Select page", 0.60, 0.23)
+local close = button("Close", 0.84, 0.15)
+local previous = button("< Page", 0.01, 0.18)
+local following = button("Page >", 0.20, 0.19)
+previous.Position = UDim2.new(0.01, 0, 0, 50)
+following.Position = UDim2.new(0.20, 0, 0, 50)
+local pageLabel = Instance.new("TextLabel", frame)
+pageLabel.Position = UDim2.new(0.40, 0, 0, 50)
+pageLabel.Size = UDim2.new(0.59, 0, 0, 38)
+pageLabel.BackgroundTransparency = 1
+pageLabel.TextColor3 = Color3.new(1, 1, 1)
+pageLabel.Text = "v1.2 | Waiting for scan"
 local status = Instance.new("TextLabel", frame)
-status.Position = UDim2.new(0.01, 0, 0, 48)
+status.Position = UDim2.new(0.01, 0, 0, 90)
 status.Size = UDim2.new(0.98, 0, 0, 38)
 status.BackgroundTransparency = 1
 status.TextColor3 = Color3.new(1, 1, 1)
 status.TextWrapped = true
 status.Text = "Diagnostics only. All five automation features await game data."
 local box = Instance.new("TextBox", frame)
-box.Position = UDim2.new(0.01, 0, 0, 90)
-box.Size = UDim2.new(0.98, 0, 1, -100)
+box.Position = UDim2.new(0.01, 0, 0, 135)
+box.Size = UDim2.new(0.98, 0, 1, -145)
 box.MultiLine = true
 box.ClearTextOnFocus = false
 box.TextEditable = true
@@ -47,8 +59,49 @@ box.TextSize = 12
 box.TextWrapped = false
 box.Text = "Loading..."
 local reportText = ""
-local busy = false
 local active = true
+local pages, pageIndex = {}, 1
+local function showPage()
+    box.Text = pages[pageIndex] or "No report yet"
+    pageLabel.Text = string.format("v1.2 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+end
+local function splitPages(text)
+    pages, pageIndex = {}, 1
+    local start = 1
+    while start <= #text do
+        local finish = math.min(start + 5999, #text)
+        -- Do not split a UTF-8 codepoint between pages.
+        while finish < #text do
+            local byte = text:byte(finish + 1)
+            if byte < 128 or byte >= 192 then break end
+            finish = finish - 1
+        end
+        table.insert(pages, text:sub(start, finish))
+        start = finish + 1
+    end
+    showPage()
+end
+local function capability(name)
+    local direct = ({setclipboard = setclipboard, toclipboard = toclipboard,
+        set_clipboard = set_clipboard, writefile = writefile, readfile = readfile})[name]
+    if type(direct) == "function" then return direct end
+    if type(getgenv) == "function" then
+        local ok, env = pcall(getgenv)
+        if ok and type(env) == "table" and type(env[name]) == "function" then return env[name] end
+    end
+end
+local function selectPage()
+    if #pages == 0 then status.Text = "Wait for scan to finish."; return end
+    showPage()
+    box:CaptureFocus()
+    task.defer(function()
+        if not active then return end
+        box.CursorPosition = #box.Text + 1
+        box.SelectionStart = 1
+    end)
+    status.Text = "Selected this page. Press Ctrl+C; paste into a text file. Append each page in order."
+end
+local busy = false
 local lifetime = gui.AncestryChanged:Connect(function(_, parent)
     if parent == nil then active = false end
 end)
@@ -60,7 +113,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.1", placeId = game.PlaceId,
+        local report = {version = "1.2", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -168,8 +221,8 @@ local function collect()
         end
         reportText = Http:JSONEncode(report)
         if not active then return end
-        box.Text = reportText
-        status.Text = string.format("v1.1 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        splitPages(reportText)
+        status.Text = string.format("v1.2 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
@@ -179,17 +232,49 @@ local function collect()
 end
 scan.Activated:Connect(function() task.spawn(collect) end)
 copy.Activated:Connect(function()
-    if reportText == "" then return end
-    if type(setclipboard) == "function" then
-        local ok = pcall(setclipboard, reportText)
-        status.Text = ok and "Copied. Paste the report into chat." or "Copy failed. Select report text manually."
-    else
-        status.Text = "Clipboard unavailable. Select report text and copy manually."
-        box:CaptureFocus()
-        box.CursorPosition = #box.Text + 1
-        box.SelectionStart = 1
+    if busy then status.Text = "Scanning. Wait for completion."; return end
+    if reportText == "" then status.Text = "No report. Press Scan first."; return end
+    for _, name in ipairs({"setclipboard", "toclipboard", "set_clipboard"}) do
+        local fn = capability(name)
+        if fn then
+            local ok, result = pcall(fn, reportText)
+            if ok and result ~= false then
+                status.Text = "Copy requested via " .. name .. ". Paste to check. If empty, use Save file or Select page."
+                return
+            end
+        end
     end
+    selectPage()
 end)
+save.Activated:Connect(function()
+    if busy then status.Text = "Scanning. Wait for completion."; return end
+    if reportText == "" then status.Text = "No report. Press Scan first."; return end
+    local writer = capability("writefile")
+    if not writer then
+        selectPage()
+        status.Text = "File saving unavailable. Use Select page, then Ctrl+C for each page."
+        return
+    end
+    local filename = "StealAnEgg_Report_" .. tostring(os.time()) .. ".json"
+    local ok, result = pcall(writer, filename, reportText)
+    if not ok or result == false then
+        status.Text = "File save failed. Use Select page and Ctrl+C."
+        return
+    end
+    local reader = capability("readfile")
+    if reader then
+        local readOK, saved = pcall(reader, filename)
+        if not readOK or saved ~= reportText then
+            status.Text = "Could not verify saved file. Use Select page as fallback."
+            return
+        end
+    end
+    status.Text = "Saved " .. filename .. " in your executor workspace. Upload that file to chat."
+end)
+selectText.Activated:Connect(selectPage)
+previous.Activated:Connect(function() pageIndex = math.max(1, pageIndex - 1); showPage() end)
+following.Activated:Connect(function() pageIndex = math.max(1, math.min(#pages, pageIndex + 1)); showPage() end)
 close.Activated:Connect(function() active = false; lifetime:Disconnect(); gui:Destroy() end)
 task.spawn(collect)
+
 
