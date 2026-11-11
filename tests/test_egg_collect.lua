@@ -89,6 +89,7 @@ end
 local function reset()
     env.hatch.enabled=true;env.attemptState={}
     env.placeState={enabled=false,slots={},attempts=0,observed=0}
+    env.frame=nil;env.restore=nil
     funcs.mark(false)
     funcs.resetServer()
     equippedChildren,backpackChildren = {},{}
@@ -617,7 +618,7 @@ local function setupPlaceClick(fail)
             if down then clicks=clicks+1 else equippedChildren={};egg.Parent=nil end
         end}
     end}
-    return camera,originalFrame,function() return clicks end
+    return camera,originalFrame,function() return clicks end,egg
 end
 check("placement clicks once and restores camera after UID removal", function()
     local camera,original,clicks=setupPlaceClick(false)
@@ -738,5 +739,38 @@ check("unavailable input service leaves slot available", function()
     funcs.place()
     assert(clicks()==0 and not env.placeState.slots[1].used and not env.placeState.enabled)
     assert(camera.CFrame==original)
+end)
+check("placement hides Hub during click then restores visibility", function()
+    setupPlaceClick(false)
+    env.frame={Visible=true};env.restore={Visible=false}
+    local previous=env.game.GetService
+    env.game.GetService=function(...)
+        local service=previous(...)
+        local click=service.SendMouseButtonEvent
+        service.SendMouseButtonEvent=function(...)
+            assert(not env.frame.Visible and not env.restore.Visible)
+            return click(...)
+        end
+        return service
+    end
+    funcs.place()
+    assert(env.frame.Visible and not env.restore.Visible)
+    assert(env.placeState.lastAttempt.uiHiddenForClick)
+end)
+check("placement records real Tool Activated signal", function()
+    local _,_,_,egg=setupPlaceClick(false)
+    local callback,disconnected
+    egg.Activated={Connect=function(_,fn) callback=fn;return {Disconnect=function() disconnected=true end} end}
+    local previous=env.game.GetService
+    env.game.GetService=function(...)
+        local service=previous(...);local click=service.SendMouseButtonEvent
+        service.SendMouseButtonEvent=function(self,x,y,button,down,...)
+            if down and callback then callback() end
+            return click(self,x,y,button,down,...)
+        end
+        return service
+    end
+    funcs.place()
+    assert(env.placeState.lastAttempt.activatedCount==1 and disconnected)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
