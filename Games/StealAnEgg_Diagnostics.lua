@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.0
+-- Steal An Egg: structure diagnostics v1.1
 -- Collects local object metadata only. Does not invoke remotes or buy items.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -49,6 +49,9 @@ box.Text = "Loading..."
 local reportText = ""
 local busy = false
 local active = true
+local lifetime = gui.AncestryChanged:Connect(function(_, parent)
+    if parent == nil then active = false end
+end)
 local function path(obj)
     return obj:GetFullName()
 end
@@ -57,51 +60,116 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.0", placeId = game.PlaceId,
-            jobId = game.JobId, scanned = 0, truncated = false,
+        local report = {version = "1.1", placeId = game.PlaceId,
+            scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
-        local roots = {pg, workspace, game:GetService("ReplicatedStorage")}
+        local roots = {
+            {object = pg, label = "PlayerGui", budget = 6000},
+            {object = workspace, label = "Workspace", budget = 12000},
+            {object = game:GetService("ReplicatedStorage"), label = "ReplicatedStorage", budget = 6000},
+        }
         local keywords = {"egg", "hatch", "collect", "cash", "money", "upgrade", "tread", "train", "speed", "base", "plot"}
-        local stack = {}
-        for _, root in ipairs(roots) do table.insert(stack, root) end
-        local function add(bucket, value)
-            if #bucket < 400 then table.insert(bucket, value) else report.truncated = true end
+        local function relevant(name)
+            name = string.lower(name)
+            for _, word in ipairs(keywords) do
+                if string.find(name, word, 1, true) then return true end
+            end
+            return false
         end
-        while #stack > 0 and report.scanned < 12000 and active do
-            local obj = table.remove(stack)
-            report.scanned = report.scanned + 1
-            if not obj:IsDescendantOf(gui) and obj ~= gui then
-                local item = {path = path(obj), class = obj.ClassName}
-                if obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
-                    item.text = string.sub(obj.Text, 1, 180)
-                    item.visible = obj.Visible
-                    add(report.gui, item)
-                elseif obj:IsA("ProximityPrompt") then
-                    item.action = obj.ActionText
-                    item.object = obj.ObjectText
-                    item.enabled = obj.Enabled
-                    item.distance = obj.MaxActivationDistance
-                    add(report.prompts, item)
-                elseif obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("UnreliableRemoteEvent") then
-                    add(report.remotes, item)
+        local function visible(obj)
+            local node = obj
+            while node and node ~= pg do
+                if node:IsA("GuiObject") and not node.Visible then return false end
+                if node:IsA("LayerCollector") and not node.Enabled then return false end
+                node = node.Parent
+            end
+            return node == pg
+        end
+        for _, root in ipairs(roots) do
+            if not active then return end
+            local info = {name = root.label, scanned = 0, dropped = {},
+                topLevel = {}, skipped = {}, truncated = false}
+            table.insert(report.roots, info)
+            local counts = {}
+            local function add(kind, item)
+                counts[kind] = counts[kind] or 0
+                if counts[kind] < 300 then
+                    counts[kind] = counts[kind] + 1
+                    table.insert(report[kind], item)
                 else
-                    local name = string.lower(obj.Name)
-                    for _, word in ipairs(keywords) do
-                        if string.find(name, word, 1, true) then
-                            add(report.candidates, item)
-                            break
+                    info.dropped[kind] = (info.dropped[kind] or 0) + 1
+                    info.truncated = true
+                end
+            end
+            -- FIFO plus separate budgets prevent large asset trees starving live UI/world.
+            local queue, head = {root.object}, 1
+            local deadline = os.clock() + 5
+            while head <= #queue and info.scanned < root.budget and active do
+                if os.clock() > deadline then info.timeLimit = true; break end
+                local obj = queue[head]
+                head = head + 1
+                info.scanned = info.scanned + 1
+                local excluded = obj == gui or obj:IsDescendantOf(gui)
+                local asset = root.label == "ReplicatedStorage"
+                    and obj.Parent == root.object and obj.Name == "Assets"
+                if asset then table.insert(info.skipped, path(obj)) end
+                if not excluded and not asset then
+                    local item = {path = path(obj), class = obj.ClassName}
+                    if obj.Parent == root.object and #info.topLevel < 100 then
+                        table.insert(info.topLevel, item)
+                    end
+                    if root.label == "PlayerGui" and
+                        (obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox")) then
+                        item.text = string.sub(obj.Text, 1, 180)
+                        item.visible = visible(obj)
+                        add("gui", item)
+                    elseif root.label == "Workspace" and obj:IsA("ProximityPrompt") then
+                        item.action = obj.ActionText
+                        item.object = obj.ObjectText
+                        item.enabled = obj.Enabled
+                        item.distance = obj.MaxActivationDistance
+                        add("prompts", item)
+                    elseif obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("UnreliableRemoteEvent") then
+                        add("remotes", item)
+                    elseif (obj:IsA("Model") or obj:IsA("Folder") or obj:IsA("BasePart")
+                        or obj:IsA("ValueBase") or obj:IsA("ModuleScript"))
+                        and relevant(obj.Name) then
+                        if obj:IsA("BasePart") then
+                            local pos = obj.Position
+                            item.position = {x = pos.X, y = pos.Y, z = pos.Z}
                         end
+                        if obj:IsA("ValueBase") then
+                            local value = obj.Value
+                            if type(value) == "number" or type(value) == "boolean" or type(value) == "string" then
+                                item.value = value
+                            end
+                        end
+                        local attrs = {}
+                        for key, value in pairs(obj:GetAttributes()) do
+                            local lower = string.lower(key)
+                            if (lower:find("owner", 1, true) or lower:find("plot", 1, true))
+                                and (type(value) == "number" or type(value) == "string" or type(value) == "boolean") then
+                                attrs[key] = value
+                            end
+                        end
+                        item.ownership = attrs
+                        add("candidates", item)
+                    end
+                    for _, child in ipairs(obj:GetChildren()) do
+                        if #queue < 30000 then table.insert(queue, child)
+                        else info.queueLimit = true; info.truncated = true end
                     end
                 end
-                for _, child in ipairs(obj:GetChildren()) do table.insert(stack, child) end
+                if info.scanned % 150 == 0 then task.wait() end
             end
-            if report.scanned % 150 == 0 then task.wait() end
+            if head <= #queue then info.truncated = true end
+            report.scanned = report.scanned + info.scanned
+            report.truncated = report.truncated or info.truncated
         end
-        if #stack > 0 then report.truncated = true end
         reportText = Http:JSONEncode(report)
         if not active then return end
         box.Text = reportText
-        status.Text = string.format("Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.1 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
@@ -122,5 +190,6 @@ copy.Activated:Connect(function()
         box.SelectionStart = 1
     end
 end)
-close.Activated:Connect(function() active = false; gui:Destroy() end)
+close.Activated:Connect(function() active = false; lifetime:Disconnect(); gui:Destroy() end)
 task.spawn(collect)
+
