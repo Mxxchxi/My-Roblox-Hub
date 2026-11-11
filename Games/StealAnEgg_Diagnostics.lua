@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.21
+-- Steal An Egg: structure diagnostics v1.22
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -53,7 +53,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.21", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.22", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -95,7 +95,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.21 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.22 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -129,7 +129,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.21 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.22 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -174,7 +174,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.21 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.22 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -802,12 +802,38 @@ local function pauseCollect(reason)
     if collectButton then collectButton.Text = "Collect: PAUSED"; collectButton.BackgroundColor3 = colors.panel end
 end
 local ownerKeys={"OwnerUserId","OwnerId","Owner","UserId","PlayerUserId","Player","Username","OwnerName"}
+local function signEvidence(plot)
+    local result={texts={},attributes={},usernameMatch=false,truncated=false}
+    local sign=plot:FindFirstChild("PlotSign")
+    if not sign then return result end
+    local queue,head={sign},1
+    local username=string.lower(player.Name):gsub("([^%w])","%%%1")
+    while head<=#queue and head<=200 do
+        local obj=queue[head];head=head+1
+        for _,key in ipairs(ownerKeys) do
+            local value=obj:GetAttribute(key)
+            if type(value)=="string" or type(value)=="number" then
+                result.attributes[key]=value
+                if value==player.UserId or value==tostring(player.UserId) or value==player.Name then result.usernameMatch=true end
+            end
+        end
+        if obj:IsA("TextLabel") or obj:IsA("TextButton") then
+            local text=obj.Text:gsub("<[^>]*>","")
+            if #result.texts<12 then result.texts[#result.texts+1]=text:sub(1,180) end
+            if (" "..string.lower(text).." "):find("[^%w_]"..username.."[^%w_]") then result.usernameMatch=true end
+        end
+        for _,child in ipairs(obj:GetChildren()) do if #queue<400 then queue[#queue+1]=child else result.truncated=true end end
+    end
+    if head<=#queue then result.truncated=true end
+    return result
+end
 local function ownerMatch(plot)
     local function matches(value)
         return value==player or type(value)=="number" and value==player.UserId
             or type(value)=="string" and (value==tostring(player.UserId) or value==player.Name)
     end
     local nodes={plot}
+    local explicitOwner=false
     for _,child in ipairs(plot:GetChildren()) do
         if child.Name=="Owner" or child.Name=="OwnerUserId" or child.Name=="OwnerId" then
             if child:IsA("ObjectValue") or child:IsA("StringValue") or child:IsA("IntValue") or child:IsA("NumberValue") then
@@ -818,8 +844,14 @@ local function ownerMatch(plot)
     end
     for _,node in ipairs(nodes) do
         for _,key in ipairs(ownerKeys) do
-            if matches(node:GetAttribute(key)) then return true,"attribute:"..key end
+            local value=node:GetAttribute(key)
+            if matches(value) then return true,"attribute:"..key end
+            if value~=nil and value~="" and value~=0 and value~=false then explicitOwner=true end
         end
+    end
+    if not explicitOwner then
+        local sign=signEvidence(plot)
+        if sign.usernameMatch and not sign.truncated then return true,"PlotSign exact username" end
     end
     return false
 end
@@ -831,7 +863,7 @@ local function resolveAutoHome()
     for i,plot in ipairs(plots:GetChildren()) do
         if i>16 then report.truncated=true;break end
         local match,evidence=ownerMatch(plot)
-        local info={path=plot:GetFullName(),ownerMatch=match,children={},ownership={}}
+        local info={path=plot:GetFullName(),ownerMatch=match,children={},ownership={},sign=signEvidence(plot)}
         for _,key in ipairs(ownerKeys) do
             local value=plot:GetAttribute(key)
             if type(value)=="string" or type(value)=="number" or type(value)=="boolean" then info.ownership[key]=value end
@@ -1341,7 +1373,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.21", placeId = game.PlaceId,
+        local report = {version = "1.22", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -1513,7 +1545,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.21", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.22", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -1543,7 +1575,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.21 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.22 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
