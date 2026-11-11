@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.12
+-- Steal An Egg: structure diagnostics v1.13
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -52,7 +52,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.12", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.13", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -94,7 +94,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.12 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.13 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -128,7 +128,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.12 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.13 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -173,7 +173,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.12 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.13 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -412,9 +412,7 @@ local function cancelCollectTween(reason)
     end
 end
 local manualCarry = false
-local function carryVisible()
-    -- Manual marker is explicit user feedback, never claimed as server verification.
-    if manualCarry then return true end
+local function dropCarryVisible()
     -- This UI was observed in the report. Inspect all ancestors, not just the label.
     local node = pg:FindFirstChild("DropHeldEgg")
     node = node and node:FindFirstChild("Button")
@@ -425,6 +423,29 @@ local function carryVisible()
         node = node.Parent
     end
     return node == pg
+end
+local function carryState()
+    local state = {manualMarker = manualCarry, fieldCarryUI = dropCarryVisible(), equippedEgg = false,
+        source = "none", pickupVerified = false}
+    local character = player.Character
+    if character then
+        for _, child in ipairs(character:GetChildren()) do
+            -- Observed ItemType, not a name match. Backpack eggs do not block collection.
+            if child:IsA("Tool") and child:GetAttribute("ItemType") == "AssetEgg" then
+                state.equippedEgg = true
+                state.tool = {name = child.Name, uid = child:GetAttribute("UID")}
+                break
+            end
+        end
+    end
+    state.blocked = state.manualMarker or state.fieldCarryUI or state.equippedEgg
+    if state.fieldCarryUI then state.source = "field_carry_ui"
+    elseif state.equippedEgg then state.source = "equipped_asset_egg"
+    elseif state.manualMarker then state.source = "user_marker" end
+    return state
+end
+local function carryVisible()
+    return carryState().blocked
 end
 local function collectCandidate(prompt, root, humanoid)
     if not prompt.Parent or not prompt:IsDescendantOf(workspace) then return nil, "Removed" end
@@ -527,7 +548,7 @@ local function approachEgg(root, humanoid)
 end
 local function carryEvidence()
     -- Read fresh state on export, independently of the capped generic GUI scan.
-    local evidence = {manualMarker = manualCarry, detector = "DropHeldEgg.Button visibility only; known false negative",
+    local evidence = {manualMarker = manualCarry, detector = "Field carry UI + equipped Tool ItemType=AssetEgg + explicit marker",
         characterChildren = {}, characterLinks = {}, truncated = false}
     local function attributes(obj)
         local values = {}
@@ -583,7 +604,7 @@ local function collectSnapshot(includeEvidence)
     local snapshot = {enabled = collectEgg.enabled, attempts = collectEgg.attempts,
         last = collectEgg.last, lastInput = collectEgg.lastInput, scanning = busy,
         unconfirmed = collectEgg.unconfirmed or 0, pausedReason = collectEgg.pausedReason,
-        inputInProgress = collectRunning, carrying = carryVisible(), matchingPrompts = 0,
+        inputInProgress = collectRunning, carrying = carryVisible(), carryState = carryState(), matchingPrompts = 0,
         scope = "Tween to CarryAreaEgg / Steal within 250 studs; input requires enabled prompt; manual delivery",
         moving = collectEgg.moving == true, lastMovement = collectEgg.lastMovement,
         result = "Input attempts only; pickup success is not verified"}
@@ -601,7 +622,7 @@ local function collectSnapshot(includeEvidence)
                 nearestDistance = distance
                 local _, reason = collectCandidate(prompt, root, humanoid)
                 local state = collectAttempts[prompt]
-                if snapshot.carrying then reason = "Already carrying; take the egg home manually"
+                if snapshot.carrying then reason = "Egg held/equipped; collection paused"
                 elseif busy then reason = "Scan in progress"
                 elseif state and state.count >= 3 then reason = "Attempt cap reached; toggle OFF/ON to reset"
                 elseif state and os.clock() - state.time < 4 then reason = "Cooldown" end
@@ -618,7 +639,7 @@ local function collectSnapshot(includeEvidence)
 end
 local function collectStep()
     if not active or not collectEgg.enabled or busy or hatchRunning then return end
-    if carryVisible() then collectEgg.last = "Already carrying; take the egg home manually"; return end
+    if carryVisible() then collectEgg.last = "Egg held/equipped; collection paused"; return end
     local character = player.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -667,9 +688,12 @@ local function collectStep()
             task.wait(0.1)
         end
     end
-    record.carryVisibleAfter = carryVisible()
+    record.carryStateAfter = carryState()
+    record.carryVisibleAfter = record.carryStateAfter.blocked
     if record.carryVisibleAfter then
-        record.outcome = "Carry UI detected; pickup inferred from UI"
+        record.outcome = record.carryStateAfter.fieldCarryUI and "Field carry UI detected; pickup inferred from UI"
+            or record.carryStateAfter.equippedEgg and "Egg tool equipped; field pickup not verified"
+            or "User marked carrying; game pickup not verified"
         collectEgg.unconfirmed = 0
     elseif not active or not collectEgg.enabled then
         record.outcome = "Cancelled before pickup confirmation"
@@ -778,7 +802,7 @@ task.spawn(function()
             local ok, snapshot = pcall(collectSnapshot)
             if ok then
                 local n = snapshot.nearest
-                collectLabel.Text = "Collect: " .. (snapshot.carrying and "Carrying; take the egg home manually"
+                collectLabel.Text = "Collect: " .. (snapshot.carrying and "Egg held/equipped; collection paused"
                     or n and (n.reason .. (n.distance and string.format(" | %.1f/%.1f studs",n.distance,n.allowedDistance) or ""))
                     or snapshot.blocked or collectEgg.last) .. " | Attempts " .. collectEgg.attempts
             end
@@ -802,7 +826,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.12", placeId = game.PlaceId,
+        local report = {version = "1.13", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -974,7 +998,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.12", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.13", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -1004,7 +1028,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.12 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.13 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
