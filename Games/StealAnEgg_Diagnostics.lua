@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.2
+-- Steal An Egg: structure diagnostics v1.3
 -- Collects local object metadata only. Does not invoke remotes or buy items.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -28,18 +28,20 @@ end
 local scan = button("Scan", 0.01, 0.18)
 local copy = button("Copy all", 0.20, 0.19)
 local save = button("Save file", 0.40, 0.19)
-local selectText = button("Select page", 0.60, 0.23)
+local selectText = button("Select ALL", 0.60, 0.23)
 local close = button("Close", 0.84, 0.15)
 local previous = button("< Page", 0.01, 0.18)
 local following = button("Page >", 0.20, 0.19)
 previous.Position = UDim2.new(0.01, 0, 0, 50)
 following.Position = UDim2.new(0.20, 0, 0, 50)
+local shortCopy = button("Copy short", 0.40, 0.19)
+shortCopy.Position = UDim2.new(0.40, 0, 0, 50)
 local pageLabel = Instance.new("TextLabel", frame)
-pageLabel.Position = UDim2.new(0.40, 0, 0, 50)
-pageLabel.Size = UDim2.new(0.59, 0, 0, 38)
+pageLabel.Position = UDim2.new(0.60, 0, 0, 50)
+pageLabel.Size = UDim2.new(0.39, 0, 0, 38)
 pageLabel.BackgroundTransparency = 1
 pageLabel.TextColor3 = Color3.new(1, 1, 1)
-pageLabel.Text = "v1.2 | Waiting for scan"
+pageLabel.Text = "v1.3 | Waiting for scan"
 local status = Instance.new("TextLabel", frame)
 status.Position = UDim2.new(0.01, 0, 0, 90)
 status.Size = UDim2.new(0.98, 0, 0, 38)
@@ -59,11 +61,12 @@ box.TextSize = 12
 box.TextWrapped = false
 box.Text = "Loading..."
 local reportText = ""
+local shortReportText = ""
 local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.2 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.3 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -83,23 +86,90 @@ local function splitPages(text)
 end
 local function capability(name)
     local direct = ({setclipboard = setclipboard, toclipboard = toclipboard,
-        set_clipboard = set_clipboard, writefile = writefile, readfile = readfile})[name]
+        set_clipboard = set_clipboard, getclipboard = getclipboard,
+        readclipboard = readclipboard, writefile = writefile, readfile = readfile})[name]
     if type(direct) == "function" then return direct end
-    if type(getgenv) == "function" then
-        local ok, env = pcall(getgenv)
-        if ok and type(env) == "table" and type(env[name]) == "function" then return env[name] end
+    for _, getter in pairs({getgenv = getgenv, getrenv = getrenv}) do
+        if type(getter) == "function" then
+            local ok, env = pcall(getter)
+            if ok and type(env) == "table" and type(env[name]) == "function" then return env[name] end
+        end
     end
+    if type(_G) == "table" and type(_G[name]) == "function" then return _G[name] end
 end
-local function selectPage()
-    if #pages == 0 then status.Text = "Wait for scan to finish."; return end
-    showPage()
+local function nativeSelect(text)
+    -- Full report, never just the currently displayed page.
     box:CaptureFocus()
+    box.Text = text
+    if box.Text ~= text then
+        status.Text = "TextBox could not hold full report. Try Copy short."
+        return false
+    end
     task.defer(function()
         if not active then return end
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    status.Text = "Selected this page. Press Ctrl+C; paste into a text file. Append each page in order."
+    pageLabel.Text = "v1.3 | ALL selected | " .. #text .. " bytes"
+    return true
+end
+local function selectAll()
+    if reportText == "" then status.Text = "Wait for scan to finish."; return end
+    if nativeSelect(reportText) then
+        status.Text = "ALL selected. Press Ctrl+C on TEST PC, then paste. Remote clipboard sync must be enabled."
+    end
+end
+local function copyPayload(text, label)
+    local errors = {}
+    local reader = capability("getclipboard") or capability("readclipboard")
+    local unverified = false
+    local writers = {}
+    local seen = {}
+    local function add(name, fn)
+        if type(fn) == "function" and not seen[fn] then
+            seen[fn] = true
+            table.insert(writers, {name = name, fn = fn})
+        end
+    end
+    for _, name in ipairs({"setclipboard", "toclipboard", "set_clipboard"}) do add(name, capability(name)) end
+    if type(clipboard) == "table" then
+        add("clipboard.set", clipboard.set)
+        add("clipboard.setclipboard", clipboard.setclipboard)
+    end
+    if type(syn) == "table" then add("syn.write_clipboard", syn.write_clipboard) end
+    for _, writer in ipairs(writers) do
+        local ok, result = pcall(writer.fn, text)
+        if ok and result ~= false then
+            local readable, matched = false, false
+            if reader then
+                for attempt = 1, 3 do
+                    task.wait(0.08)
+                    if not active then return end
+                    local readOK, value = pcall(reader)
+                    if readOK and type(value) == "string" then
+                        readable = true
+                        if value == text then matched = true; break end
+                    end
+                end
+            end
+            if matched then
+                status.Text = label .. " VERIFIED on TEST PC (" .. #text .. " bytes). Remote clipboard sync is separate."
+                return
+            end
+            if not readable then unverified = true end
+            table.insert(errors, writer.name .. (readable and ": readback mismatch" or ": cannot verify"))
+        else
+            table.insert(errors, writer.name .. ": failed")
+        end
+    end
+    -- Even a no-op executor API now leaves a real, full selection for native Ctrl+C.
+    if not active then return end
+    local selected = nativeSelect(text)
+    if selected then
+        local reason = #writers == 0 and "No clipboard API" or (unverified and "Copy API unverified" or "Clipboard write failed")
+        status.Text = reason .. ". ALL selected: press Ctrl+C on TEST PC. " .. label .. " (" .. #text .. " bytes)."
+    end
+    warn("[Egg Diagnostics] " .. table.concat(errors, "; "))
 end
 local busy = false
 local lifetime = gui.AncestryChanged:Connect(function(_, parent)
@@ -113,7 +183,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.2", placeId = game.PlaceId,
+        local report = {version = "1.3", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -220,9 +290,32 @@ local function collect()
             report.truncated = report.truncated or info.truncated
         end
         reportText = Http:JSONEncode(report)
+        -- Optional smaller export is explicitly labeled, never substituted for Copy all.
+        local summary = {version = "1.3", placeId = report.placeId, summaryOnly = true,
+            scanned = report.scanned, truncated = report.truncated,
+            gui = {}, prompts = {}, remotes = {}, omitted = {gui = 0, prompts = 0, remotes = 0}}
+        local seen = {}
+        for _, kind in ipairs({"gui", "prompts", "remotes"}) do
+            for _, item in ipairs(report[kind]) do
+                local useful = kind == "remotes" or kind == "prompts" and item.enabled
+                    or kind == "gui" and item.visible
+                local key = kind .. Http:JSONEncode(item)
+                if useful and not seen[key] then
+                    seen[key] = true
+                    table.insert(summary[kind], item)
+                    if #Http:JSONEncode(summary) > 10000 then
+                        table.remove(summary[kind])
+                        summary.omitted[kind] = summary.omitted[kind] + 1
+                    end
+                else
+                    summary.omitted[kind] = summary.omitted[kind] + 1
+                end
+            end
+        end
+        shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.2 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.3 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
@@ -231,50 +324,52 @@ local function collect()
     end
 end
 scan.Activated:Connect(function() task.spawn(collect) end)
-copy.Activated:Connect(function()
-    if busy then status.Text = "Scanning. Wait for completion."; return end
+local copying = false
+local function exportCopy(short)
+    if busy or copying then status.Text = "Please wait for scan/copy to finish."; return end
     if reportText == "" then status.Text = "No report. Press Scan first."; return end
-    for _, name in ipairs({"setclipboard", "toclipboard", "set_clipboard"}) do
-        local fn = capability(name)
-        if fn then
-            local ok, result = pcall(fn, reportText)
-            if ok and result ~= false then
-                status.Text = "Copy requested via " .. name .. ". Paste to check. If empty, use Save file or Select page."
-                return
-            end
+    copying = true
+    status.Text = "Copying on TEST PC..."
+    task.spawn(function()
+        local ok, err = pcall(copyPayload, short and shortReportText or reportText, short and "SHORT report" or "FULL report")
+        copying = false
+        if not ok and active then
+            status.Text = "Copy error: " .. tostring(err):sub(1, 120) .. ". Try Select ALL, then Ctrl+C."
         end
-    end
-    selectPage()
-end)
+    end)
+end
+copy.Activated:Connect(function() exportCopy(false) end)
+shortCopy.Activated:Connect(function() exportCopy(true) end)
 save.Activated:Connect(function()
     if busy then status.Text = "Scanning. Wait for completion."; return end
     if reportText == "" then status.Text = "No report. Press Scan first."; return end
     local writer = capability("writefile")
     if not writer then
-        selectPage()
-        status.Text = "File saving unavailable. Use Select page, then Ctrl+C for each page."
+        selectAll()
+        status.Text = "File saving unavailable. Use Select ALL, then Ctrl+C for the full report."
         return
     end
     local filename = "StealAnEgg_Report_" .. tostring(os.time()) .. ".json"
     local ok, result = pcall(writer, filename, reportText)
     if not ok or result == false then
-        status.Text = "File save failed. Use Select page and Ctrl+C."
+        status.Text = "File save failed. Use Select ALL and Ctrl+C."
         return
     end
     local reader = capability("readfile")
     if reader then
         local readOK, saved = pcall(reader, filename)
         if not readOK or saved ~= reportText then
-            status.Text = "Could not verify saved file. Use Select page as fallback."
+            status.Text = "Could not verify saved file. Use Select ALL as fallback."
             return
         end
     end
     status.Text = "Saved " .. filename .. " in your executor workspace. Upload that file to chat."
 end)
-selectText.Activated:Connect(selectPage)
+selectText.Activated:Connect(selectAll)
 previous.Activated:Connect(function() pageIndex = math.max(1, pageIndex - 1); showPage() end)
 following.Activated:Connect(function() pageIndex = math.max(1, math.min(#pages, pageIndex + 1)); showPage() end)
 close.Activated:Connect(function() active = false; lifetime:Disconnect(); gui:Destroy() end)
 task.spawn(collect)
+
 
 
