@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.11
+-- Steal An Egg: structure diagnostics v1.12
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -52,7 +52,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.11", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.12", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -94,7 +94,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.11 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.12 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -128,7 +128,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.11 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.12 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -173,7 +173,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.11 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.12 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -240,6 +240,8 @@ local hatchButton = control(rows[1], "Auto Hatch: OFF", 410,8,146,34)
 local testHatch = control(automation,"Test Hatch once",0,358,150,24)
 local hatchLabel = label(automation,"Stand within 7 studs of your ready egg.",160,354,408,28,11,colors.muted)
 hatchLabel.TextWrapped = true
+local carryMarker = control(settings,"Mark: I am carrying an egg",0,268,270,34)
+label(settings,"Clear this marker after delivering or dropping the egg.",0,310,568,24,12,colors.muted)
 local collectButton = control(rows[2], "Collect: OFF", 410,8,146,34)
 local collectEgg = {enabled = false, attempts = 0, last = "OFF"}
 local collectRunning = false
@@ -409,7 +411,10 @@ local function cancelCollectTween(reason)
         if collectEgg.lastMovement then collectEgg.lastMovement.status = reason or "Cancelled" end
     end
 end
+local manualCarry = false
 local function carryVisible()
+    -- Manual marker is explicit user feedback, never claimed as server verification.
+    if manualCarry then return true end
     -- This UI was observed in the report. Inspect all ancestors, not just the label.
     local node = pg:FindFirstChild("DropHeldEgg")
     node = node and node:FindFirstChild("Button")
@@ -520,7 +525,61 @@ local function approachEgg(root, humanoid)
     collectEgg.last = "No reachable egg within 250 studs on this level"
     return false
 end
-local function collectSnapshot()
+local function carryEvidence()
+    -- Read fresh state on export, independently of the capped generic GUI scan.
+    local evidence = {manualMarker = manualCarry, detector = "DropHeldEgg.Button visibility only; known false negative",
+        characterChildren = {}, characterLinks = {}, truncated = false}
+    local function attributes(obj)
+        local values = {}
+        if not obj then return values end
+        local ok, attrs = pcall(function() return obj:GetAttributes() end)
+        if ok then
+            local count = 0
+            for key,value in pairs(attrs) do
+                if count >= 40 then evidence.truncated = true; break end
+                if type(value) == "string" or type(value) == "boolean" or type(value) == "number" then
+                    values[key] = type(value) == "string" and value:sub(1,160) or value
+                    count = count + 1
+                end
+            end
+        end
+        return values
+    end
+    local character = player.Character
+    evidence.playerAttributes, evidence.characterAttributes = attributes(player), attributes(character)
+    evidence.dropGui = {found = false, ancestry = {}}
+    local drop = pg:FindFirstChild("DropHeldEgg")
+    local button = drop and drop:FindFirstChild("Button")
+    evidence.dropGui.found = drop ~= nil
+    evidence.dropGui.buttonFound = button ~= nil
+    local node = button or drop
+    while node and node ~= pg do
+        local item = {name = node.Name, class = node.ClassName}
+        if node:IsA("GuiObject") then item.visible = node.Visible end
+        if node:IsA("LayerCollector") then item.enabled = node.Enabled end
+        evidence.dropGui.ancestry[#evidence.dropGui.ancestry+1] = item
+        node = node.Parent
+    end
+    if character then
+        for i, child in ipairs(character:GetChildren()) do
+            if i > 50 then evidence.truncated = true; break end
+            evidence.characterChildren[#evidence.characterChildren+1] = {
+                name = child.Name, class = child.ClassName, attributes = attributes(child)}
+        end
+        for i, obj in ipairs(character:GetDescendants()) do
+            if i > 400 then evidence.truncated = true; break end
+            if obj:IsA("WeldConstraint") or obj:IsA("JointInstance") then
+                if #evidence.characterLinks >= 40 then evidence.truncated = true; break end
+                local item = {name = obj.Name, class = obj.ClassName}
+                if obj.Part0 then item.part0 = obj.Part0:GetFullName() end
+                if obj.Part1 then item.part1 = obj.Part1:GetFullName() end
+                evidence.characterLinks[#evidence.characterLinks+1] = item
+            end
+        end
+    end
+    return evidence
+end
+local function collectSnapshot(includeEvidence)
     local snapshot = {enabled = collectEgg.enabled, attempts = collectEgg.attempts,
         last = collectEgg.last, lastInput = collectEgg.lastInput, scanning = busy,
         unconfirmed = collectEgg.unconfirmed or 0, pausedReason = collectEgg.pausedReason,
@@ -553,6 +612,7 @@ local function collectSnapshot()
             end
         end
     end
+    if includeEvidence then snapshot.carryEvidence = carryEvidence() end
     if snapshot.matchingPrompts == 0 then snapshot.blocked = "No CarryAreaEgg / Steal prompt in cache" end
     return snapshot
 end
@@ -616,9 +676,9 @@ local function collectStep()
     else
         record.outcome = "No carry UI detected after input"
         collectEgg.unconfirmed = (collectEgg.unconfirmed or 0) + 1
-        if collectEgg.unconfirmed >= 3 then
+        if collectEgg.unconfirmed >= 1 then
             collectEgg.enabled = false
-            collectEgg.pausedReason = "Three inputs without carry UI confirmation; paused for inspection"
+            collectEgg.pausedReason = "Pickup state uncertain; paused after one input to avoid moving while carrying"
             if collectButton then
                 collectButton.Text = "Collect: PAUSED"
                 collectButton.BackgroundColor3 = colors.panel
@@ -635,7 +695,26 @@ local function dispatchCollect()
     if not ok then cancelCollectTween("Movement error") end
     if not ok and active then collectEgg.last = "Collect error: " .. tostring(err):sub(1,100) end
 end
+local function setManualCarry(value)
+    manualCarry = value == true
+    if manualCarry then
+        cancelCollectTween("User marked carrying")
+        collectEgg.enabled = false
+        collectEgg.last = "User marked carrying; Collect OFF"
+    end
+end
 -- AUTO_COLLECT_ENGINE_END
+carryMarker.Activated:Connect(function()
+    setManualCarry(not manualCarry)
+    carryMarker.Text = manualCarry and "Carrying marker ON • click to clear" or "Mark: I am carrying an egg"
+    collectButton.Text = collectEgg.enabled and "Collect: ON" or "Collect: OFF"
+    collectLabel.Text = manualCarry and "Carrying (marked by user); deliver manually" or "Carrying marker cleared"
+end)
+connections[#connections+1] = player.CharacterAdded:Connect(function()
+    cancelCollectTween("Character changed")
+    setManualCarry(false)
+    carryMarker.Text = "Mark: I am carrying an egg"
+end)
 collectButton.Activated:Connect(function()
     collectEgg.enabled = not collectEgg.enabled
     collectAttempts = setmetatable({}, {__mode = "k"})
@@ -670,7 +749,7 @@ local function refreshExportState()
     -- Replace the old scan-time snapshot at copy/save time, without rescanning.
     local full = Http:JSONDecode(reportText)
     full.autoHatch = snapshot
-    full.autoCollect = collectSnapshot()
+    full.autoCollect = collectSnapshot(true)
     reportText = Http:JSONEncode(full)
     local short = Http:JSONDecode(shortReportText)
     short.autoHatch = snapshot
@@ -723,7 +802,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.11", placeId = game.PlaceId,
+        local report = {version = "1.12", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -893,9 +972,9 @@ local function collect()
             return items
         end
         report.autoHatch = liveHatchSnapshot()
-        report.autoCollect = collectSnapshot()
+        report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.11", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.12", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -925,7 +1004,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.11 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.12 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
