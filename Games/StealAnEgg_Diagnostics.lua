@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.32
+-- Steal An Egg: structure diagnostics v1.33
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -53,7 +53,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.32", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.33", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -97,7 +97,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.32 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.33 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -117,7 +117,7 @@ label(settings,"Hatch and Collect start OFF. Other systems are unavailable.",0,1
 label(settings,"Collect: WALK default, optional Tween; range 250 studs.",0,190,568,24,12,colors.cyan)
 label(settings,"Set a delivery point below to enable automatic return.",0,220,568,24,12,colors.muted)
 label(placement,"Place eggs before hatching",0,0,560,30,20)
-label(placement,"Mark empty slots once with no egg equipped.",0,40,560,24,12,colors.muted)
+label(placement,"Auto Mark scans owned PetArea; manual marking is optional.",0,40,560,24,12,colors.muted)
 local placeToggle=control(placement,"Auto Place: OFF",0,80,170,36)
 local bindSlot=control(placement,"Mark empty slot",180,80,180,36)
 local clearSlots=control(placement,"Clear slots",370,80,170,36)
@@ -139,7 +139,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.32 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.33 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -184,7 +184,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.32 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.33 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -1477,7 +1477,7 @@ local function placementRaycast(origin,direction,initialIgnore)
         if not hit then return nil,skipped end
         local part=hit.Instance
         local sensor=part and part:IsA("BasePart") and (part.Name=="SpawnDetector"
-            or part.Transparency>=0.95 and not part.CanCollide)
+            or part.Name~="PetArea" and part.Transparency>=0.95 and not part.CanCollide)
         if not sensor then return hit,skipped end
         skipped[#skipped+1]=part:GetFullName()
         ignore[#ignore+1]=part
@@ -1534,20 +1534,57 @@ local function emptySlotEvidence(obj)
     end
     return confirmed
 end
+local function areaVacancies(area)
+    local points={}
+    local evidence={path=area:GetFullName(),tested=0,blocked=0,groundMissing=0}
+    if area.Size.X<6 or area.Size.Z<6 then evidence.reason="PetArea too small";return points,evidence end
+    evidence.size={x=area.Size.X,y=area.Size.Y,z=area.Size.Z}
+    local ignore={area}
+    local characters={}
+    for _,p in ipairs(Players:GetPlayers()) do if p.Character then characters[#characters+1]=p.Character;ignore[#ignore+1]=p.Character end end
+    local world=workspace:FindFirstChild("World")
+    local build=world and world:FindFirstChild("Build")
+    if not build then evidence.reason="Static map root unavailable";return points,evidence end
+    local overlap=OverlapParams.new()
+    overlap.FilterType=Enum.RaycastFilterType.Exclude
+    local excluded={build,area}
+    for _,character in ipairs(characters) do excluded[#excluded+1]=character end
+    overlap.FilterDescendantsInstances=excluded
+    local xs,zs=math.floor((area.Size.X-6)/8)+1,math.floor((area.Size.Z-6)/8)+1
+    for ix=1,xs do
+        for iz=1,zs do
+            if evidence.tested>=100 or #points>=12 then return points,evidence end
+            local x=(ix-(xs+1)/2)*8
+            local z=(iz-(zs+1)/2)*8
+            local origin=area.CFrame:PointToWorldSpace(Vector3.new(x,area.Size.Y/2+10,z))
+            local hit=placementRaycast(origin,Vector3.new(0,-(area.Size.Y+40),0),ignore)
+            evidence.tested=evidence.tested+1
+            if hit and hit.Instance:GetFullName():sub(1,#"Workspace.World.Build.MainMap.Bases.")=="Workspace.World.Build.MainMap.Bases." then
+                local point=hit.Position
+                local occupied=false
+                for _,part in ipairs(workspace:GetPartBoundsInBox(CFrame.new(point+Vector3.new(0,3.1,0)),Vector3.new(5.5,6,5.5),overlap)) do
+                    if part.Transparency<0.95 or part.CanCollide then occupied=true;break end
+                end
+                if occupied then evidence.blocked=evidence.blocked+1 else points[#points+1]=point end
+            else evidence.groundMissing=evidence.groundMissing+1 end
+        end
+    end
+    return points,evidence
+end
 local function autoMarkSlots(insidePlacement)
     if insidePlacement and placeState.autoScanAt and os.clock()-placeState.autoScanAt<5 then return false,placeState.autoMark and placeState.autoMark.reason or "Waiting for slot scan" end
     placeState.autoScanAt=os.clock()
     if collectRunning or hatchRunning or placeRunning and not insidePlacement then return false,"Stop other automation before scanning slots" end
     local _,plot=resolveAutoHome()
     if not plot then return false,"Owned plot not confirmed" end
-    local report={plot=plot:GetFullName(),candidates={},confirmed=0,added=0,truncated=false}
+    local report={plot=plot:GetFullName(),candidates={},areas={},confirmed=0,added=0,truncated=false}
     placeState.autoMark=report
     local candidates={}
     local queue,head={plot},1
     while head<=#queue and head<=2000 do
         local obj=queue[head];head=head+1
         local name=string.lower(obj.Name)
-        local clue=name:find("slot",1,true) or name:find("pad",1,true) or name:find("stand",1,true)
+        local clue=name=="petarea" or name:find("slot",1,true) or name:find("pad",1,true) or name:find("stand",1,true)
             or obj:GetAttribute("SlotId")~=nil or obj:GetAttribute("SlotIndex")~=nil
         if clue and #report.candidates<40 then
             local attrs={}
@@ -1557,6 +1594,13 @@ local function autoMarkSlots(insidePlacement)
                 end
             end
             report.candidates[#report.candidates+1]={path=obj:GetFullName(),class=obj.ClassName,attributes=attrs}
+        end
+        if obj.Name=="PetArea" and obj:IsA("BasePart") then
+            local ok,points,detail=pcall(areaVacancies,obj)
+            if ok then
+                report.areas[#report.areas+1]=detail
+                for _,point in ipairs(points) do candidates[#candidates+1]={part=obj,point=point,evidence="PetArea clear-space candidate",source=obj,spatial=true} end
+            else report.areas[#report.areas+1]={path=obj:GetFullName(),error=tostring(points):sub(1,160)} end
         end
         local evidence=emptySlotEvidence(obj)
         if evidence then
@@ -1577,16 +1621,17 @@ local function autoMarkSlots(insidePlacement)
     table.sort(candidates,function(a,b) return a.part:GetFullName()<b.part:GetFullName() end)
     report.confirmed=#candidates
     for _,item in ipairs(candidates) do
-        local ok=addPlacementSlot(item.part,item.part.Position)
+        local ok=addPlacementSlot(item.part,item.point or item.part.Position)
         if ok then
             report.added=report.added+1
             placeState.slots[#placeState.slots].autoEvidence=item.evidence
             placeState.slots[#placeState.slots].emptySource=item.source
+            placeState.slots[#placeState.slots].spatial=item.spatial
         end
     end
-    report.reason=report.added>0 and ("Auto marked "..report.added.." empty slots")
+    report.reason=report.added>0 and ("Auto marked "..report.added.." placement candidates")
         or report.confirmed>0 and "Confirmed slots already marked or slot limit reached"
-        or "No slots with explicit empty state; send Copy short for slot mapping"
+        or "No clear PetArea candidates or explicit empty slots; send Copy short"
     return report.added>0,report.reason
 end
 local function selectPlacementEgg()
@@ -1631,8 +1676,14 @@ local function placeStep()
     if not active or not placeState.enabled or player.Character~=character or humanoid.Health<=0 or egg.tool.Parent~=character then return end
     local _,currentPlot=resolveAutoHome()
     if currentPlot~=slot.plot or not slot.part:IsDescendantOf(currentPlot) then placeState.enabled=false;placeState.last="Slot ownership changed";return end
-    if slot.autoEvidence and (not slot.emptySource.Parent or not emptySlotEvidence(slot.emptySource)) then
+    if slot.autoEvidence and not slot.spatial and (not slot.emptySource.Parent or not emptySlotEvidence(slot.emptySource)) then
         slot.used=true;placeState.last="Automatic slot is no longer confirmed empty; skipped";return
+    end
+    if slot.spatial then
+        local ok,points=pcall(areaVacancies,slot.part)
+        local clear=false
+        if ok then for _,point in ipairs(points) do if (point-slot.point).Magnitude<1 then clear=true;break end end end
+        if not clear then slot.used=true;placeState.last="PetArea candidate is no longer clear; skipped";return end
     end
     local camera=workspace.CurrentCamera
     if not camera then placeState.last="Camera unavailable";return end
@@ -1937,7 +1988,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.32", placeId = game.PlaceId,
+        local report = {version = "1.33", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -2109,7 +2160,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.32", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.33", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -2139,7 +2190,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.32 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.33 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
