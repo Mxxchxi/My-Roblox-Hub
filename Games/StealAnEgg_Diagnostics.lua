@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.16
+-- Steal An Egg: structure diagnostics v1.17
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -15,6 +15,7 @@ gui.ResetOnSpawn = false
 gui.Parent = pg
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local PathfindingService = game:GetService("PathfindingService")
 local colors = {bg = Color3.fromRGB(13, 17, 32), panel = Color3.fromRGB(22, 28, 48),
     purple = Color3.fromRGB(153, 100, 255), cyan = Color3.fromRGB(67, 218, 246),
     text = Color3.fromRGB(235, 240, 255), muted = Color3.fromRGB(151, 164, 190)}
@@ -52,7 +53,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.16", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.17", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -94,7 +95,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.16 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.17 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -128,7 +129,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.16 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.17 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -173,7 +174,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.16 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.17 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -519,6 +520,77 @@ local function inCollectRange(prompt, root)
     local position = prompt.Parent and promptPosition(prompt)
     return position and root and (root.Position-position).Magnitude <= math.min(prompt.MaxActivationDistance,8)
 end
+local function pathMove(root, humanoid, character, destination, requireCarry, target)
+    local record={at=os.time(),status="Computing path",waypoints=0,completed=0}
+    collectEgg.lastNavigation=record
+    local ok, route=pcall(function()
+        local path=PathfindingService:CreatePath({AgentRadius=2,AgentHeight=5,AgentCanJump=true,WaypointSpacing=5})
+        path:ComputeAsync(root.Position,destination)
+        if path.Status ~= Enum.PathStatus.Success then return nil end
+        return path:GetWaypoints()
+    end)
+    if not ok or not route or #route<2 or #route>80 then
+        record.status=ok and "No path found within waypoint limit" or ("Pathfinding failed: "..tostring(route):sub(1,100))
+        return false,record.status
+    end
+    local lift=math.clamp(root.Position.Y-route[1].Position.Y,0,6)
+    local distance=0
+    local last=root.Position
+    for i,point in ipairs(route) do
+        local goal=i==#route and destination or point.Position+Vector3.new(0,lift,0)
+        distance=distance+(goal-last).Magnitude; last=goal
+    end
+    record.waypoints,record.routeDistance=#route,distance
+    if distance>600 then record.status="Route exceeds 600 studs"; return false,record.status end
+    local function stop(reason)
+        record.status=reason
+        cancelCollectTween(reason)
+        return false,reason
+    end
+    local params=RaycastParams.new()
+    params.FilterType=Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances={character}
+    params.RespectCanCollide=true
+    for i,point in ipairs(route) do
+        if not active or not collectEgg.enabled then return stop("Route cancelled") end
+        if busy then return stop("Route interrupted by scan") end
+        if player.Character~=character or not root.Parent or humanoid.Health<=0 then return stop("Character changed during route") end
+        if target and (not target.Parent or not target:IsDescendantOf(workspace)) then return stop("Route target removed") end
+        if requireCarry and not dropCarryVisible() and (root.Position-destination).Magnitude>4 then return stop("Field carry disappeared during route") end
+        if not requireCarry and carryVisible() then return stop("Holding state detected during route") end
+        local goal=i==#route and destination or point.Position+Vector3.new(0,lift,0)
+        local delta=goal-root.Position
+        if delta.Magnitude>1.5 then
+            if point.Action==Enum.PathWaypointAction.Jump then humanoid.Jump=true end
+            record.status="Following path";record.currentWaypoint=i
+            collectLabel.Text=string.format("Following path %d/%d",i,#route)
+            local duration=delta.Magnitude/math.clamp(humanoid.WalkSpeed,8,24)
+            collectEgg.moving=true
+            collectTween=TweenService:Create(root,TweenInfo.new(duration,Enum.EasingStyle.Linear),{CFrame=root.CFrame+delta})
+            collectTween:Play()
+            local started=os.clock()
+            while (root.Position-goal).Magnitude>1.5 do
+                if not active or not collectEgg.enabled then return stop("Route cancelled") end
+                if busy then return stop("Route interrupted by scan") end
+                if player.Character~=character or not root.Parent or humanoid.Health<=0 then return stop("Character changed during route") end
+                if target and not target.Parent then return stop("Route target removed") end
+                if requireCarry and not dropCarryVisible() and (root.Position-destination).Magnitude>4 then return stop("Field carry disappeared during route") end
+                if not requireCarry and carryVisible() then return stop("Holding state detected during route") end
+                local ahead=goal-root.Position
+                if workspace:Raycast(root.Position,ahead.Unit*math.min(2,ahead.Magnitude),params) then return stop("Route segment obstructed") end
+                if os.clock()-started>duration+1 then return stop("Route segment timed out") end
+                if not collectTween or collectTween.PlaybackState~=Enum.PlaybackState.Playing then return stop("Tween ended before waypoint") end
+                task.wait(0.1)
+            end
+            cancelCollectTween("Waypoint reached")
+        end
+        record.completed=i
+    end
+    if not active or not collectEgg.enabled then return stop("Route cancelled") end
+    if player.Character~=character or humanoid.Health<=0 then return stop("Character changed during route") end
+    record.status="Route destination reached"
+    return (root.Position-destination).Magnitude<=4,record.status
+end
 local function approachEgg(root, humanoid)
     if not root or not humanoid then return false end
     local choices = {}
@@ -532,6 +604,7 @@ local function approachEgg(root, humanoid)
     params.FilterType = Enum.RaycastFilterType.Exclude
     params.FilterDescendantsInstances = {character}
     params.RespectCanCollide = true
+    local routeAttempts=0
     for _, choice in ipairs(choices) do
         local prompt, position = choice.prompt, choice.position
         local horizontal = Vector3.new(position.X-root.Position.X, 0, position.Z-root.Position.Z)
@@ -548,6 +621,16 @@ local function approachEgg(root, humanoid)
             if travel > 0.2 then
                 local offset = horizontal.Unit * travel
                 local obstacle = workspace:Raycast(root.Position, offset, params)
+                if obstacle and routeAttempts<2 then
+                    routeAttempts=routeAttempts+1
+                    local reached,reason=pathMove(root,humanoid,character,root.Position+offset,false,prompt)
+                    collectEgg.last=reason
+                    if reached then
+                        collectEgg.last=prompt.Enabled and "In pickup range" or "In range; waiting for game to enable prompt"
+                        return inCollectRange(prompt,root) and prompt.Enabled
+                    end
+                    if not active or not collectEgg.enabled or carryVisible() then return false end
+                end
                 if not obstacle then
                     local speed = math.clamp(humanoid.WalkSpeed,8,24)
                     local duration = travel/speed
@@ -593,7 +676,8 @@ local function approachEgg(root, humanoid)
             end
         end
     end
-    collectEgg.last = "No reachable egg within 250 studs on this level"
+    collectEgg.last = routeAttempts>0 and ("No reachable route: "..(collectEgg.lastNavigation and collectEgg.lastNavigation.status or "unknown"))
+        or "No reachable egg within 250 studs on this level"
     return false
 end
 local function carryEvidence()
@@ -679,9 +763,14 @@ local function returnHome(root, humanoid, character)
         local hit = workspace:Raycast(root.Position,delta,params)
         if hit then
             record.obstacle = hit.Instance and hit.Instance:GetFullName() or "Unknown obstacle"
-            record.status = "Return path obstructed"
-            pauseCollect(record.status .. "; deliver manually or set an accessible point")
-            return
+            local reached,reason=pathMove(root,humanoid,character,deliveryPoint,true)
+            if not reached then
+                record.status = "Return path obstructed"
+                record.routeReason=reason
+                if active and collectEgg.enabled then pauseCollect(record.status .. ": "..reason) end
+                return
+            end
+            delta=deliveryPoint-root.Position
         end
         local duration = delta.Magnitude/math.clamp(humanoid.WalkSpeed,8,24)
         collectEgg.moving = true
@@ -745,7 +834,7 @@ local function collectSnapshot(includeEvidence)
         unconfirmed = collectEgg.unconfirmed or 0, pausedReason = collectEgg.pausedReason,
         inventoryAdditionsObserved = collectEgg.inventoryAdditionsObserved or 0,
         phase = collectEgg.phase or "IDLE", deliveriesObserved = collectEgg.deliveriesObserved or 0,
-        lastReturn = collectEgg.lastReturn, deliveryPointSet = deliveryPoint ~= nil,
+        lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, deliveryPointSet = deliveryPoint ~= nil,
         inputInProgress = collectRunning, carrying = carryVisible(), carryState = carryState(), matchingPrompts = 0,
         scope = "Tween pickup within 250 studs; return to configured delivery point within 600 studs",
         moving = collectEgg.moving == true, lastMovement = collectEgg.lastMovement,
@@ -771,6 +860,11 @@ local function collectSnapshot(includeEvidence)
                 snapshot.nearest = {path = prompt:GetFullName(), enabled = prompt.Enabled,
                     allowedDistance = math.min(prompt.MaxActivationDistance, 8),
                     holdDuration = prompt.HoldDuration, attempts = state and state.count or 0, reason = reason}
+                if pos and root then
+                    snapshot.nearest.heightDifference = math.abs(pos.Y-root.Position.Y)
+                    snapshot.nearest.approachHeightLimit = 6
+                    snapshot.nearest.approachDistanceLimit = 250
+                end
                 if distance < math.huge then snapshot.nearest.distance = distance end
             end
         end
@@ -1002,7 +1096,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.16", placeId = game.PlaceId,
+        local report = {version = "1.17", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -1174,7 +1268,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.16", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.17", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -1204,7 +1298,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.16 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.17 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
