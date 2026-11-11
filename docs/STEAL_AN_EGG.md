@@ -1,4 +1,4 @@
-# Steal An Egg — diagnostics v1.3
+# Steal An Egg — diagnostics v1.4
 
 PlaceId: `107778070777162`. Metadata inspection only; the five gameplay automation features await live game data.
 
@@ -28,3 +28,11 @@ If no verified copy succeeds, the full report replaces the page view and is sele
 Clipboard operations affect the computer running Potassium. They do not transfer text to a different computer. Paste into ChatGPT on that computer or use the remote-access application\u2019s clipboard sync when available.
 
 Validation: Lua syntax, simulated full-text selection, no-op clipboard detection, failed-writer alias fallback, unreadable clipboard handling, executor/nested aliases, UTF-8 preservation, prior scan regressions and 4 loader contract checks passed. Potassium and remote clipboard synchronization need real-device verification.
+
+## v1.4 focused reports
+
+The v1.3 user report showed all generic scan budgets exhausted and a short report dominated by live-event remotes. v1.4 supplements the generic scan with a read-only inventory of the observed ReplicatedStorage.Packages.Networking folder (4,000 visited objects, 8,000 queue limit). The supplemental scan has its own scanned/truncated metadata; generic scan totals are unchanged.
+
+Copy short now sorts core egg/hatch/treadmill/upgrade/plot/base/cash/coin/speed/PenRoster metadata before unrelated events. It reserves separate JSON budgets for remotes, GUI, prompts and candidates (6,000/3,000/2,000/3,000 bytes plus metadata). Candidate ownership/position is retained; duplicate rows are grouped with a count and omitted totals. The full report remains available through Copy all and Save file. Prompt metadata adds hold duration and position where available to distinguish same-named SmartPromptPart objects. No gameplay remote calls are made.
+
+Validation: supplemental recovery beyond the generic 300-remote cap, priority filtering under a simulated 300-event flood, GUI/prompt preservation, candidate ownership retention and existing clipboard/scan regressions passed. Loader checks passed 4/4. Real-device behavior awaits the next report. Remote names still do not prove call direction or argument contracts.
