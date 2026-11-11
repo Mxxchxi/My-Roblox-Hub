@@ -1,4 +1,4 @@
-# Steal An Egg — diagnostics + Auto Hatch test v1.5
+# Steal An Egg — diagnostics + Auto Hatch test v1.6
 
 PlaceId: `107778070777162`. Auto Hatch has an opt-in nearby-prompt test. Egg collection, cash collection, upgrades and speed training await action/argument mapping.
 
@@ -46,3 +46,11 @@ Default OFF; only enabled Hatch! prompts in Workspace are eligible with a living
 After testing press Scan and Copy short to include attempt counters and status. The current report confirms RF/EggWorld/AskHatch, AskFinishHatch, AskPlaceEgg, RE/Homestead/AskBaseTierRaise and Treadmill-related notification names, but not their argument contracts. Notification names are not treated as client commands. Other four requested systems remain pending.
 
 Validation: syntax and simulated default-OFF, exact action, enabled/alive/range, hold release, cooldown, attempt-cap and closed-loop guards passed. Existing scan/clipboard checks and 4 loader contracts passed. Real Potassium behavior is not verified.
+
+## v1.6 live hatch diagnostics
+
+The v1.5 user report contained enabled=true and attempts=0, but no character distance. That does not establish whether range, timing or another condition blocked input. v1.6 records the nearest cached Hatch! prompt, actual character distance, allowed distance, alive state, cache count, scan/input state and a blocker reason. Copy all, Copy short and Save file refresh this data at export time instead of reusing a scan-time snapshot.
+
+After loading, wait for the initial scan, stand near the egg, press **Test Hatch once**, wait two seconds and press **Copy short** directly without another Scan. The one-shot test works while Auto Hatch is OFF and uses the same enabled/action/alive/range/cooldown/attempt-cap checks. It does not confirm hatch success. Toggle OFF/ON resets the attempt cap if needed.
+
+Validation: distance and blocker reporting, export-time attempt-counter updates, one-shot test with auto OFF, prior hatch/clipboard/scan regressions and 4 loader contract checks passed locally. Potassium execution still requires in-game verification.
