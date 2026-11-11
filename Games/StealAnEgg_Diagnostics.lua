@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.31
+-- Steal An Egg: structure diagnostics v1.32
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -53,7 +53,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.31", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.32", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -97,7 +97,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.31 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.32 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -139,7 +139,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.31 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.32 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -184,7 +184,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.31 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.32 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -1465,6 +1465,25 @@ local function setManualCarry(value)
         collectEgg.last = "User marked carrying; Collect OFF"
     end
 end
+local function placementRaycast(origin,direction,initialIgnore)
+    local ignore={}
+    for _,obj in ipairs(initialIgnore or {}) do ignore[#ignore+1]=obj end
+    local skipped={}
+    for _=1,10 do
+        local params=RaycastParams.new()
+        params.FilterType=Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances=ignore
+        local hit=workspace:Raycast(origin,direction,params)
+        if not hit then return nil,skipped end
+        local part=hit.Instance
+        local sensor=part and part:IsA("BasePart") and (part.Name=="SpawnDetector"
+            or part.Transparency>=0.95 and not part.CanCollide)
+        if not sensor then return hit,skipped end
+        skipped[#skipped+1]=part:GetFullName()
+        ignore[#ignore+1]=part
+    end
+    return nil,skipped
+end
 local function addPlacementSlot(part,point)
     -- Preserve the actual clicked object even if ownership validation rejects
     -- marking. Generated slot objects may live outside the static plot model.
@@ -1632,9 +1651,7 @@ local function placeStep()
         if not active or not placeState.enabled then error("Placement cancelled") end
         local screen,onScreen=camera:WorldToScreenPoint(slot.point+Vector3.new(0,0.05,0))
         if not onScreen then error("Marked slot is off-screen") end
-        local params=RaycastParams.new()
-        params.FilterType=Enum.RaycastFilterType.Exclude;params.FilterDescendantsInstances={character}
-        local hit=workspace:Raycast(camera.CFrame.Position,slot.point-camera.CFrame.Position,params)
+        local hit=placementRaycast(camera.CFrame.Position,slot.point-camera.CFrame.Position,{character})
         if hit and hit.Instance~=slot.part and (hit.Position-slot.point).Magnitude>1 then error("Marked slot is obstructed") end
         inputManager=game:GetService("VirtualInputManager")
         x,y=screen.X,screen.Y
@@ -1733,7 +1750,14 @@ connections[#connections+1]=UIS.InputBegan:Connect(function(input,processed)
     end
     if carryVisible() then placeState.binding=false;placeState.last="Unequip the egg before marking";placeLabel.Text=placeState.last;setShown(true);restore.Text="YUU HUB";return end
     local mouse=player:GetMouse()
-    local ok,message=addPlacementSlot(mouse.Target,mouse.Hit.Position)
+    local ray=mouse.UnitRay
+    local character=player.Character
+    local hit,skipped=placementRaycast(ray.Origin,ray.Direction*1000,character and {character} or {})
+    local ok,message=addPlacementSlot(hit and hit.Instance or nil,hit and hit.Position or mouse.Hit.Position)
+    if placeState.lastSlotPick then
+        placeState.lastSlotPick.skippedSensors=skipped
+        placeState.lastSlotPick.originalMouseTarget=mouse.Target and mouse.Target:GetFullName() or nil
+    end
     placeState.last=message
     if placeState.lastSlotPick then placeState.lastSlotPick.gameProcessed=processed;placeState.lastSlotPick.message=message end
     placeLabel.Text=message
@@ -1913,7 +1937,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.31", placeId = game.PlaceId,
+        local report = {version = "1.32", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -2085,7 +2109,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.31", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.32", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -2115,7 +2139,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.31 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.32 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
