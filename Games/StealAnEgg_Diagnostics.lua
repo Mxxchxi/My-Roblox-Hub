@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.6
+-- Steal An Egg: structure diagnostics v1.7
 -- Auto Hatch test via nearby enabled prompts; other automation awaits argument mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -13,60 +13,118 @@ local gui = Instance.new("ScreenGui")
 gui.Name = "EggDiagnostics"
 gui.ResetOnSpawn = false
 gui.Parent = pg
-local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0.9, 0, 0.7, 0)
-frame.Position = UDim2.new(0.05, 0, 0.15, 0)
-frame.BackgroundColor3 = Color3.fromRGB(22, 25, 34)
-local function button(label, x, w)
-    local b = Instance.new("TextButton", frame)
-    b.Position = UDim2.new(x, 0, 0, 8)
-    b.Size = UDim2.new(w, 0, 0, 38)
-    b.Text = label
-    b.TextSize = 14
+local UIS = game:GetService("UserInputService")
+local colors = {bg = Color3.fromRGB(13, 17, 32), panel = Color3.fromRGB(22, 28, 48),
+    purple = Color3.fromRGB(153, 100, 255), cyan = Color3.fromRGB(67, 218, 246),
+    text = Color3.fromRGB(235, 240, 255), muted = Color3.fromRGB(151, 164, 190)}
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+local function create(class, parent, props)
+    local obj = Instance.new(class)
+    for k, v in pairs(props or {}) do obj[k] = v end
+    obj.Parent = parent
+    return obj
+end
+local function round(obj, radius)
+    create("UICorner", obj, {CornerRadius = UDim.new(0, radius or 10)})
+end
+local function label(parent, text, x, y, w, h, size, color)
+    return create("TextLabel", parent, {Position = UDim2.fromOffset(x,y), Size = UDim2.fromOffset(w,h),
+        BackgroundTransparency = 1, Text = text, Font = Enum.Font.Gotham,
+        TextSize = size or 14, TextColor3 = color or colors.text, TextXAlignment = Enum.TextXAlignment.Left})
+end
+local function control(parent, text, x, y, w, h)
+    local b = create("TextButton", parent, {Position = UDim2.fromOffset(x,y), Size = UDim2.fromOffset(w,h or 34),
+        BackgroundColor3 = colors.panel, Text = text, Font = Enum.Font.GothamMedium,
+        TextSize = 13, TextColor3 = colors.text, AutoButtonColor = true})
+    round(b, 8)
     return b
 end
-local scan = button("Scan", 0.01, 0.18)
-local copy = button("Copy all", 0.20, 0.19)
-local save = button("Save file", 0.40, 0.19)
-local selectText = button("Select ALL", 0.60, 0.23)
-local close = button("Close", 0.84, 0.15)
-local previous = button("< Page", 0.01, 0.18)
-local following = button("Page >", 0.20, 0.19)
-previous.Position = UDim2.new(0.01, 0, 0, 50)
-following.Position = UDim2.new(0.20, 0, 0, 50)
-local shortCopy = button("Copy short", 0.40, 0.19)
-shortCopy.Position = UDim2.new(0.40, 0, 0, 50)
-local pageLabel = Instance.new("TextLabel", frame)
-pageLabel.Position = UDim2.new(0.60, 0, 0, 50)
-pageLabel.Size = UDim2.new(0.39, 0, 0, 38)
-pageLabel.BackgroundTransparency = 1
-pageLabel.TextColor3 = Color3.new(1, 1, 1)
-pageLabel.Text = "v1.6 | Waiting for scan"
-local status = Instance.new("TextLabel", frame)
-status.Position = UDim2.new(0.01, 0, 0, 137)
-status.Size = UDim2.new(0.98, 0, 0, 38)
-status.BackgroundTransparency = 1
-status.TextColor3 = Color3.new(1, 1, 1)
+local frame = create("Frame", gui, {Size = UDim2.fromOffset(760,540),
+    Active = true, AnchorPoint = Vector2.new(0.5,0.5), Position = UDim2.fromScale(0.5,0.5), BackgroundColor3 = colors.bg})
+round(frame, 14)
+local border = create("UIStroke", frame, {Thickness = 1.5, Color = colors.purple})
+create("UIGradient", border, {Color = ColorSequence.new(colors.purple, colors.cyan)})
+local scale = create("UIScale", frame, {Scale = 1})
+local function fit()
+    local camera = workspace.CurrentCamera
+    if camera then scale.Scale = math.min(1, (camera.ViewportSize.X-24)/760, (camera.ViewportSize.Y-64)/540) end
+end
+fit()
+local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
+label(frame, "STEAL AN EGG  /  v1.7", 20,40,300,20,11,colors.muted)
+local minimize = control(frame, "—", 670,16,32,30)
+local close = control(frame, "X", 710,16,32,30)
+local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
+round(sidebar)
+label(sidebar, "WORKSPACE",12,10,125,22,10,colors.muted)
+local automation = create("Frame", frame, {Position = UDim2.fromOffset(176,76), Size = UDim2.fromOffset(568,382), BackgroundTransparency = 1})
+local diagnostics = create("Frame", frame, {Position = automation.Position, Size = automation.Size, BackgroundTransparency = 1, Visible = false})
+local settings = create("Frame", frame, {Position = automation.Position, Size = automation.Size, BackgroundTransparency = 1, Visible = false})
+local tabs = {}
+local function showTab(name)
+    automation.Visible = name == "Automation"
+    diagnostics.Visible = name == "Diagnostics"
+    settings.Visible = name == "Settings"
+    for key, b in pairs(tabs) do
+        b.BackgroundColor3 = key == name and colors.purple or colors.panel
+    end
+end
+for i, name in ipairs({"Automation", "Diagnostics", "Settings"}) do
+    local b = control(sidebar,name,8,42+(i-1)*44,132,36)
+    tabs[name] = b
+    b.Activated:Connect(function() showTab(name) end)
+end
+label(sidebar,"By Yuu Walker",12,344,130,22,11,colors.muted)
+label(automation,"Automation",0,0,400,30,22)
+label(automation,"Nearby hatch testing • other systems in development",0,32,565,22,12,colors.muted)
+local rows = {}
+for i, name in ipairs({"Auto Hatch", "Collect Eggs", "Collect Coins", "Upgrade Base", "Speed Training"}) do
+    local row = create("Frame",automation,{Position = UDim2.fromOffset(0,64+(i-1)*58), Size = UDim2.fromOffset(568,50), BackgroundColor3 = colors.panel})
+    round(row,8)
+    label(row,name,14,0,280,50,14,i == 1 and colors.text or colors.muted)
+    label(row,i == 1 and "TEST" or "SOON",316,0,62,50,11,i == 1 and colors.cyan or colors.muted)
+    if i > 1 then label(row,"Unavailable",422,0,130,50,12,colors.muted) end
+    rows[i] = row
+end
+local scan = control(diagnostics,"Scan / Refresh",0,0,136)
+local copy = control(diagnostics,"Copy all",146,0,128)
+local save = control(diagnostics,"Save file",284,0,128)
+local selectText = control(diagnostics,"Select ALL",422,0,146)
+local previous = control(diagnostics,"< Page",0,42,88)
+local following = control(diagnostics,"Page >",98,42,88)
+local shortCopy = control(diagnostics,"Copy short",196,42,110)
+local pageLabel = label(diagnostics,"v1.7 | Waiting for scan",316,42,252,34,11,colors.muted)
+local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
+    BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
+    AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
+round(reportScroll,8)
+local box = create("TextBox",reportScroll,{Position = UDim2.fromOffset(10,8), Size = UDim2.fromOffset(546,278),
+    AutomaticSize = Enum.AutomaticSize.XY, BackgroundTransparency = 1, MultiLine = true, ClearTextOnFocus = false,
+    TextEditable = true, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+    Font = Enum.Font.Code, TextSize = 12, TextColor3 = colors.text, TextWrapped = false, Text = "Loading..."})
+local status = label(frame,"Preparing diagnostics...",176,472,568,52,12,colors.muted)
 status.TextWrapped = true
-status.Text = "Auto Hatch test available (OFF). Other four systems await action mapping."
-local box = Instance.new("TextBox", frame)
-box.Position = UDim2.new(0.01, 0, 0, 182)
-box.Size = UDim2.new(0.98, 0, 1, -192)
-box.MultiLine = true
-box.ClearTextOnFocus = false
-box.TextEditable = true
-box.TextXAlignment = Enum.TextXAlignment.Left
-box.TextYAlignment = Enum.TextYAlignment.Top
-box.TextSize = 12
-box.TextWrapped = false
-box.Text = "Loading..."
+label(settings,"Settings",0,0,400,30,22)
+label(settings,"Interface",0,50,400,24,14,colors.cyan)
+label(settings,"Drag the header to move. RightShift toggles the window.",0,88,568,24,12)
+label(settings,"Close stops Auto Hatch. Minimize keeps it running.",0,118,568,24,12)
+label(settings,"Auto Hatch starts OFF. Other systems are unavailable.",0,148,568,24,12,colors.muted)
+local restore = control(gui,"YUU HUB",16,120,108,36)
+restore.Visible = false
+local function setShown(shown)
+    frame.Visible = shown
+    restore.Visible = not shown
+end
+minimize.Activated:Connect(function() setShown(false) end)
+restore.Activated:Connect(function() setShown(true) end)
+showTab("Automation")
 local reportText = ""
 local shortReportText = ""
 local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.6 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.7 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -98,6 +156,7 @@ local function capability(name)
     if type(_G) == "table" and type(_G[name]) == "function" then return _G[name] end
 end
 local function nativeSelect(text)
+    showTab("Diagnostics")
     -- Full report, never just the currently displayed page.
     box:CaptureFocus()
     box.Text = text
@@ -110,7 +169,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.6 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.7 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -173,21 +232,47 @@ local function copyPayload(text, label)
 end
 local busy = false
 -- AUTO_HATCH_BEGIN
-local hatchButton = button("Auto Hatch: OFF", 0.01, 0.27)
-hatchButton.Position = UDim2.new(0.01, 0, 0, 94)
-local testHatch = button("Test Hatch once", 0.29, 0.23)
-testHatch.Position = UDim2.new(0.29, 0, 0, 94)
-local hatchLabel = Instance.new("TextLabel", frame)
-hatchLabel.Position = UDim2.new(0.54, 0, 0, 94)
-hatchLabel.Size = UDim2.new(0.45, 0, 0, 38)
-hatchLabel.BackgroundTransparency = 1
-hatchLabel.TextColor3 = Color3.new(1, 1, 1)
+local hatchButton = control(rows[1], "Auto Hatch: OFF", 410,8,146,34)
+local testHatch = control(automation,"Test Hatch once",0,358,150,24)
+local hatchLabel = label(automation,"Stand within 7 studs of your ready egg.",160,354,408,28,11,colors.muted)
 hatchLabel.TextWrapped = true
-hatchLabel.Text = "Stand within 7 studs of your ready egg."
 local hatch = {enabled = false, attempts = 0, last = "OFF"}
 local promptCache = setmetatable({}, {__mode = "k"})
 local attemptState = setmetatable({}, {__mode = "k"})
 local connections = {}
+local dragging, dragStart, initialPosition
+connections[#connections + 1] = UIS.InputBegan:Connect(function(input, processed)
+    if input.KeyCode == Enum.KeyCode.RightShift and not processed and not UIS:GetFocusedTextBox() then
+        setShown(not frame.Visible)
+    end
+end)
+connections[#connections + 1] = frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        local relative = input.Position.Y - frame.AbsolutePosition.Y
+        if relative <= 68 * scale.Scale and input.Position.X < minimize.AbsolutePosition.X then
+            dragging, dragStart, initialPosition = true, input.Position, frame.Position
+        end
+    end
+end)
+connections[#connections + 1] = UIS.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        frame.Position = initialPosition + UDim2.fromOffset(delta.X,delta.Y)
+    end
+end)
+connections[#connections + 1] = UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+end)
+local camera = workspace.CurrentCamera
+local cameraConnection
+local function watchCamera()
+    if cameraConnection then cameraConnection:Disconnect() end
+    camera = workspace.CurrentCamera
+    if camera then cameraConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(fit) end
+    fit()
+end
+connections[#connections + 1] = workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(watchCamera)
+watchCamera()
 local holding
 local function trackPrompt(obj)
     if obj:IsA("ProximityPrompt") then promptCache[obj] = true end
@@ -321,6 +406,7 @@ end
 local function stopHatch()
     active = false
     hatch.enabled = false
+    if cameraConnection then cameraConnection:Disconnect() end
     if holding then pcall(function() holding:InputHoldEnd() end); holding = nil end
     for _, connection in ipairs(connections) do connection:Disconnect() end
 end
@@ -350,7 +436,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.6", placeId = game.PlaceId,
+        local report = {version = "1.7", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -521,7 +607,7 @@ local function collect()
         end
         report.autoHatch = liveHatchSnapshot()
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.6", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.7", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -551,7 +637,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.6 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.7 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
@@ -611,6 +697,7 @@ previous.Activated:Connect(function() pageIndex = math.max(1, pageIndex - 1); sh
 following.Activated:Connect(function() pageIndex = math.max(1, math.min(#pages, pageIndex + 1)); showPage() end)
 close.Activated:Connect(function() stopHatch(); lifetime:Disconnect(); gui:Destroy() end)
 task.spawn(collect)
+
 
 
 
