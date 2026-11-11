@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.33
+-- Steal An Egg: structure diagnostics v1.34
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local Players = game:GetService("Players")
 local Http = game:GetService("HttpService")
@@ -53,7 +53,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.33", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.34", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -97,7 +97,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.33 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.34 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -139,7 +139,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.33 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.34 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -184,7 +184,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.33 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.34 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -1687,26 +1687,23 @@ local function placeStep()
     end
     local camera=workspace.CurrentCamera
     if not camera then placeState.last="Camera unavailable";return end
-    local oldType,oldFrame=camera.CameraType,camera.CFrame
-    slot.used=true
     placeState.attempts=placeState.attempts+1
-    local record={uid=egg.uid,part=slot.part:GetFullName(),at=os.time(),inputOK=false,worldPlacementVerified=false}
+    local record={uid=egg.uid,part=slot.part:GetFullName(),at=os.time(),inputOK=false,worldPlacementVerified=false,cameraMode="unchanged",pressAttempted=false}
     placeState.lastAttempt=record
     local inputManager
     local mouseDown=false
     local x,y
     local ok,err=pcall(function()
-        camera.CameraType=Enum.CameraType.Scriptable
-        camera.CFrame=CFrame.lookAt(slot.point+Vector3.new(0,12,12),slot.point)
-        task.wait(0.1)
         if not active or not placeState.enabled then error("Placement cancelled") end
         local screen,onScreen=camera:WorldToScreenPoint(slot.point+Vector3.new(0,0.05,0))
-        if not onScreen then error("Marked slot is off-screen") end
+        if not onScreen then error("Face the marked slot with the normal game camera, then enable Auto Place again") end
         local hit=placementRaycast(camera.CFrame.Position,slot.point-camera.CFrame.Position,{character})
         if hit and hit.Instance~=slot.part and (hit.Position-slot.point).Magnitude>1 then error("Marked slot is obstructed") end
         inputManager=game:GetService("VirtualInputManager")
         x,y=screen.X,screen.Y
         inputManager:SendMouseMoveEvent(x,y,game)
+        slot.used=true
+        record.pressAttempted=true
         mouseDown=true
         inputManager:SendMouseButtonEvent(x,y,0,true,game,0)
         task.wait(0.08)
@@ -1714,9 +1711,8 @@ local function placeStep()
         mouseDown=false
     end)
     if mouseDown and inputManager then pcall(function() inputManager:SendMouseButtonEvent(x,y,0,false,game,0) end) end
-    pcall(function() camera.CFrame=oldFrame;camera.CameraType=oldType end)
     record.inputOK=ok
-    if not ok then record.error=tostring(err):sub(1,160);placeState.last="Placement click failed: "..record.error;placeState.enabled=false;return end
+    if not ok then record.error=tostring(err):sub(1,160);record.slotReserved=slot.used;placeState.last="Placement click failed: "..record.error;placeState.enabled=false;return end
     local deadline=os.clock()+3
     local goneSince
     while active and placeState.enabled and player.Character==character and humanoid.Health>0 and os.clock()<deadline do
@@ -1988,7 +1984,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.33", placeId = game.PlaceId,
+        local report = {version = "1.34", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -2160,7 +2156,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.33", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.34", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -2190,7 +2186,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.33 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.34 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
