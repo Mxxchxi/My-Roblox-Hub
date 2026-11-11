@@ -1,3 +1,9 @@
+# Auto Place disabled in v1.36
+
+The user reported BAC-3515/BAC-8515 kicks associated with placement tests. Auto Place is now release-gated OFF. Its button displays DISABLED; the runtime returns before equipping an egg, walking or sending a click. Re-enable attempts through the UI cannot override the gate. This does not establish the detection mechanism or guarantee that other executor automation is accepted by the game.
+
+The placement sections below describe historical behavior and are not active instructions for v1.36. Place eggs manually. Read-only slot inspection remains available. Stop the old running script before updating; editing GitHub does not disable a previously loaded session.
+
 # Steal An Egg — v1.28
 PlaceId: 107778070777162. Uses the existing universal Loader.
 
