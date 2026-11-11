@@ -1,4 +1,4 @@
-# Steal An Egg — v1.17
+# Steal An Egg — v1.18
 PlaceId: 107778070777162. Uses the existing universal Loader.
 
 ## Setup
@@ -64,4 +64,7 @@ python -m unittest discover -s tests -v
 luac5.4 -p Games/StealAnEgg_Diagnostics.lua
 lua5.4 tests/test_egg_collect.lua
 ~~~
-36 simulated Auto Collect cases and 4 Loader contract tests pass locally. Tests cover carry state, inventory deltas, cancellation, disabled prompts, range limits, return, obstacles, false delivery prevention and no-result pauses. They are not a Potassium or Roblox server test.
+39 simulated Auto Collect cases and 4 Loader contract tests pass locally. Tests cover carry state, inventory deltas, cancellation, disabled prompts, range limits, return, obstacles, false delivery prevention and no-result pauses. They are not a Potassium or Roblox server test.
+
+## v1.18 carry-loss event observations
+A real report reached the field-carry UI after pickup, computed a 24-waypoint return, then lost carry state after the first waypoint. This does not prove delivery, a guard action, or an anti-cheat response. Carry loss now has a distinct return-interruption label. Up to 16 bounded records retain observed FieldEggCarry, FieldEggGone, FieldEggRedeemVerdict, OwnerDropped, OwnerShifted and SpeedTollWarning events plus collection/navigation milestones. Listeners only observe OnClientEvent; no Remote command is sent and payload contracts are not guessed. Copy short includes gameEvents and eventObserver. These records diagnose the loss; they do not repair or bypass it.
