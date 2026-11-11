@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.37
+-- Steal An Egg: structure diagnostics v1.38
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -54,7 +54,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.37", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.38", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -98,7 +98,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.37 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.38 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -123,7 +123,8 @@ local placeToggle=control(placement,"Auto Place: DISABLED",0,80,170,36)
 local bindSlot=control(placement,"Mark empty slot",180,80,180,36)
 local clearSlots=control(placement,"Clear slots",370,80,170,36)
 local autoMarkButton=control(placement,"Auto mark empty slots",0,130,260,36)
-local placeLabel=label(placement,"Auto Place scans empty slots automatically, or mark them manually.",0,180,560,190,13,colors.muted)
+local manualPlaceButton=control(placement,"Manual placement",270,130,270,36)
+local placeLabel=label(placement,"Manual placement stops automation and hides this window. Equip an egg and click an empty slot yourself.",0,180,560,190,13,colors.muted)
 placeLabel.TextWrapped=true;placeLabel.TextYAlignment=Enum.TextYAlignment.Top
 local restore = control(gui,"YUU HUB",16,120,108,36)
 restore.Visible = false
@@ -140,7 +141,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.37 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.38 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -185,7 +186,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.37 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.38 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -391,6 +392,7 @@ connections[#connections + 1] = workspace.DescendantRemoving:Connect(function(ob
 end)
 connections[#connections + 1] = game:GetService("ProximityPromptService").PromptShown:Connect(trackPrompt)
 hatchButton.Activated:Connect(function()
+    if placeState.manualPreparing then return end
     hatch.enabled = not hatch.enabled
     attemptState = setmetatable({}, {__mode = "k"})
     hatchButton.Text = hatch.enabled and "Auto Hatch: ON" or "Auto Hatch: OFF"
@@ -405,6 +407,7 @@ hatchButton.Activated:Connect(function()
 end)
 local hatchRunning = false
 local function dispatchHatch(manual)
+    if placeState.manualPreparing then return end
     if hatchRunning then return end
     hatchRunning = true
     local ok, err = pcall(hatchStep, manual)
@@ -1318,7 +1321,7 @@ local function collectSnapshot(includeEvidence)
         phase = collectEgg.phase or "IDLE", deliveriesObserved = collectEgg.deliveriesObserved or 0,
         gameEvents = gameEvents, eventObserver = eventObserver,
         upgrades=upgrades,training=training,
-        autoPlace={available=AUTO_PLACE_ENABLED,binding=placeState and placeState.binding,preparingBind=placeState and placeState.preparingBind,enabled=placeState and placeState.enabled,attempts=placeState and placeState.attempts,observed=placeState and placeState.observed,last=placeState and placeState.last,lastAttempt=placeState and placeState.lastAttempt,autoMark=placeState and placeState.autoMark,lastSlotPick=placeState and placeState.lastSlotPick},
+        autoPlace={available=AUTO_PLACE_ENABLED,manualMode=placeState and placeState.manualMode,manualPreparing=placeState and placeState.manualPreparing,binding=placeState and placeState.binding,preparingBind=placeState and placeState.preparingBind,enabled=placeState and placeState.enabled,attempts=placeState and placeState.attempts,observed=placeState and placeState.observed,last=placeState and placeState.last,lastAttempt=placeState and placeState.lastAttempt,autoMark=placeState and placeState.autoMark,lastSlotPick=placeState and placeState.lastSlotPick},
         autoHome={enabled=autoHome.enabled,ready=autoHome.ready,reason=autoHome.reason,report=includeEvidence and autoHome.report or nil},
         lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, lastWalkingRecovery=lastWalkingRecovery, deliveryPointSet = deliveryPoint ~= nil,
         approachMode=collectEgg.approachMode or "Walk", inputInProgress = collectRunning, carrying = carryVisible(), carryState = carryState(), matchingPrompts = 0,
@@ -1669,7 +1672,7 @@ end
 local function placeStep()
     if not AUTO_PLACE_ENABLED then
         placeState.enabled=false
-        placeState.last="Auto Place disabled after kick reports. Place eggs manually."
+        if not placeState.manualMode then placeState.last="Auto Place disabled after kick reports. Place eggs manually." end
         return
     end
     if not active or not placeState.enabled or busy or collectRunning or hatchRunning or fieldCarryActive() or manualCarry then return end
@@ -1774,6 +1777,41 @@ local function placeStep()
     end
     placeState.enabled=false
     placeState.last="Placement unconfirmed; slot reserved to avoid duplicate clicks"
+end
+-- This handoff never equips, activates, aims, or clicks a Tool. The player
+-- performs the entire placement through the game's normal inventory/input.
+local function prepareManualPlacement()
+    if placeState.preparingBind then return false,"Finish slot selection preparation before manual placement" end
+    placeState.manualMode=true
+    placeState.enabled=false;placeState.binding=false;placeState.preparingBind=false
+    collectEgg.enabled=false;hatch.enabled=false;upgrades.mode="Off";training.enabled=false
+    collectEgg.phase="PAUSED"
+    cancelCollectTween("Manual placement handoff")
+    if hatchWalking then
+        local character=player.Character
+        local root=character and character:FindFirstChild("HumanoidRootPart")
+        if root then pcall(function() hatchWalking:MoveTo(root.Position) end) end
+        hatchWalking=nil
+    end
+    if holding then
+        local ok=pcall(function() holding:InputHoldEnd() end)
+        holding=nil
+        if not ok then return false,"Could not release the current prompt; close the hub before manual placement" end
+    end
+    local character=player.Character
+    local deadline=os.clock()+8
+    -- Allow any input already in flight to release before handing control back.
+    repeat
+        task.wait(0.1)
+        if not active or player.Character~=character then return false,"Character changed or hub closed; retry manual placement" end
+        if os.clock()>=deadline and (collectRunning or hatchRunning or placeRunning or systemRunning or busy) then
+            return false,"Automation has not stopped; close the hub before manual placement"
+        end
+    until not (collectRunning or hatchRunning or placeRunning or systemRunning or busy)
+    local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health<=0 then return false,"Living character required" end
+    if fieldCarryActive() then return false,"Deliver the field egg first, then select the inventory egg yourself" end
+    return true,"Automation OFF. Equip an inventory egg, walk to your base, and click an empty slot yourself. Alt reopens the hub."
 end
 local function dispatchPlace()
     if placeState.binding or placeState.preparingBind then return end
@@ -1940,6 +1978,7 @@ local function dispatchSystems()
 end
 -- AUTO_COLLECT_ENGINE_END
 upgradeToggle.Activated:Connect(function()
+    if placeState.manualPreparing then return end
     if systemRunning then
         if upgrades.mode~="Off" then upgrades.mode="Off";cancelCollectTween("Upgrade OFF");upgradeToggle.Text="Upgrade: OFF"
         else status.Text="Wait for training movement to stop before changing upgrade mode" end
@@ -1950,15 +1989,35 @@ upgradeToggle.Activated:Connect(function()
     upgradeToggle.Text="Upgrade: "..string.upper(upgrades.mode)
 end)
 trainToggle.Activated:Connect(function()
+    if placeState.manualPreparing then return end
     training.enabled=not training.enabled
     trainToggle.Text=training.enabled and "Train: ON" or "Train: OFF"
     if not training.enabled and systemRunning then cancelCollectTween("Training OFF") end
 end)
 autoMarkButton.Activated:Connect(function()
+    if placeState.manualPreparing then return end
     local _,message=autoMarkSlots(false)
     placeLabel.Text=message
 end)
+manualPlaceButton.Activated:Connect(function()
+    if placeState.manualPreparing then return end
+    if placeState.preparingBind then placeLabel.Text="Finish slot selection preparation first";return end
+    placeState.manualPreparing=true
+    manualPlaceButton.Text="Stopping automation..."
+    task.spawn(function()
+        local ran,ready,message=pcall(prepareManualPlacement)
+        placeState.manualPreparing=false
+        if not active then return end
+        manualPlaceButton.Text="Manual placement"
+        collectButton.Text="Collect: OFF";hatchButton.Text="Auto Hatch: OFF"
+        upgradeToggle.Text="Upgrade: OFF";trainToggle.Text="Train: OFF"
+        placeState.last=ran and message or "Manual handoff failed; close the hub before placement"
+        placeLabel.Text=placeState.last;status.Text=placeState.last
+        if ran and ready then restore.Text="Return to hub";setShown(false) end
+    end)
+end)
 placeToggle.Activated:Connect(function()
+    if placeState.manualPreparing then return end
     if not AUTO_PLACE_ENABLED then
         placeState.enabled=false;placeState.last="Auto Place disabled after kick reports. Place eggs manually."
         placeToggle.Text="Auto Place: DISABLED";placeLabel.Text=placeState.last;return
@@ -1968,6 +2027,7 @@ placeToggle.Activated:Connect(function()
     if not placeState.enabled and placeRunning then cancelCollectTween("Auto Place OFF") end
 end)
 bindSlot.Activated:Connect(function()
+    if placeState.manualPreparing then return end
     if placeState.preparingBind then return end
     if fieldCarryActive() or manualCarry then placeLabel.Text="Deliver the field egg or clear the carrying marker before marking";return end
     placeState.preparingBind=true;placeState.binding=false
@@ -2004,6 +2064,7 @@ bindSlot.Activated:Connect(function()
     end)
 end)
 clearSlots.Activated:Connect(function()
+    if placeState.manualPreparing then return end
     if placeRunning then return end
     placeState.slots={};placeState.binding=false;placeState.enabled=false
     placeToggle.Text=not AUTO_PLACE_ENABLED and "Auto Place: DISABLED" or "Auto Place: OFF";placeLabel.Text="Slots cleared; mark empty slots again"
@@ -2104,6 +2165,7 @@ connections[#connections+1] = player.CharacterAdded:Connect(function()
     carryMarker.Text = "Mark: I am carrying an egg"
 end)
 collectButton.Activated:Connect(function()
+    if placeState.manualPreparing then return end
     collectEgg.enabled = not collectEgg.enabled
     collectEgg.phase=collectEgg.enabled and "SEEKING" or "IDLE"
     collectAttempts = setmetatable({}, {__mode = "k"})
@@ -2204,7 +2266,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.37", placeId = game.PlaceId,
+        local report = {version = "1.38", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -2376,7 +2438,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.37", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.38", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -2406,7 +2468,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.37 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.38 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
