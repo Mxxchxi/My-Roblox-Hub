@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.38
+-- Steal An Egg: structure diagnostics v1.39
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -54,7 +54,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.38", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.39", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -98,7 +98,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.38 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.39 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -141,7 +141,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.38 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.39 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -186,7 +186,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.38 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.39 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -267,7 +267,7 @@ local systemRunning=false
 local collectRunning = false
 local placeRunning=false
 local placeState={enabled=false,binding=false,slots={},attempts=0,observed=0,last="OFF"}
-local hatchApproach, hatchOwned
+local hatchApproach, hatchOwned, hatchResolvePlot, hatchCarryVisible
 local hatchWalking
 local collectAttempts = setmetatable({}, {__mode = "k"})
 local hatch = {enabled = false, attempts = 0, last = "OFF"}
@@ -345,23 +345,27 @@ local function hatchStep(manual)
     local character = player.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if not root or not humanoid then hatch.last = "Waiting for character"; return end
-    local ownedPlot
+    if not root or not humanoid or humanoid.Health<=0 then hatch.last = "Waiting for living character"; return end
+    if not hatchResolvePlot or not hatchCarryVisible then hatch.last="Hatch checks not ready";return end
+    if hatchCarryVisible() then hatch.last="Holding an egg; Hatch waits";hatchLabel.Text=hatch.last;return end
+    local _,ownedPlot=hatchResolvePlot()
+    if not ownedPlot then hatch.last="Hatch needs a confirmed owned plot";hatchLabel.Text=hatch.last;return end
     if not manual then
         if not hatchApproach then hatch.last="Hatch navigation not ready";return end
-        local _,plot=hatchApproach(root,humanoid,character)
+        local ready,plot=hatchApproach(root,humanoid,character)
         ownedPlot=plot
-        if not active or not hatch.enabled then return end
+        if not ready or not active or not hatch.enabled then return end
     end
+    if player.Character~=character or humanoid.Health<=0 or hatchCarryVisible() then return end
     for prompt in pairs(promptCache) do
-        if (manual or ownedPlot and hatchOwned(prompt,ownedPlot)) and eligible(prompt, root, humanoid) then
+        if hatchOwned(prompt,ownedPlot) and eligible(prompt, root, humanoid) then
             local state = attemptState[prompt] or {count = 0, time = -math.huge}
             attemptState[prompt] = state
             if state.count < 3 and os.clock() - state.time >= 4 then
                 state.count = state.count + 1
                 state.time = os.clock()
                 hatch.attempts = hatch.attempts + 1
-                hatch.lastAttempt={at=os.time(),path=prompt:GetFullName(),inputOK=false,resultVerified=false}
+                hatch.lastAttempt={at=os.time(),path=prompt:GetFullName(),manualTest=manual==true,ownedPlot=ownedPlot:GetFullName(),inputOK=false,resultVerified=false}
                 local ok, err = pcall(function()
                     holding = prompt
                     prompt:InputHoldBegin()
@@ -372,6 +376,9 @@ local function hatchStep(manual)
                 if holding then pcall(function() holding:InputHoldEnd() end); holding = nil end
                 if not active then return end
                 hatch.lastAttempt.inputOK=ok
+                if not active or player.Character~=character or humanoid.Health<=0 or not manual and not hatch.enabled then
+                    hatch.lastAttempt.cancelled=true;hatch.last="Hatch cancelled after input release";hatchLabel.Text=hatch.last;return
+                end
                 local deadline=os.clock()+2
                 while ok and active and (manual or hatch.enabled) and prompt.Parent and prompt.Enabled
                     and prompt.ActionText=="Hatch!" and os.clock()<deadline do task.wait(0.1) end
@@ -425,6 +432,10 @@ local function liveHatchSnapshot()
     local snapshot = {enabled = hatch.enabled, attempts = hatch.attempts, last = hatch.last, lastAttempt=hatch.lastAttempt,
         scanning = busy, inputInProgress = hatchRunning, cacheCount = 0,
         result = "Input attempts only; hatch success is not verified"}
+    local _,ownedPlot
+    if hatchResolvePlot then _,ownedPlot=hatchResolvePlot() end
+    snapshot.ownedPlotConfirmed=ownedPlot~=nil
+    snapshot.carryBlocked=hatchCarryVisible and hatchCarryVisible() or false
     if root then snapshot.characterPosition = {x = root.Position.X, y = root.Position.Y, z = root.Position.Z} end
     snapshot.alive = humanoid ~= nil and humanoid.Health > 0
     local nearestDistance = math.huge
@@ -438,6 +449,9 @@ local function liveHatchSnapshot()
                 local state = attemptState[prompt]
                 local reason = "Ready to attempt"
                 if not snapshot.alive then reason = "Character unavailable/dead"
+                elseif snapshot.carryBlocked then reason = "Holding an egg; Hatch waits"
+                elseif not ownedPlot then reason = "Owned plot not confirmed"
+                elseif not hatchOwned(prompt,ownedPlot) then reason = "Prompt outside owned base"
                 elseif not prompt.Enabled then reason = "Prompt disabled"
                 elseif not position then reason = "Prompt location unavailable"
                 elseif distance > math.min(prompt.MaxActivationDistance, 7) then reason = "Outside activation range"
@@ -1184,6 +1198,8 @@ local function returnHome(root, humanoid, character)
     if active and collectEgg.enabled then pauseCollect(record.status .. "; check delivery point") end
 end
 -- HATCH_NAV_BEGIN
+hatchResolvePlot=resolveAutoHome
+hatchCarryVisible=carryVisible
 hatchOwned=function(prompt,ownPlot)
     if not prompt.Parent or not prompt:IsDescendantOf(workspace) then return false end
     if prompt:IsDescendantOf(ownPlot) then return true end
@@ -2266,7 +2282,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.38", placeId = game.PlaceId,
+        local report = {version = "1.39", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -2438,7 +2454,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.38", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.39", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -2468,7 +2484,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.38 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.39 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
