@@ -81,7 +81,7 @@ end
 env.eggSelect={mode="Nearest",preferred={},catalog={entries={}},fieldSamples={}};env.placementRecord={enabled=false,last="OFF",records={}};env.placeState={enabled=false,slots={},attempts=0,observed=0};env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply,resetField=eggLogic.resetField,fieldRecord=eggLogic.fieldRecord,fieldIndex=function() return eggLogic.field end,eggExport=eggLogic.export,sourceScan=eggLogic.scanSources,sourceScalar=eggLogic.sourceScalar,sourceReset=function() eggLogic.sources=nil;eggLogic.sourceRunning=false;eggLogic.sourceEvents={} end}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply,resetField=eggLogic.resetField,fieldRecord=eggLogic.fieldRecord,fieldIndex=function() return eggLogic.field end,eggExport=eggLogic.export,toolRead=eggLogic.toolMetadata,toolCatalog=eggLogic.toolCatalog,sourceScan=eggLogic.scanSources,sourceScalar=eggLogic.sourceScalar,sourceReset=function() eggLogic.sources=nil;eggLogic.sourceRunning=false;eggLogic.sourceEvents={} end}", "collect-engine", "t", env))()
 local hatchSource=assert(source:match("(local function hatchStep.-)\nconnections%["))
 local runHatch=assert(load(hatchSource.."\nreturn hatchStep", "hatch-step", "t", env))()
 local function prompt(distance)
@@ -1480,7 +1480,7 @@ end)
 check("focused egg export includes prompt coordinates and prioritized field samples", function()
     qualityPrompt(3,nil,nil);funcs.record("RE/EggWorld/FieldEggShifted",fieldRecord("a",3,100))
     local result=funcs.eggExport()
-    assert(result.kind=="egg_data" and result.version=="1.45")
+    assert(result.kind=="egg_data" and result.version=="1.46")
     assert(result.eggSelection.catalog.entries[1].position.x==3 and result.eggSelection.catalog.fieldLinked==1)
     assert(result.eggSelection.fieldSamples[1].field.records[1].uid=="a")
 end)
@@ -1593,5 +1593,162 @@ check("large rarity payloads exhaust a bounded observation budget", function()
     funcs.record("RE/EggWorld/FieldEggRaritiesShown",payload)
     local event=funcs.eggExport().eggSelection.sourceEvents[1]
     assert(event.args[1].__truncated and event.args[1]["25"]==nil)
+end)
+local function configuredTool(name,uid,income,rarity,itemType)
+    local config=node("Configuration","Configuration",{perSecond=income,perSecondDisplay=income,rarity=rarity})
+    local tool=node(name,"Tool",{UID=uid,ItemType=itemType},{config})
+    tool.Parent=backpack;backpackChildren[#backpackChildren+1]=tool
+    return tool,config
+end
+check("configuration rates and rarity bind to the same Tool UID with provenance", function()
+    local tool=configuredTool("Whale Shark","whale-1",630673,"Cosmic")
+    local result=funcs.toolCatalog();local item=result.entries[1]
+    assert(result.total==1 and result.uidLinked==1 and result.eligibleIncome==1 and item.eligibleForIncome)
+    assert(item.metadata.uid=="whale-1" and item.metadata.incomePerSecond==630673 and item.metadata.rarity=="Cosmic")
+    assert(item.metadata.sources.incomePerSecond:find("Configuration attribute perSecond",1,true))
+    assert(item.metadata.sources.uid:find("Whale Shark attribute UID",1,true))
+    assert(not result.serverOwnershipVerified and item.uidBinding.scope=="same_tool_in_local_inventory")
+end)
+check("same-name Tools retain separate UID income and session references", function()
+    configuredTool("Bird","bird-a",7,"Uncommon");configuredTool("Bird","bird-b",18,"Uncommon")
+    local result=funcs.toolCatalog();local a,b=result.entries[1],result.entries[2]
+    assert(result.total==2 and result.uidLinked==2 and a.metadata.uid=="bird-b" and a.metadata.incomePerSecond==18)
+    assert(b.metadata.uid=="bird-a" and b.metadata.incomePerSecond==7 and a.ref~=b.ref and a.path==b.path)
+end)
+check("missing UID retains raw income without eligibility or name matching", function()
+    configuredTool("Bird",nil,18,"Uncommon");configuredTool("Bird","bird-a",7,"Uncommon")
+    local result=funcs.toolCatalog()
+    assert(result.knownIncome==2 and result.eligibleIncome==1 and result.missingUid==1)
+    assert(result.entries[1].metadata.uid=="bird-a" and result.entries[2].uidBinding.status=="missing_uid")
+end)
+check("duplicate UIDs on distinct Tools block both income bindings", function()
+    configuredTool("Bird","same",7,"Uncommon");configuredTool("Bird","same",18,"Uncommon")
+    local result=funcs.toolCatalog()
+    assert(result.duplicateUid==2 and result.uidLinked==0 and result.eligibleIncome==0)
+    assert(result.entries[1].uidBinding.status=="duplicate_uid" and result.entries[2].uidBinding.status=="duplicate_uid")
+end)
+check("conflicting Tool and Configuration UID never pick one silently", function()
+    local tool,config=configuredTool("Bird","tool-id",7,"Uncommon");config.attrs.Uid="config-id"
+    local result=funcs.toolCatalog();local item=result.entries[1]
+    assert(item.metadata.conflicts.uid and not item.metadata.uid and #item.metadata.uidEvidence==2)
+    assert(item.uidBinding.status=="conflicting_or_invalid_uid" and not item.eligibleForIncome)
+end)
+check("UID evidence on a conflicting Tool also invalidates matching peers", function()
+    local _,config=configuredTool("Bird","shared",7,"Uncommon");config.attrs.Uid="different"
+    configuredTool("Catfish","shared",12,"Uncommon")
+    local result=funcs.toolCatalog();assert(result.eligibleIncome==0)
+    for _,entry in ipairs(result.entries) do
+        if entry.name=="Catfish" then assert(entry.uidBinding.status=="duplicate_uid") end
+    end
+end)
+check("matching UID aliases on one Tool do not count as a duplicate Tool", function()
+    local _,config=configuredTool("Bird","same",7,"Uncommon");config.attrs.uid="same"
+    assert(funcs.toolCatalog().eligibleIncome==1)
+end)
+check("UID present only on direct Configuration can be linked locally", function()
+    local _,config=configuredTool("Bird",nil,18,"Uncommon");config.attrs.UID="config-only"
+    local item=funcs.toolCatalog().entries[1]
+    assert(item.metadata.uid=="config-only" and item.eligibleForIncome)
+    assert(item.metadata.sources.uid:find("Configuration attribute UID",1,true))
+end)
+check("unknown UUID fields remain diagnostics without an invented UID mapping", function()
+    local tool=configuredTool("Bird",nil,18,"Uncommon");tool.attrs.uuid="unmapped"
+    local item=funcs.toolCatalog().entries[1]
+    assert(not item.metadata.uid and not item.eligibleForIncome and item.metadata.raw[1].values.uuid=="unmapped")
+end)
+check("numeric and blank UID values never become synthetic string identities", function()
+    configuredTool("Bird",123,18,"Uncommon");configuredTool("Bird","  ",7,"Uncommon")
+    local result=funcs.toolCatalog();assert(result.eligibleIncome==0 and result.missingUid==2)
+    for _,entry in ipairs(result.entries) do assert(entry.metadata.conflicts.uid) end
+end)
+check("Configuration named value children preserve exact Tool binding", function()
+    local _,config=configuredTool("Bird",nil,nil,nil)
+    local uid=node("UID","StringValue");uid.Value="value-id"
+    local income=node("perSecond","NumberValue");income.Value=18
+    local rarity=node("rarity","StringValue");rarity.Value="Uncommon"
+    config.children={uid,income,rarity};for _,child in ipairs(config.children) do child.Parent=config end
+    local item=funcs.toolCatalog().entries[1]
+    assert(item.metadata.uid=="value-id" and item.metadata.incomePerSecond==18 and item.metadata.rarity=="Uncommon" and item.eligibleForIncome)
+end)
+check("display income is separate and cannot supply a missing canonical rate", function()
+    local _,config=configuredTool("Bird","a",nil,"Uncommon");config.attrs.perSecondDisplay=18
+    local item=funcs.toolCatalog().entries[1]
+    assert(item.metadata.incomeDisplay==18 and item.metadata.incomePerSecond==nil and not item.eligibleForIncome)
+end)
+check("display rounding does not override or invalidate the canonical rate", function()
+    local _,config=configuredTool("Bird","a",18.1,"Uncommon");config.attrs.perSecondDisplay=18
+    local item=funcs.toolCatalog().entries[1]
+    assert(item.metadata.incomePerSecond==18.1 and item.metadata.incomeDisplay==18 and item.eligibleForIncome)
+end)
+check("conflicting explicit rates block income while preserving UID", function()
+    local tool=configuredTool("Bird","a",18,"Uncommon");tool.attrs.IncomePerSecond=7
+    local item=funcs.toolCatalog().entries[1]
+    assert(item.metadata.conflicts.incomePerSecond and item.metadata.incomePerSecond==nil and item.uidBinding.linked and not item.eligibleForIncome)
+end)
+check("invalid rates do not become zero or a display fallback", function()
+    for i,value in ipairs({-1,math.huge,0/0,"$18/s"}) do configuredTool("Bird","a"..i,value,"Uncommon") end
+    assert(funcs.toolCatalog().eligibleIncome==0)
+end)
+check("zero income is a valid observed canonical rate", function()
+    configuredTool("Bird","a",0,"Uncommon")
+    local item=funcs.toolCatalog().entries[1];assert(item.eligibleForIncome and item.metadata.incomePerSecond==0)
+end)
+check("multiple direct Configurations make the Tool income binding ambiguous", function()
+    local tool=configuredTool("Bird","a",18,"Uncommon")
+    local config=node("Configuration","Configuration",{perSecond=18});config.Parent=tool;tool.children[2]=config
+    local item=funcs.toolCatalog().entries[1];assert(item.uidBinding.status=="multiple_configurations" and not item.eligibleForIncome)
+end)
+check("sibling and nested Configurations never supply another Tool's income", function()
+    local tool,config=configuredTool("Bird","a",nil,nil)
+    tool.children={node("Wrapper","Folder",{},{config})};config.Parent=tool.children[1]
+    configuredTool("Bird","b",18,"Uncommon")
+    local result=funcs.toolCatalog()
+    for _,entry in ipairs(result.entries) do if entry.metadata.uid=="a" then assert(not entry.eligibleForIncome) end end
+end)
+check("session reference survives equipping while container and path are refreshed", function()
+    local tool=configuredTool("Bird","a",18,"Uncommon");local before=funcs.toolCatalog().entries[1]
+    backpackChildren={};equippedChildren={tool};tool.Parent=character
+    local after=funcs.toolCatalog().entries[1]
+    assert(before.ref==after.ref and after.container=="Character" and after.eligibleForIncome)
+end)
+check("same instance present in both snapshots cannot duplicate its UID", function()
+    local tool=configuredTool("Bird","a",18,"Uncommon");equippedChildren={tool}
+    local result=funcs.toolCatalog();assert(result.total==1 and result.eligibleIncome==1)
+end)
+check("Tool removed from its listed container cannot be income eligible", function()
+    local tool=configuredTool("Bird","a",18,"Uncommon");tool.Parent=nil
+    local item=funcs.toolCatalog().entries[1];assert(item.containmentChanged and not item.eligibleForIncome)
+end)
+check("explicit foreign owner prevents a local UID income binding", function()
+    local _,config=configuredTool("Bird","a",18,"Uncommon");config.attrs.OwnerUserId=99
+    local item=funcs.toolCatalog().entries[1];assert(item.uidBinding.status=="foreign_owner" and not item.eligibleForIncome)
+end)
+check("Tool catalog exposes output caps without merging repeated names", function()
+    for i=1,45 do configuredTool("Bird","id"..i,i,"Uncommon") end
+    local result=funcs.toolCatalog()
+    assert(result.total==45 and #result.entries==40 and result.truncated and not result.complete and result.scanComplete)
+    assert(result.entries[1].metadata.incomePerSecond==45 and result.eligibleIncome==45)
+end)
+check("incomplete inventory traversal prevents claims of unique UID income", function()
+    for i=1,257 do configuredTool("Bird","id"..i,i,"Uncommon") end
+    local result=funcs.toolCatalog()
+    assert(result.total==256 and not result.scanComplete and result.eligibleIncome==0)
+end)
+check("bounded Configuration child read never silently becomes complete", function()
+    local _,config=configuredTool("Bird","a",18,"Uncommon")
+    for i=1,65 do config.children[i]=node("Cosmetic"..i,"Folder") end
+    local item=funcs.toolCatalog().entries[1]
+    assert(not item.metadata.complete and item.uidBinding.status=="incomplete_tool_read" and not item.eligibleForIncome)
+end)
+check("inventory Configuration observations do not score a nearby field egg of the same kind", function()
+    configuredTool("Bird","a",18,"Uncommon");local p=qualityPrompt(3,nil,"Bird")
+    env.eggSelect.mode="Income";local exported=funcs.eggExport()
+    assert(exported.eggSelection.catalog.tools.eligibleIncome==1 and exported.eggSelection.catalog.knownIncome==0)
+    assert(funcs.eggMeta(p).incomePerSecond==nil and not funcs.eggRank(root,humanoid,false)[1].accepted)
+end)
+check("AssetEgg Tool and other inventory tools retain explicit separate kinds", function()
+    configuredTool("Bird Egg","egg-a",nil,nil,"AssetEgg");configuredTool("Bird","pet-a",18,"Uncommon","Asset")
+    local result=funcs.toolCatalog()
+    assert(result.entries[1].kind=="other_inventory_tool" and result.entries[2].kind=="asset_egg_tool")
 end)
 print(string.format("%d Auto Collect tests passed", tests))

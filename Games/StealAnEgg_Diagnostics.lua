@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.45
+-- Steal An Egg: structure diagnostics v1.46
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -54,7 +54,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.45", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.46", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -119,7 +119,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.45 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.46 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -165,7 +165,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.45 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.46 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -210,7 +210,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.45 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.46 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -1229,6 +1229,149 @@ function eggLogic.choices(root,humanoid,readyOnly)
     table.sort(choices,eggLogic.less)
     return choices
 end
+eggLogic.toolRefs=setmetatable({}, {__mode="k"})
+eggLogic.nextToolRef=0
+function eggLogic.toolRef(tool)
+    if not eggLogic.toolRefs[tool] then
+        eggLogic.nextToolRef=eggLogic.nextToolRef+1
+        eggLogic.toolRefs[tool]="tool_"..eggLogic.nextToolRef
+    end
+    return eggLogic.toolRefs[tool]
+end
+function eggLogic.toolMetadata(tool)
+    local data={sources={},raw={},conflicts={},complete=true,configurationCount=0,uidEvidence={},attributeKeys={}}
+    local groups={UID="uid",Uid="uid",uid="uid",EggUID="uid",EggUid="uid",FieldEggUid="uid",
+        perSecond="incomePerSecond",IncomePerSecond="incomePerSecond",CashPerSecond="incomePerSecond",
+        MoneyPerSecond="incomePerSecond",CoinsPerSecond="incomePerSecond",perSecondDisplay="incomeDisplay",
+        rarity="rarity",Rarity="rarity",RarityName="rarity",OwnerUserId="ownerUserId"}
+    local function observe(key,value,path)
+        local group=groups[key]
+        if group=="uid" then
+            data.uidEvidence[#data.uidEvidence+1]={key=key,source=path,value=eggLogic.sourceScalar(value)}
+            if type(value)~="string" or #value>120 or not value:find("%S") then data.conflicts.uid=true;return end
+            value=value:match("^%s*(.-)%s*$")
+        elseif group=="incomePerSecond" or group=="incomeDisplay" or group=="ownerUserId" then
+            value=tonumber(value)
+            if not value or value~=value or value<0 or value==math.huge then data.conflicts[group]=true;return end
+        elseif type(value)~="string" or #value>120 or not value:find("%S") then return end
+        if data[group]~=nil and data[group]~=value then data.conflicts[group]=true end
+        data[group]=value;data.sources[group]=path
+    end
+    local function children(obj)
+        local ok,list=pcall(function() return obj:GetChildren() end)
+        if not ok then data.complete=false;return {} end
+        if #list>64 then data.complete=false end
+        return list
+    end
+    local function read(obj,list)
+        local path=obj:GetFullName()
+        local raw={path=path,values={}}
+        local ok,attrs=pcall(function() return obj:GetAttributes() end)
+        if not ok then data.complete=false;attrs={} end
+        -- Identity/rates are read before the bounded cosmetic key listing.
+        for key in pairs(groups) do
+            if attrs[key]~=nil then
+                raw.values[key]=eggLogic.sourceScalar(attrs[key])
+                observe(key,attrs[key],path.." attribute "..key)
+            end
+        end
+        local keys,count={},0
+        for key,value in pairs(attrs) do
+            count=count+1
+            if count>64 then data.attributeKeysTruncated=true;break end
+            keys[#keys+1]=key:sub(1,80)
+            if key:lower():find("uid",1,true) and not groups[key] then raw.values[key]=eggLogic.sourceScalar(value) end
+        end
+        table.sort(keys);data.attributeKeys[#data.attributeKeys+1]={path=path,keys=keys}
+        for i,child in ipairs(list) do
+            if i>64 then break end
+            if groups[child.Name] and (child:IsA("StringValue") or child:IsA("NumberValue") or child:IsA("IntValue")) then
+                raw.values[child.Name..".Value"]=eggLogic.sourceScalar(child.Value)
+                observe(child.Name,child.Value,child:GetFullName().." Value")
+            end
+        end
+        data.raw[#data.raw+1]=raw
+    end
+    local list=children(tool)
+    read(tool,list)
+    for i,child in ipairs(list) do
+        if i>64 then break end
+        if child.Name=="Configuration" then
+            data.configurationCount=data.configurationCount+1
+            if child:IsA("Configuration") and data.configurationCount<=2 then read(child,children(child))
+            else data.complete=false end
+        end
+    end
+    if data.configurationCount>1 then data.configurationAmbiguous=true end
+    for group in pairs(data.conflicts) do data[group]=nil;data.sources[group]=nil end
+    -- Display income is kept separately, never used as a fallback rate.
+    return data
+end
+function eggLogic.toolCatalog()
+    local result={at=os.time(),entries={},roots={},total=0,uidLinked=0,knownIncome=0,eligibleIncome=0,missingUid=0,
+        duplicateUid=0,scanComplete=true,metadataIncomplete=0,scope="local_inventory_tool_observations",serverOwnershipVerified=false}
+    local all,seen,counts={},{},{}
+    local containers={{name="Backpack",object=player:FindFirstChildOfClass("Backpack")},{name="Character",object=player.Character}}
+    for _,container in ipairs(containers) do
+        local report={name=container.name,found=container.object~=nil,complete=true,visited=0}
+        result.roots[#result.roots+1]=report
+        if container.object then
+            local ok,list=pcall(function() return container.object:GetChildren() end)
+            if not ok then report.complete=false;result.scanComplete=false;list={} end
+            for i,tool in ipairs(list) do
+                if i>1000 or #all>=256 then report.complete=false;result.scanComplete=false;break end
+                report.visited=i
+                if tool:IsA("Tool") and not seen[tool] then
+                    seen[tool]=true
+                    local good,meta=pcall(eggLogic.toolMetadata,tool)
+                    if not good then meta={sources={},raw={},conflicts={},complete=false,error=tostring(meta):sub(1,120)} end
+                    local itemType=tool:GetAttribute("ItemType")
+                    local entry={ref=eggLogic.toolRef(tool),name=tool.Name,path=tool:GetFullName(),container=container.name,
+                        itemType=eggLogic.sourceScalar(itemType),kind=itemType=="AssetEgg" and "asset_egg_tool" or "other_inventory_tool",metadata=meta}
+                    if tool.Parent~=container.object then meta.complete=false;entry.containmentChanged=true end
+                    all[#all+1]=entry
+                    local identities={}
+                    for _,evidence in ipairs(meta.uidEvidence or {}) do
+                        local value=evidence.value
+                        if type(value)=="string" and #value<=120 and value:find("%S") then
+                            identities[value:match("^%s*(.-)%s*$")]=true
+                        end
+                    end
+                    for uid in pairs(identities) do counts[uid]=(counts[uid] or 0)+1 end
+                end
+            end
+        end
+    end
+    result.total=#all
+    for _,entry in ipairs(all) do
+        local meta=entry.metadata
+        local reason=not meta.complete and "incomplete_tool_read" or meta.configurationAmbiguous and "multiple_configurations"
+            or meta.conflicts.uid and "conflicting_or_invalid_uid" or not meta.uid and "missing_uid"
+            or counts[meta.uid]>1 and "duplicate_uid" or not result.scanComplete and "incomplete_inventory_scan"
+            or meta.conflicts.ownerUserId and "conflicting_owner" or meta.ownerUserId and meta.ownerUserId~=player.UserId and "foreign_owner"
+            or "unique_observed_uid"
+        entry.uidBinding={status=reason,linked=reason=="unique_observed_uid",scope="same_tool_in_local_inventory",
+            serverOwnershipVerified=false}
+        entry.eligibleForIncome=entry.uidBinding.linked and meta.incomePerSecond~=nil
+        if not meta.complete then result.metadataIncomplete=result.metadataIncomplete+1 end
+        if not meta.uid then result.missingUid=result.missingUid+1 end
+        if meta.uid and counts[meta.uid]>1 then result.duplicateUid=result.duplicateUid+1 end
+        if entry.uidBinding.linked then result.uidLinked=result.uidLinked+1 end
+        if meta.incomePerSecond~=nil then result.knownIncome=result.knownIncome+1 end
+        if entry.eligibleForIncome then result.eligibleIncome=result.eligibleIncome+1 end
+    end
+    table.sort(all,function(a,b)
+        if a.eligibleForIncome~=b.eligibleForIncome then return a.eligibleForIncome end
+        local av,bv=a.metadata.incomePerSecond or -1,b.metadata.incomePerSecond or -1
+        if av~=bv then return av>bv end
+        if a.name~=b.name then return a.name<b.name end
+        return a.ref<b.ref
+    end)
+    for i=1,math.min(#all,40) do result.entries[i]=all[i] end
+    result.truncated=#all>40
+    result.complete=result.scanComplete and result.metadataIncomplete==0 and not result.truncated
+    return result
+end
 function eggLogic.refresh()
     local character=player.Character
     local root=character and character:FindFirstChild("HumanoidRootPart")
@@ -1265,12 +1408,13 @@ function eggLogic.refresh()
         end
     end
     catalog.inventoryComplete=inventory.complete and #items<=8
+    catalog.tools=eggLogic.toolCatalog()
     eggSelect.catalog=catalog
     return choices
 end
 function eggLogic.export()
     eggLogic.refresh()
-    return {version="1.45",kind="egg_data",placeId=game.PlaceId,
+    return {version="1.46",kind="egg_data",placeId=game.PlaceId,
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
             selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents}}
 end
@@ -2900,8 +3044,21 @@ function eggUI.render()
             entry.eligibleForMode and "" or " | skipped")
     end
     if #(catalog.entries or {})==0 then lines[#lines+1]="No eligible nearby field prompts found." end
-    lines[#lines+1]="";lines[#lines+1]="Inventory names (no quality inferred from names)"
+    lines[#lines+1]="";lines[#lines+1]="Inventory egg tools"
     for _,item in ipairs(catalog.inventory or {}) do lines[#lines+1]=item.name end
+    local tools=catalog.tools
+    if tools then
+        lines[#lines+1]=""
+        lines[#lines+1]=string.format("Inventory tools: %d / UID linked: %d / income eligible: %d",tools.total,tools.uidLinked,tools.eligibleIncome)
+        lines[#lines+1]="Same-tool observations; these rates do not score field eggs."
+        for _,entry in ipairs(tools.entries) do
+            local m=entry.metadata
+            lines[#lines+1]=string.format("%s [%s] | /s: %s | %s | UID: %s | %s",entry.name,entry.ref,
+                m.incomePerSecond~=nil and tostring(m.incomePerSecond) or "?",m.rarity or "rarity ?",
+                m.uid and m.uid:sub(1,12) or "?",entry.uidBinding.status)
+        end
+        if not tools.complete then lines[#lines+1]="Tool report limited/incomplete; Copy eggs includes completeness details." end
+    end
     eggUI.listLabel.Text=table.concat(lines,"\n")
 end
 function eggUI.scan()
@@ -2913,6 +3070,7 @@ function eggUI.scan()
         or catalog.fieldLinked==0 and "Field records received; no unambiguous prompt binding. Copy short includes UID / positions."
         or catalog.knownIncome==0 and "Egg records linked; income is still unknown. Copy short includes prioritized field data."
         or "Egg data refreshed. Copy short includes sources and missing/conflicting fields."
+    if catalog.tools then status.Text=status.Text..string.format(" | Tools: %d UID / %d income",catalog.tools.uidLinked,catalog.tools.eligibleIncome) end
 end
 eggUI.scanButton.Activated:Connect(eggUI.scan)
 eggUI.sourceButton.Activated:Connect(function()
@@ -3287,7 +3445,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.45", placeId = game.PlaceId,
+        local report = {version = "1.46", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -3459,7 +3617,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.45", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.46", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -3489,7 +3647,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.45 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.46 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
