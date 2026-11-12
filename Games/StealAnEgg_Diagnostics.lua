@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.39
+-- Steal An Egg: structure diagnostics v1.40
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -54,7 +54,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.39", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.40", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -98,7 +98,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.39 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.40 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -124,7 +124,10 @@ local bindSlot=control(placement,"Mark empty slot",180,80,180,36)
 local clearSlots=control(placement,"Clear slots",370,80,170,36)
 local autoMarkButton=control(placement,"Auto mark empty slots",0,130,260,36)
 local manualPlaceButton=control(placement,"Manual placement",270,130,270,36)
-local placeLabel=label(placement,"Manual placement stops automation and hides this window. Equip an egg and click an empty slot yourself.",0,180,560,190,13,colors.muted)
+local recordPlaceButton=control(placement,"Record placement: OFF",0,180,260,36)
+local recordPlaceLabel=label(placement,"Records one manual placement; sends no placement input.",270,180,290,36,11,colors.muted)
+recordPlaceLabel.TextWrapped=true
+local placeLabel=label(placement,"Manual placement stops automation and hides this window. Equip an egg and click an empty slot yourself.",0,230,560,140,13,colors.muted)
 placeLabel.TextWrapped=true;placeLabel.TextYAlignment=Enum.TextYAlignment.Top
 local restore = control(gui,"YUU HUB",16,120,108,36)
 restore.Visible = false
@@ -141,7 +144,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.39 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.40 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -186,7 +189,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.39 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.40 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -267,6 +270,7 @@ local systemRunning=false
 local collectRunning = false
 local placeRunning=false
 local placeState={enabled=false,binding=false,slots={},attempts=0,observed=0,last="OFF"}
+local placementRecord={enabled=false,last="OFF",records={}}
 local hatchApproach, hatchOwned, hatchResolvePlot, hatchCarryVisible
 local hatchWalking
 local collectAttempts = setmetatable({}, {__mode = "k"})
@@ -399,7 +403,7 @@ connections[#connections + 1] = workspace.DescendantRemoving:Connect(function(ob
 end)
 connections[#connections + 1] = game:GetService("ProximityPromptService").PromptShown:Connect(trackPrompt)
 hatchButton.Activated:Connect(function()
-    if placeState.manualPreparing then return end
+    if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
     hatch.enabled = not hatch.enabled
     attemptState = setmetatable({}, {__mode = "k"})
     hatchButton.Text = hatch.enabled and "Auto Hatch: ON" or "Auto Hatch: OFF"
@@ -414,7 +418,7 @@ hatchButton.Activated:Connect(function()
 end)
 local hatchRunning = false
 local function dispatchHatch(manual)
-    if placeState.manualPreparing then return end
+    if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
     if hatchRunning then return end
     hatchRunning = true
     local ok, err = pcall(hatchStep, manual)
@@ -472,6 +476,7 @@ local function liveHatchSnapshot()
     return snapshot
 end
 -- AUTO_COLLECT_ENGINE_BEGIN
+local recordingContext
 local collectTween
 local walkReturn
 local walkingHumanoid
@@ -1336,7 +1341,7 @@ local function collectSnapshot(includeEvidence)
         inventoryAdditionsObserved = collectEgg.inventoryAdditionsObserved or 0,
         phase = collectEgg.phase or "IDLE", deliveriesObserved = collectEgg.deliveriesObserved or 0,
         gameEvents = gameEvents, eventObserver = eventObserver,
-        upgrades=upgrades,training=training,
+        upgrades=upgrades,training=training,placementRecording=placementRecord,
         autoPlace={available=AUTO_PLACE_ENABLED,manualMode=placeState and placeState.manualMode,manualPreparing=placeState and placeState.manualPreparing,binding=placeState and placeState.binding,preparingBind=placeState and placeState.preparingBind,enabled=placeState and placeState.enabled,attempts=placeState and placeState.attempts,observed=placeState and placeState.observed,last=placeState and placeState.last,lastAttempt=placeState and placeState.lastAttempt,autoMark=placeState and placeState.autoMark,lastSlotPick=placeState and placeState.lastSlotPick},
         autoHome={enabled=autoHome.enabled,ready=autoHome.ready,reason=autoHome.reason,report=includeEvidence and autoHome.report or nil},
         lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, lastWalkingRecovery=lastWalkingRecovery, deliveryPointSet = deliveryPoint ~= nil,
@@ -1829,6 +1834,135 @@ local function prepareManualPlacement()
     if fieldCarryActive() then return false,"Deliver the field egg first, then select the inventory egg yourself" end
     return true,"Automation OFF. Equip an inventory egg, walk to your base, and click an empty slot yourself. Alt reopens the hub."
 end
+-- Read-only observation of a player-controlled placement. No Tool activation,
+-- generated input, camera movement, or placement Remote calls exist here.
+local function stopPlacementRecording(reason)
+    placementRecord.enabled=false
+    placementRecord.last=reason or "Recording stopped"
+    if recordingContext and recordingContext.record and not recordingContext.record.finishedAt then
+        recordingContext.record.status="cancelled"
+        recordingContext.record.stopReason=placementRecord.last
+        recordingContext.record.finishedAt=os.time()
+    end
+    recordingContext=nil
+end
+local function recordEquippedEgg(character)
+    local egg
+    for _,tool in ipairs(character:GetChildren()) do
+        if tool:IsA("Tool") and tool:GetAttribute("ItemType")=="AssetEgg" then
+            local uid=tool:GetAttribute("UID")
+            if egg or type(uid)~="string" or uid=="" then return nil,true end
+            egg={uid=uid,name=tool.Name}
+        end
+    end
+    return egg,false
+end
+local function beginPlacementRecording()
+    if placementRecord.enabled then return false,"Recording already active" end
+    local ready,message=prepareManualPlacement()
+    if not ready then return false,message end
+    local _,plot=resolveAutoHome()
+    if not plot then return false,"Recording needs a confirmed owned base" end
+    recordingContext={character=player.Character,plot=plot,startedClock=os.clock()}
+    placementRecord.enabled=true
+    placementRecord.last="Equip an inventory egg and click an empty slot yourself; one click is recorded"
+    return true,placementRecord.last
+end
+local function placementRecordPosition(value)
+    return value and {x=value.X,y=value.Y,z=value.Z} or nil
+end
+local function capturePlacementClick(part,point,screen,processed)
+    if not placementRecord.enabled or not recordingContext or processed then return false end
+    local context=recordingContext
+    if context.record then
+        context.record.additionalClicks=(context.record.additionalClicks or 0)+1
+        return false
+    end
+    local character=player.Character
+    local root=character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+    if character~=context.character or not root or not humanoid or humanoid.Health<=0 then
+        stopPlacementRecording("Character changed; recording cancelled");return false
+    end
+    if not part or not part.Parent or not point then placementRecord.last="No world target under mouse; waiting";return false end
+    local egg,ambiguous=recordEquippedEgg(character)
+    if ambiguous then placementRecord.last="Equipped egg UID is ambiguous; waiting";return false end
+    local before=eggInventory()
+    local source,sampleAge="at_click",0
+    -- A game input handler may remove the Tool before this listener runs.
+    -- Preserve the recent read-only sample and disclose its age/source.
+    if not egg and context.equipped and os.clock()-context.equippedAt<=0.25 then
+        egg=context.equipped;before=context.inventory
+        source="recent_read_only_sample";sampleAge=(os.clock()-context.equippedAt)*1000
+    end
+    if not egg then placementRecord.last="No equipped egg captured at click; recording is still waiting";return false end
+    local record={at=os.time(),clock=os.clock(),uid=egg.uid,eggName=egg.name,
+        target={path=part:GetFullName(),class=part.ClassName,ancestry={}},
+        hit=placementRecordPosition(point),screen=placementRecordPosition(screen),
+        characterPosition=placementRecordPosition(root.Position),
+        before={complete=before.complete,count=before.count,uidPresent=before.items[egg.uid]~=nil},
+        status="observing",inputSource="UIS.InputBegan",equippedSource=source,beforeSampleAgeMs=sampleAge,worldPlacementVerified=false,
+        note="UID removal and nearby events are observations, not proof of accepted placement"}
+    record.target.inOwnedPlot=part:IsDescendantOf(context.plot)
+    record.ownedPlot=context.plot:GetFullName()
+    local node=part
+    for _=1,4 do
+        if not node then break end
+        local item={path=node:GetFullName(),class=node.ClassName,attributes={}}
+        for _,key in ipairs({"UID","SlotId","SlotIndex","OwnerUserId","Empty","IsEmpty","Occupied","HasEgg"}) do
+            local value=node:GetAttribute(key)
+            if type(value)=="number" or type(value)=="boolean" or type(value)=="string" then
+                item.attributes[key]=type(value)=="string" and value:sub(1,120) or value
+            end
+        end
+        record.target.ancestry[#record.target.ancestry+1]=item
+        node=node.Parent
+    end
+    context.record=record
+    placementRecord.records[#placementRecord.records+1]=record
+    if #placementRecord.records>3 then table.remove(placementRecord.records,1) end
+    placementRecord.last="Manual click recorded; observing inventory for 8 seconds"
+    return true
+end
+local function tickPlacementRecording()
+    local context=recordingContext
+    if not placementRecord.enabled or not context then return end
+    local character=player.Character
+    local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+    if not active or character~=context.character or not humanoid or humanoid.Health<=0 then
+        stopPlacementRecording("Character changed or hub closed; recording cancelled");return
+    end
+    if collectEgg.enabled or hatch.enabled or training.enabled or upgrades.mode~="Off"
+        or collectRunning or hatchRunning or placeRunning or systemRunning or placeState.binding then
+        stopPlacementRecording("Other automation started; recording cancelled");return
+    end
+    if fieldCarryActive() then stopPlacementRecording("Field carry started; recording cancelled");return end
+    local record=context.record
+    if not record then
+        local egg,ambiguous=recordEquippedEgg(character)
+        if egg then context.equipped=egg;context.equippedAt=os.clock();context.inventory=eggInventory()
+        elseif ambiguous then context.equipped=nil;context.inventory=nil end
+        if os.clock()-context.startedClock>=60 then stopPlacementRecording("No eligible manual click within 60 seconds") end
+        return
+    end
+    local after=eggInventory()
+    record.after={complete=after.complete,count=after.count,uidPresent=after.items[record.uid]~=nil}
+    if after.complete and not record.after.uidPresent then context.goneSince=context.goneSince or os.clock()
+    else context.goneSince=nil end
+    record.inventoryUIDRemoved=record.before.complete and record.before.uidPresent
+        and context.goneSince~=nil and os.clock()-context.goneSince>=0.5 or false
+    if os.clock()-record.clock<8 then return end
+    record.events={}
+    for _,event in ipairs(gameEvents) do
+        if event.clock>=record.clock and #record.events<8 then record.events[#record.events+1]=event end
+    end
+    record.eventsMayBeIncomplete=true
+    record.finishedAt=os.time()
+    record.status=record.inventoryUIDRemoved and "uid_removal_observed" or "placement_unconfirmed"
+    placementRecord.last=record.inventoryUIDRemoved and "UID left inventory; check egg in base. Copy short includes recording."
+        or "Placement unconfirmed by inventory; Copy short includes recording."
+    placementRecord.enabled=false;recordingContext=nil
+end
 local function dispatchPlace()
     if placeState.binding or placeState.preparingBind then return end
     if placeRunning or hatchRunning or collectRunning then return end
@@ -1994,7 +2128,7 @@ local function dispatchSystems()
 end
 -- AUTO_COLLECT_ENGINE_END
 upgradeToggle.Activated:Connect(function()
-    if placeState.manualPreparing then return end
+    if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
     if systemRunning then
         if upgrades.mode~="Off" then upgrades.mode="Off";cancelCollectTween("Upgrade OFF");upgradeToggle.Text="Upgrade: OFF"
         else status.Text="Wait for training movement to stop before changing upgrade mode" end
@@ -2005,18 +2139,36 @@ upgradeToggle.Activated:Connect(function()
     upgradeToggle.Text="Upgrade: "..string.upper(upgrades.mode)
 end)
 trainToggle.Activated:Connect(function()
-    if placeState.manualPreparing then return end
+    if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
     training.enabled=not training.enabled
     trainToggle.Text=training.enabled and "Train: ON" or "Train: OFF"
     if not training.enabled and systemRunning then cancelCollectTween("Training OFF") end
 end)
 autoMarkButton.Activated:Connect(function()
-    if placeState.manualPreparing then return end
+    if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
     local _,message=autoMarkSlots(false)
     placeLabel.Text=message
 end)
+recordPlaceButton.Activated:Connect(function()
+    if placementRecord.enabled then stopPlacementRecording("Stopped by user");return end
+    if placeState.manualPreparing or placeState.preparingBind then return end
+    placeState.manualPreparing=true
+    recordPlaceButton.Text="Preparing recorder..."
+    task.spawn(function()
+        local ran,ready,message=pcall(beginPlacementRecording)
+        placeState.manualPreparing=false
+        if not active then return end
+        collectButton.Text="Collect: OFF";hatchButton.Text="Auto Hatch: OFF"
+        upgradeToggle.Text="Upgrade: OFF";trainToggle.Text="Train: OFF"
+        recordPlaceButton.Text=placementRecord.enabled and "Record placement: ON" or "Record placement: OFF"
+        recordPlaceLabel.Text=ran and message or "Recorder failed to start"
+        status.Text=recordPlaceLabel.Text
+        if not ran then stopPlacementRecording("Recorder failed to start") end
+        if ran and ready then restore.Text="Recording: open hub";setShown(false) end
+    end)
+end)
 manualPlaceButton.Activated:Connect(function()
-    if placeState.manualPreparing then return end
+    if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
     if placeState.preparingBind then placeLabel.Text="Finish slot selection preparation first";return end
     placeState.manualPreparing=true
     manualPlaceButton.Text="Stopping automation..."
@@ -2033,7 +2185,7 @@ manualPlaceButton.Activated:Connect(function()
     end)
 end)
 placeToggle.Activated:Connect(function()
-    if placeState.manualPreparing then return end
+    if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
     if not AUTO_PLACE_ENABLED then
         placeState.enabled=false;placeState.last="Auto Place disabled after kick reports. Place eggs manually."
         placeToggle.Text="Auto Place: DISABLED";placeLabel.Text=placeState.last;return
@@ -2043,7 +2195,7 @@ placeToggle.Activated:Connect(function()
     if not placeState.enabled and placeRunning then cancelCollectTween("Auto Place OFF") end
 end)
 bindSlot.Activated:Connect(function()
-    if placeState.manualPreparing then return end
+    if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
     if placeState.preparingBind then return end
     if fieldCarryActive() or manualCarry then placeLabel.Text="Deliver the field egg or clear the carrying marker before marking";return end
     placeState.preparingBind=true;placeState.binding=false
@@ -2080,10 +2232,22 @@ bindSlot.Activated:Connect(function()
     end)
 end)
 clearSlots.Activated:Connect(function()
-    if placeState.manualPreparing then return end
+    if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
     if placeRunning then return end
     placeState.slots={};placeState.binding=false;placeState.enabled=false
     placeToggle.Text=not AUTO_PLACE_ENABLED and "Auto Place: DISABLED" or "Auto Place: OFF";placeLabel.Text="Slots cleared; mark empty slots again"
+end)
+connections[#connections+1]=UIS.InputBegan:Connect(function(input,processed)
+    if not placementRecord.enabled or processed or UIS:GetFocusedTextBox()
+        or input.UserInputType~=Enum.UserInputType.MouseButton1 then return end
+    for _,obj in ipairs(pg:GetGuiObjectsAtPosition(input.Position.X,input.Position.Y)) do
+        if obj:IsDescendantOf(gui) then return end
+    end
+    local ok,err=pcall(function()
+        local mouse=player:GetMouse()
+        capturePlacementClick(mouse.Target,mouse.Hit.Position,input.Position,processed)
+    end)
+    if not ok then stopPlacementRecording("Recorder error: "..tostring(err):sub(1,100)) end
 end)
 connections[#connections+1]=UIS.InputBegan:Connect(function(input,processed)
     if not placeState.binding or input.UserInputType~=Enum.UserInputType.MouseButton1 then return end
@@ -2170,6 +2334,7 @@ carryMarker.Activated:Connect(function()
     collectLabel.Text = manualCarry and "Carrying (marked by user); deliver manually" or "Carrying marker cleared"
 end)
 connections[#connections+1] = player.CharacterAdded:Connect(function()
+    if placementRecord.enabled then stopPlacementRecording("Respawn; recording cancelled") end
     cancelCollectTween("Character changed")
     serverCarry=nil
     lastRedeem=nil
@@ -2181,7 +2346,7 @@ connections[#connections+1] = player.CharacterAdded:Connect(function()
     carryMarker.Text = "Mark: I am carrying an egg"
 end)
 collectButton.Activated:Connect(function()
-    if placeState.manualPreparing then return end
+    if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
     collectEgg.enabled = not collectEgg.enabled
     collectEgg.phase=collectEgg.enabled and "SEEKING" or "IDLE"
     collectAttempts = setmetatable({}, {__mode = "k"})
@@ -2226,6 +2391,7 @@ local function refreshExportState()
 end
 local function stopHatch()
     active = false
+    stopPlacementRecording("UI closed")
     hatch.enabled = false
     placeState.enabled=false;placeState.binding=false
     upgrades.mode="Off";training.enabled=false
@@ -2240,6 +2406,19 @@ local function stopHatch()
     if holding then pcall(function() holding:InputHoldEnd() end); holding = nil end
     for _, connection in ipairs(connections) do connection:Disconnect() end
 end
+task.spawn(function()
+    while active do
+        task.wait(0.1)
+        if placementRecord.enabled then
+            local ok,err=pcall(tickPlacementRecording)
+            if not ok then stopPlacementRecording("Recorder error: "..tostring(err):sub(1,100)) end
+        end
+        if active and not placeState.manualPreparing then
+            recordPlaceButton.Text=placementRecord.enabled and "Record placement: ON" or "Record placement: OFF"
+            recordPlaceLabel.Text=placementRecord.last
+        end
+    end
+end)
 local lifetime = gui.AncestryChanged:Connect(function(_, parent)
     if parent == nil then stopHatch() end
 end)
@@ -2282,7 +2461,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.39", placeId = game.PlaceId,
+        local report = {version = "1.40", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -2454,7 +2633,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.39", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.40", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -2484,7 +2663,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.39 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.40 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
