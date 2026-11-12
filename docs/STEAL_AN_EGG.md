@@ -1,4 +1,4 @@
-# Steal An Egg — v1.41
+# Steal An Egg — v1.42
 
 PlaceId: 107778070777162. Load through the existing universal Loader.
 All automation and placement recording start OFF. Evidence below separates user-reported game results from offline checks.
@@ -61,7 +61,7 @@ python -m unittest discover -s tests -v
 luac5.4 -p Games/StealAnEgg_Diagnostics.lua
 lua5.4 tests/test_egg_collect.lua
 ~~~
-143 simulated cases and 4 Loader contract tests pass. The complete Lua chunk compiles locally. These checks cover cash parsing, unknown/conflicting balances, exclusion of premium controls, missing callbacks, level confirmation/no-result stop, native treadmill approach and previous automation guards. They are not Potassium/server tests and do not guarantee absence of anti-cheat kicks.
+153 simulated cases and 4 Loader contract tests pass. The complete Lua chunk compiles locally. These checks cover cash parsing, unknown/conflicting balances, exclusion of premium controls, missing callbacks, level confirmation/no-result stop, native treadmill approach and previous automation guards. They are not Potassium/server tests and do not guarantee absence of anti-cheat kicks.
 
 ## Manual placement handoff (v1.38)
 
@@ -111,3 +111,15 @@ A positive local result sets `status=world_egg_appearance_observed` and `worldEg
 Up to six nearby new/unmatched candidates are reported with paths, names, positions, known identity/ownership attributes, visibility and match information. Name-only or UID-less objects, foreign/unknown ownership, duplicates, stale UID evidence, invisible models, disappearing eggs and incomplete relevant coverage do not produce a positive flag. This diagnostic output allows the game's actual placement representation to be checked without guessing Remote arguments. The detector has not yet been verified against a placed egg in the live game.
 
 Nineteen additional simulated cases cover exact/fresh/reused UID appearances, complete inventory requirements, wrong/name-only/distant IDs, foreign and detached ownership, duplicate/nested identities, disappearing/invisible geometry, Tool exclusion, bounded/incomplete scans, plot changes and UUID names. Total: 143 Lua cases and four Loader contracts pass locally; the complete source compiles.
+
+## Observed placed-render namespace (v1.42)
+
+The user's v1.41 report contains a new Model under `Workspace.PlacedEggRenders` named `<UserId>_<32hex UID>`, with the exact recorded egg UID as its suffix and its pivot exactly at the click. Its visible meshes and stable inventory removal were observed, but the generic detector did not parse this name as identity/ownership and the spatial query was capped. This explains the false-negative detector result; it does not explain the historical BAC kicks.
+
+v1.42 parses this name only for direct Model children of the actual `Workspace.PlacedEggRenders` root. The decimal owner prefix must match the local player's UserId, and the UID suffix must match exactly. The parser does not apply to unrelated folders, nested lookalikes, decals or names with extra suffixes. Conflicting OwnerUserId attributes still reject a match.
+
+A separate bounded scan enumerates up to 512 direct render-root children and up to 2,048 descendants of locally owned render Models. Complete before/after namespace coverage can validate local appearance even if the general spatial query is incomplete. Root-list/descendant truncation is reported through `worldResult.before/after.renderComplete`, with `renderRootFound` and `renderVisited`. When absent in the baseline, the root is explicitly reported absent; a newly created complete root can then be compared. Generic plot/spatial scopes keep their previous checks.
+
+Candidate diagnostics now include `placedRender`, `renderOwnerUserId` and UID evidence with key `PlacedEggRenderName`; `worldResult.localUserId` makes the owner comparison auditable. The distance, visible geometry, unique matching group, stable presence, complete inventory removal and previous-UID rejection rules remain required. `worldPlacementVerified` and server acceptance remain unverified. Auto Place stays disabled.
+
+Ten new simulated cases cover the reported owner_UID namespace with capped spatial queries, foreign owners, wrong folders/UIDs, malformed names, conflicting ownership, pre-existing renders, duplicate identities, namespace truncation and invisible geometry. Total: 153 Lua cases plus four Loader contracts pass locally, and full source compilation passes. Repeat one manual placement with Record placement and send Copy short to verify the new mapping live.
