@@ -73,10 +73,10 @@ env.task.wait = function()
         movement.PlaybackState="Completed"
     end
 end
-env.placeState={enabled=false,slots={},attempts=0,observed=0};env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
+env.placementRecord={enabled=false,last="OFF",records={}};env.placeState={enabled=false,slots={},attempts=0,observed=0};env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording}", "collect-engine", "t", env))()
 local hatchSource=assert(source:match("(local function hatchStep.-)\nconnections%["))
 local runHatch=assert(load(hatchSource.."\nreturn hatchStep", "hatch-step", "t", env))()
 local function prompt(distance)
@@ -89,6 +89,7 @@ local function prompt(distance)
     return p
 end
 local function reset()
+    funcs.stopRecord("reset");env.placementRecord={enabled=false,last="OFF",records={}}
     env.hatch.enabled=true;env.hatch.attempts=0;env.hatch.lastAttempt=nil;env.attemptState={}
     env.placeState={enabled=false,slots={},attempts=0,observed=0}
     env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0}
@@ -954,5 +955,101 @@ check("auto hatch stops before input after cancelled approach", function()
     local p=setupHatch();p.position=position(40)
     onWait=function() env.hatch.enabled=false end
     runHatch(false);assert(p.began==0)
+end)
+local function setupRecorder()
+    local camera,original,clicks,egg=setupPlaceClick(false)
+    equippedChildren={egg};backpackChildren={};egg.Parent=character
+    assert(funcs.startRecord())
+    assert(not env.collectEgg.enabled and not env.hatch.enabled and not env.placeState.enabled)
+    return env.placeState.slots[1].part,egg,camera,original,clicks
+end
+local function finishRecording()
+    for i=1,82 do clock=clock+0.1;funcs.tickRecord() end
+end
+check("placement recorder captures UID and raw target without generating input", function()
+    local slot,egg,camera,original,clicks=setupRecorder()
+    local oldParent=egg.Parent
+    function humanoid:EquipTool() error("Recorder must not equip") end
+    env.capability=function() error("Recorder must not call executor APIs") end
+    assert(funcs.captureRecord(slot,position(80),position(100,200),false))
+    local rec=env.placementRecord.records[1]
+    assert(rec.uid==egg:GetAttribute("UID") and rec.target.inOwnedPlot and rec.target.path==slot:GetFullName())
+    assert(rec.before.uidPresent and rec.characterPosition.x==80 and rec.screen.x==100)
+    assert(egg.Parent==oldParent and clicks()==0 and camera.CFrame==original and tweenCreated==0)
+end)
+check("recorder observes stable UID removal without claiming world placement", function()
+    local slot=setupRecorder();assert(funcs.captureRecord(slot,position(80),position(100),false))
+    equippedChildren={};finishRecording()
+    local rec=env.placementRecord.records[1]
+    assert(not env.placementRecord.enabled and rec.inventoryUIDRemoved and rec.status=="uid_removal_observed")
+    assert(not rec.worldPlacementVerified and rec.after.complete and not rec.after.uidPresent)
+    assert(funcs.snapshot().placementRecording.records[1]==rec)
+end)
+check("recorder does not mistake unequipping for successful placement", function()
+    local slot,egg=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false)
+    equippedChildren={};backpackChildren={egg};finishRecording()
+    local rec=env.placementRecord.records[1]
+    assert(not rec.inventoryUIDRemoved and rec.after.uidPresent and rec.status=="placement_unconfirmed")
+end)
+check("recorder refuses processed clicks no target and no equipped egg", function()
+    local slot=setupRecorder()
+    assert(not funcs.captureRecord(slot,position(80),position(100),true))
+    assert(not funcs.captureRecord(nil,position(80),position(100),false))
+    equippedChildren={};assert(not funcs.captureRecord(slot,position(80),position(100),false))
+    assert(#env.placementRecord.records==0)
+end)
+check("recorder cannot infer UID removal from incomplete inventory", function()
+    local slot=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false)
+    local malformed=eggTool("AssetEgg");function malformed:GetAttribute(key) if key=="ItemType" then return "AssetEgg" end end
+    equippedChildren={malformed};finishRecording()
+    assert(not env.placementRecord.records[1].inventoryUIDRemoved)
+end)
+check("recorder keeps detached world target ownership uncertain", function()
+    setupRecorder();local detached=node("GeneratedEggArea","Part");detached.Parent=node("OtherGeneratedRoot","Folder")
+    assert(funcs.captureRecord(detached,position(80),position(100),false))
+    assert(not env.placementRecord.records[1].target.inOwnedPlot)
+end)
+check("additional world clicks do not create overlapping records", function()
+    local slot=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false)
+    funcs.captureRecord(slot,position(80),position(100),false)
+    assert(#env.placementRecord.records==1 and env.placementRecord.records[1].additionalClicks==1)
+end)
+check("recorder cancels on respawn worker restart or field carry", function()
+    local slot=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false)
+    env.player.Character=nil;funcs.tickRecord();env.player.Character=character
+    assert(not env.placementRecord.enabled and env.placementRecord.records[1].status=="cancelled")
+    assert(funcs.startRecord());env.training.enabled=true;funcs.tickRecord();assert(not env.placementRecord.enabled)
+    assert(funcs.startRecord());carrying=true;funcs.tickRecord();assert(not env.placementRecord.enabled)
+end)
+check("recorder waits at most sixty seconds for a manual click", function()
+    setupRecorder();clock=clock+61;funcs.tickRecord()
+    assert(not env.placementRecord.enabled and #env.placementRecord.records==0)
+end)
+check("recorder includes bounded event observations with no acceptance claim", function()
+    local slot=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false)
+    for i=1,20 do funcs.record("manual-placement-test",i) end
+    finishRecording();local rec=env.placementRecord.records[1]
+    assert(#rec.events==8 and rec.eventsMayBeIncomplete and not rec.worldPlacementVerified)
+end)
+check("recorder retains only three attempts across separate sessions", function()
+    local slot=setupRecorder()
+    for i=1,5 do
+        if i>1 then assert(funcs.startRecord()) end
+        funcs.captureRecord(slot,position(80),position(100),false);finishRecording()
+    end
+    assert(#env.placementRecord.records==3)
+end)
+check("recorder preserves a recent sample when game removes egg before input listener", function()
+    local slot=setupRecorder();funcs.tickRecord()
+    equippedChildren={};clock=clock+0.1
+    assert(funcs.captureRecord(slot,position(80),position(100),false))
+    finishRecording();local rec=env.placementRecord.records[1]
+    assert(rec.equippedSource=="recent_read_only_sample" and rec.before.uidPresent and rec.inventoryUIDRemoved)
+    assert(rec.beforeSampleAgeMs>0 and not rec.worldPlacementVerified)
+end)
+check("recorder refuses an expired equipped-egg sample", function()
+    local slot=setupRecorder();funcs.tickRecord();equippedChildren={};clock=clock+0.4
+    assert(not funcs.captureRecord(slot,position(80),position(100),false))
+    assert(#env.placementRecord.records==0)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
