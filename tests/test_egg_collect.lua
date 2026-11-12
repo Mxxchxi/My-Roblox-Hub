@@ -81,7 +81,7 @@ end
 env.eggSelect={mode="Nearest",preferred={},catalog={entries={}},fieldSamples={}};env.placementRecord={enabled=false,last="OFF",records={}};env.placeState={enabled=false,slots={},attempts=0,observed=0};env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply,resetField=eggLogic.resetField,fieldRecord=eggLogic.fieldRecord,fieldIndex=function() return eggLogic.field end,eggExport=eggLogic.export,toolRead=eggLogic.toolMetadata,toolCatalog=eggLogic.toolCatalog,definitions=eggLogic.inspectDefinitions,definitionSnapshot=eggLogic.definitionSnapshot,definitionTarget=eggLogic.definitionTarget,sourceScan=eggLogic.scanSources,sourceScalar=eggLogic.sourceScalar,sourceReset=function() eggLogic.sources=nil;eggLogic.sourceRunning=false;eggLogic.sourceEvents={};eggLogic.definitions=nil;eggLogic.definitionRunning=false;eggLogic.definitionPending=nil end}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply,resetField=eggLogic.resetField,fieldRecord=eggLogic.fieldRecord,fieldIndex=function() return eggLogic.field end,eggExport=eggLogic.export,toolRead=eggLogic.toolMetadata,toolCatalog=eggLogic.toolCatalog,definitions=eggLogic.inspectDefinitions,directory=eggLogic.assetDirectory,directoryCost=eggLogic.directoryByteCost,definitionSnapshot=eggLogic.definitionSnapshot,definitionTarget=eggLogic.definitionTarget,sourceScan=eggLogic.scanSources,sourceScalar=eggLogic.sourceScalar,sourceReset=function() eggLogic.sources=nil;eggLogic.sourceRunning=false;eggLogic.sourceEvents={};eggLogic.definitions=nil;eggLogic.definitionRunning=false;eggLogic.definitionPending=nil end}", "collect-engine", "t", env))()
 local hatchSource=assert(source:match("(local function hatchStep.-)\nconnections%["))
 local runHatch=assert(load(hatchSource.."\nreturn hatchStep", "hatch-step", "t", env))()
 local function prompt(distance)
@@ -1480,7 +1480,7 @@ end)
 check("focused egg export includes prompt coordinates and prioritized field samples", function()
     qualityPrompt(3,nil,nil);funcs.record("RE/EggWorld/FieldEggShifted",fieldRecord("a",3,100))
     local result=funcs.eggExport()
-    assert(result.kind=="egg_data" and result.version=="1.48")
+    assert(result.kind=="egg_data" and result.version=="1.49")
     assert(result.eggSelection.catalog.entries[1].position.x==3 and result.eggSelection.catalog.fieldLinked==1)
     assert(result.eggSelection.fieldSamples[1].field.records[1].uid=="a")
 end)
@@ -1932,5 +1932,110 @@ check("definition export string limits preserve UTF-8 boundaries",function()
     assert(#value<=160 and utf8.len(value)~=nil)
     local snapshot=funcs.definitionSnapshot({Description="x"..string.rep("ก",100)},{})
     assert(utf8.len(snapshot.data.Description)~=nil)
+end)
+local function assetDefinition(id,rate,rarity,rank)
+    return {_id=id,DisplayName=id,EarningRate=rate,ModelWeight=20,
+        Egg={DisplayName=id.." Egg",GrowthTime=120,WeightKg=2,Icon="media"},
+        Rarity={_id=rarity or "Rare",DisplayName=rarity or "Rare",Rank=rank or 3,Color={},RarityGradient={}},
+        Animations={Idle={}},Icon="media",RandomIdleSound={SoundId=123},PossibleModelColors={}}
+end
+check("compact Directory retains observed gameplay fields and omits media",function()
+    local result=funcs.directory({Directory={Raccoon=assetDefinition("Raccoon",45)}})
+    local row=result.entries[1]
+    assert(result.complete and result.requiredFieldsComplete and result.totalEntries==1 and result.exported==1)
+    assert(row.categoryKey=="Raccoon" and row._id=="Raccoon" and row.EarningRate==45 and row.ModelWeight==20)
+    assert(row.Egg.DisplayName=="Raccoon Egg" and row.Egg.GrowthTime==120 and row.Rarity.Rank==3)
+    assert(not row.Icon and not row.Animations and not row.Egg.Icon and not row.Rarity.Color)
+end)
+check("Directory capture includes every category beyond the old generic 256 entry budget",function()
+    local directory={}
+    for i=1,400 do
+        local key=string.format("Type%04d",i);directory[key]=assetDefinition(key,i)
+        for k=1,100 do directory[key]["Cosmetic"..k]={Icon="ignore"} end
+    end
+    local result=funcs.directory({Directory=directory})
+    assert(result.complete and result.requiredFieldsComplete and result.totalEntries==400 and #result.entries==400)
+    assert(result.entries[1].categoryKey=="Type0001" and result.entries[400].EarningRate==400)
+end)
+check("same display names never collapse distinct Directory category keys",function()
+    local a,b=assetDefinition("DesertLark",8),assetDefinition("OtherBird",16)
+    a.DisplayName="Bird";b.DisplayName="Bird"
+    local result=funcs.directory({Directory={DesertLark=a,OtherBird=b}})
+    assert(result.exported==2 and result.entries[1].categoryKey~=result.entries[2].categoryKey)
+    assert(result.entries[1].DisplayName=="Bird" and result.entries[2].DisplayName=="Bird")
+end)
+check("Directory records preserve rarity rank ties and do not invent an order",function()
+    local result=funcs.directory({Directory={A=assetDefinition("A",1,"Mythic",6),B=assetDefinition("B",2,"Rainbow",6)}})
+    assert(result.entries[1].Rarity.Rank==6 and result.entries[2].Rarity.Rank==6 and not result.rankingApplied)
+end)
+check("missing definition fields remain unknown with separate completeness flags",function()
+    local result=funcs.directory({Directory={A={_id="A",DisplayName="A"}}})
+    assert(result.complete and result.traversalComplete and not result.requiredFieldsComplete and result.recordsWithMissingFields==1)
+    assert(not result.entries[1].EarningRate and #result.entries[1].missingFields==3)
+end)
+check("nonfinite and callable Directory fields are diagnosed without invocation",function()
+    local invoked=0;local a=assetDefinition("A",math.huge)
+    a.Egg.GrowthTime=function() invoked=invoked+1 end
+    local result=funcs.directory({Directory={A=a}})
+    assert(invoked==0 and not result.complete and result.fieldErrors==2 and result.traversalComplete)
+    assert(result.entries[1].EarningRate==nil and result.entries[1].Egg.GrowthTime==nil)
+end)
+check("Directory reader bypasses table index and pairs metamethods",function()
+    local mt={__index=function() error("do not invoke") end,__pairs=function() error("do not invoke") end}
+    local row=setmetatable(assetDefinition("A",12),mt);local directory=setmetatable({A=row},mt)
+    local result=funcs.directory(setmetatable({Directory=directory},mt))
+    assert(result.complete and result.entries[1].EarningRate==12)
+end)
+check("Directory identity conflicts and aliases are retained rather than silently merged",function()
+    local result=funcs.directory({Directory={A=assetDefinition("shared",1),B=assetDefinition("shared",2)}})
+    assert(result.exported==2 and result.identityConflicts==2)
+    for _,row in ipairs(result.entries) do assert(row.keyIdMismatch and row.duplicateDefinitionId) end
+end)
+check("unsupported Directory row shapes are reported without dropping the key",function()
+    local result=funcs.directory({Directory={A=function() error("must not run") end}})
+    assert(result.traversalComplete and not result.complete and result.invalidRecords==1 and result.entries[1].categoryKey=="A")
+end)
+check("missing or non-table Directory schemas do not fabricate empty success",function()
+    assert(funcs.directory({}).status=="directory_missing")
+    assert(funcs.directory({Directory=function() end}).status=="directory_not_table")
+end)
+check("large Directory export reports budget limits and never claims a full total",function()
+    local directory={}
+    for i=1,1000 do
+        local key=string.format("%04d",i)..string.rep("x",156);local row=assetDefinition(key,i,string.rep("r",160))
+        row.Egg.DisplayName=string.rep("e",160);row.DisplayName=string.rep("d",160)
+        directory[key]=row
+    end
+    local result=funcs.directory({Directory=directory})
+    assert(not result.complete and not result.traversalComplete and result.status=="byte_limit" and result.totalEntries==nil)
+    assert(result.estimatedBytes<=result.limits.conservativeJsonBytes and result.exported<result.scanned and result.observedAtLeast==result.scanned)
+end)
+check("Directory observation cancellation is disclosed during yielded traversal",function()
+    local directory={};for i=1,200 do local key="A"..i;directory[key]=assetDefinition(key,i) end
+    onWait=function() env.active=false end
+    local result=funcs.directory({Directory=directory})
+    assert(result.status=="cancelled" and not result.complete and result.exported==128 and result.totalEntries==nil)
+end)
+check("Directory string truncation preserves UTF-8 and marks identity limitations",function()
+    local key="x"..string.rep("ก",100)
+    local result=funcs.directory({Directory={[key]=assetDefinition(key,1)}})
+    assert(not result.complete and result.textTruncated>0 and result.entries[1].keyTruncated)
+    assert(utf8.len(result.entries[1].categoryKey)~=nil)
+end)
+check("compact Directory integrates with focused exports while generic media tables are omitted",function()
+    local _,assets=definitionFixture()
+    env.require=function(module)
+        if module==assets then return {Directory={Raccoon=assetDefinition("Raccoon",45)},ByRarity={Rare={}},Personalities={X={}},AssetNameExists=function() end} end
+        return {}
+    end
+    assert(funcs.definitions());local report=funcs.eggExport();local module=report.eggSelection.definitionDiscovery.modules[1]
+    assert(module.directory.complete and module.directory.entries[1].EarningRate==45)
+    assert(module.snapshot.data.Directory==nil and module.snapshot.data.ByRarity==nil and #module.snapshot.omittedKeys==3)
+end)
+check("catalog EarningRate is never substituted for actual field income",function()
+    local _,assets=definitionFixture()
+    env.require=function(module) return module==assets and {Directory={Bird=assetDefinition("Bird",999)}} or {} end
+    assert(funcs.definitions());local p=qualityPrompt(3,nil,"Bird");env.eggSelect.mode="Income"
+    assert(funcs.eggMeta(p).incomePerSecond==nil and not funcs.eggRank(root,humanoid,false)[1].accepted)
 end)
 print(string.format("%d Auto Collect tests passed", tests))

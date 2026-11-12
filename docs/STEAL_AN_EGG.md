@@ -1,4 +1,4 @@
-# Steal An Egg — v1.48
+# Steal An Egg — v1.49
 
 PlaceId: 107778070777162. Load through the existing universal Loader.
 All automation and placement recording start OFF. Evidence below separates user-reported game results from offline checks.
@@ -229,3 +229,23 @@ All snapshots remain observations. No guessed schema, generic Income/BaseIncome,
 To test: start v1.48, leave all automation OFF, open Eggs, press Read game data, wait for the status, then Copy eggs and provide the resulting JSON. Scan sources remains available for passive inspection without loading modules. Auto Place remains disabled.
 
 Validation: 266 simulated engine cases (15 new), 15 full-script startup/control-flow cases (two new), four Python Loader contracts, and full Lua 5.4 source compilation. Cases cover exact module allowlist, manual-only loading, active-automation blocking, exported-function non-invocation, preferred category keys, hostile table metamethods, cycles/limits, missing/ambiguous/non-module paths, load errors/recovery, timeout/late output, cancellation, scan locking, focused export separation from field scoring, and UTF-8 boundaries. Live game data exports and Potassium module-loading support remain unverified.
+
+## Compact complete Directory traversal (v1.49)
+
+The user's v1.48 report confirms all three module loads succeeded in Potassium. Data.Assets exports a Directory table keyed by the game's AssetCategory, and definitions include `_id`, DisplayName, EarningRate, ModelWeight, Egg and Rarity. Data.Rarity exports Rarities with actual Rank values, including ties; AssetEarnings exports four functions whose parameters/formula remain unknown and were not invoked. The generic 256-entry snapshot captured only part of Directory because colors, animations, icons and sound tables consumed the same budget. Six nearby field prompts were UID-linked successfully, but field income remained unknown.
+
+Read game data now projects Data.Assets.Directory separately into `eggSelection.definitionDiscovery.modules[1].directory`. Every enumerated source key gets its own record, sorted by exact category key/key type, without display-name merging or a preferred-category-only subset. The projection reads only these observed fields using raw table access:
+
+- `_id`, `DisplayName`, `EarningRate`, optional `ModelWeight`
+- `Egg.DisplayName`, optional `Egg.GrowthTime` and `Egg.WeightKg`
+- `Rarity._id`, optional `Rarity.DisplayName`, and `Rarity.Rank`
+
+Icons, colors, animation Instances, audio, drop/visual odds and other unrelated fields are not traversed or copied into Directory records. Generic Data.Assets snapshots omit Directory, ByRarity and Personalities by design, disclose those omissions, and retain their root key/type descriptions. Directory coverage has its own budget/completeness independent of the generic snapshot. EarningRate remains a catalog field, not confirmed actual per-second income: the user's Whale Shark catalog value was 700000 versus live inventory 630673, and Brr Brr Patapim was 1800 versus 5929. No calculation, field ranking or rarity-selection mode is added here.
+
+Coverage fields distinguish `scanned`, `exported`, `totalEntries`, `traversalComplete`, `complete` and `requiredFieldsComplete`. `totalEntries` is exact only after source enumeration reaches the end; it is absent on byte/entry limit or cancellation. `observedAtLeast` identifies a lower bound when a cap is hit. `complete` means all keys/rows were captured without unsupported records, invalid scalar types or truncated text. Missing source fields remain unknown and are listed per row; they make `requiredFieldsComplete=false` with `recordsWithMissingFields`, even if every source row was read. Identity mismatches, duplicate definition IDs and shortened keys are flagged without collapsing entries or treating them as established field identities. Rank ties are preserved as game values.
+
+Limits are explicit: at most 4096 Directory entries, a 2 MiB conservative JSON-byte budget for projected entry data, 160-byte text/key limits at UTF-8 boundaries, and a yield every 128 records. The conservative budget estimates worst-case JSON escaping rather than claiming an exact output-file byte count. Cancellation, malformed source schema, nonfinite/callable fields and unsupported row/key shapes are reported. Missing/non-table Directory never becomes an empty success. No exported functions or table index/pairs metamethods are invoked during projection.
+
+The Eggs list and final Read game data status show Directory exported/total counts, coverage status and rows with missing fields. Use the same flow: start v1.49 with automation OFF, Eggs -> Read game data -> Copy eggs. Check the compact Directory report, not the intentionally omitted generic snapshot, for coverage. Live total species count and full-directory completion remain pending that next report. The same three manual module loads are used; no new module or Remote invocation is introduced, and Auto Place stays disabled.
+
+Validation: 281 engine cases (15 new), 16 full-file startup/control-flow cases (one new), four Python Loader contracts and full Loader/egg source compilation. The new cases include a 400-category directory with 100 cosmetic properties per category, exact field/media separation, duplicate display names, tied ranks, unknown fields, unsupported/callable/nonfinite values, hostile metamethods, aliases/ID conflicts, invalid schema, byte limits, cancellation, UTF-8 limits, focused export integration and continued separation from Income selection. The UI case verifies the visible Directory count and compact Copy eggs payload after the actual Read game data callback in the service model. These are simulations; live v1.49 directory coverage is not yet verified.

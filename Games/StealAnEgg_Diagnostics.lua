@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.48
+-- Steal An Egg: structure diagnostics v1.49
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -55,7 +55,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.48", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.49", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -121,7 +121,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.48 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.49 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -167,7 +167,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.48 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.49 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -212,7 +212,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.48 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.49 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -696,11 +696,11 @@ function eggLogic.definitionTarget(storage,parts)
     if not node:IsA("ModuleScript") then return nil,"not_module_script" end
     return node
 end
-function eggLogic.definitionSnapshot(value,categories)
+function eggLogic.definitionSnapshot(value,categories,omitRootKeys)
     local state={remaining=256,seen={},limited=false,visited=0}
     local priority={"perSecond","perSecondDisplay","rarity","Category","category","BaseEarnings","EarningsPerSecond",
         "BaseIncome","Income","Weight","Scale","Mutations","Configs","configs","Assets","assets","Definitions","definitions",
-        "Data","data","Rarities","rarities","Stats","stats","Earnings","earnings"}
+        "Data","data","Rarities","rarities","Stats","stats","Earnings","earnings","EarningRate","ModelWeight","_id","Rank","Egg","GrowthTime","WeightKg"}
     for _,key in ipairs(eggLogic.sourceFields) do priority[#priority+1]=key end
     local function visit(item,depth)
         local scalar=eggLogic.sourceScalar(item)
@@ -711,6 +711,7 @@ function eggLogic.definitionSnapshot(value,categories)
         state.seen[item]=true
         local out,keys,used={},{},{}
         local function add(key)
+            if depth==0 and omitRootKeys and omitRootKeys[key] then return end
             if not used[key] and rawget(item,key)~=nil then keys[#keys+1]=key;used[key]=true end
         end
         for _,category in ipairs(categories or {}) do add(category) end
@@ -732,6 +733,12 @@ function eggLogic.definitionSnapshot(value,categories)
     local result={returnedType=typeof(value),data=visit(value,0),visited=0,complete=false,
         exportedFunctionsInvoked=false,rankingApplied=false,limits={entries=256,perTable=32,depth=4}}
     result.visited=state.visited;result.complete=not state.limited
+    if omitRootKeys and type(value)=="table" then
+        result.omittedKeys={}
+        for key in pairs(omitRootKeys) do if rawget(value,key)~=nil then result.omittedKeys[#result.omittedKeys+1]=key end end
+        table.sort(result.omittedKeys)
+        if #result.omittedKeys>0 then result.complete=false;result.omittedByDesign=true end
+    end
     if type(value)=="table" then
         result.keys={};local count=0
         for key in next,value do
@@ -741,6 +748,104 @@ function eggLogic.definitionSnapshot(value,categories)
         table.sort(result.keys,function(a,b) return a.name<b.name end)
     end
     return result
+end
+function eggLogic.directoryByteCost(value)
+    local kind=type(value)
+    if kind=="string" then return 6*#value+2 end
+    if kind=="number" then return 64 end
+    if kind=="boolean" then return 5 end
+    if kind~="table" then return 4 end
+    local size=2
+    for key,item in next,value do size=size+eggLogic.directoryByteCost(tostring(key))+eggLogic.directoryByteCost(item)+2 end
+    return size
+end
+function eggLogic.assetDirectory(value)
+    local result={sourcePath="ReplicatedStorage.Data.Assets.Directory",entries={},scanned=0,exported=0,
+        invalidRecords=0,fieldErrors=0,textTruncated=0,recordsWithMissingFields=0,identityConflicts=0,
+        complete=false,traversalComplete=false,requiredFieldsComplete=false,
+        limits={entries=4096,conservativeJsonBytes=2097152},estimatedBytes=0,
+        rankingApplied=false,earningRateSemantics="catalog_field_only; actual earnings formula unverified"}
+    local directory=type(value)=="table" and rawget(value,"Directory")
+    if type(directory)~="table" then result.status=directory==nil and "directory_missing" or "directory_not_table";return result end
+    result.status="reading"
+    local lastKey,ids=nil,{}
+    while true do
+        if not active then result.status="cancelled";break end
+        local key,definition=next(directory,lastKey)
+        if key==nil then result.traversalComplete=true;result.totalEntries=result.scanned;result.status="captured";break end
+        lastKey=key
+        if result.scanned>=result.limits.entries then result.status="entry_limit";result.observedAtLeast=result.scanned+1;break end
+        result.scanned=result.scanned+1
+        local entry={keyType=type(key),missingFields={},issues={}}
+        if type(key)=="string" or type(key)=="number" then
+            entry.categoryKey=eggLogic.sourceScalar(tostring(key))
+            if type(key)=="string" and #key>160 then result.textTruncated=result.textTruncated+1;entry.keyTruncated=true end
+        else entry.categoryKey="<unsupported key>";entry.issues[#entry.issues+1]="unsupported_directory_key" end
+        local function read(obj,name,expected,path,required)
+            local raw=rawget(obj,name)
+            if raw==nil then if required then entry.missingFields[#entry.missingFields+1]=path end;return nil end
+            if type(raw)~=expected or expected=="number" and (raw~=raw or math.abs(raw)==math.huge) then
+                entry.issues[#entry.issues+1]=path..": unsupported "..typeof(raw);result.fieldErrors=result.fieldErrors+1;return nil
+            end
+            if expected=="string" and #raw>160 then
+                entry.issues[#entry.issues+1]=path..": text limited";result.textTruncated=result.textTruncated+1
+            end
+            return eggLogic.sourceScalar(raw)
+        end
+        if type(definition)=="table" and (type(key)=="string" or type(key)=="number") then
+            entry._id=read(definition,"_id","string","_id",true)
+            entry.DisplayName=read(definition,"DisplayName","string","DisplayName",true)
+            entry.EarningRate=read(definition,"EarningRate","number","EarningRate",true)
+            entry.ModelWeight=read(definition,"ModelWeight","number","ModelWeight",false)
+            local egg=rawget(definition,"Egg")
+            if type(egg)=="table" then
+                entry.Egg={DisplayName=read(egg,"DisplayName","string","Egg.DisplayName",true),
+                    GrowthTime=read(egg,"GrowthTime","number","Egg.GrowthTime",false),WeightKg=read(egg,"WeightKg","number","Egg.WeightKg",false)}
+            elseif egg==nil then entry.missingFields[#entry.missingFields+1]="Egg"
+            else entry.issues[#entry.issues+1]="Egg: unsupported "..typeof(egg);result.fieldErrors=result.fieldErrors+1 end
+            local rarity=rawget(definition,"Rarity")
+            if type(rarity)=="table" then
+                entry.Rarity={_id=read(rarity,"_id","string","Rarity._id",true),
+                    DisplayName=read(rarity,"DisplayName","string","Rarity.DisplayName",false),Rank=read(rarity,"Rank","number","Rarity.Rank",true)}
+            elseif rarity==nil then entry.missingFields[#entry.missingFields+1]="Rarity"
+            else entry.issues[#entry.issues+1]="Rarity: unsupported "..typeof(rarity);result.fieldErrors=result.fieldErrors+1 end
+            if entry._id and not entry.keyTruncated then
+                ids[entry._id]=(ids[entry._id] or 0)+1
+                entry.keyIdMismatch=type(key)~="string" or key~=entry._id
+            end
+        else
+            result.invalidRecords=result.invalidRecords+1
+            entry.recordType=typeof(definition);entry.issues[#entry.issues+1]="definition_not_supported"
+        end
+        if #entry.missingFields>0 then result.recordsWithMissingFields=result.recordsWithMissingFields+1 end
+        local cost=eggLogic.directoryByteCost(entry)
+        if result.estimatedBytes+cost>result.limits.conservativeJsonBytes then result.status="byte_limit";result.observedAtLeast=result.scanned;break end
+        result.estimatedBytes=result.estimatedBytes+cost
+        result.entries[#result.entries+1]=entry
+        if result.scanned%128==0 then task.wait() end
+    end
+    for _,entry in ipairs(result.entries) do
+        if entry._id and (ids[entry._id] or 0)>1 then entry.duplicateDefinitionId=true end
+        if entry.duplicateDefinitionId or entry.keyIdMismatch or entry.keyTruncated then result.identityConflicts=result.identityConflicts+1 end
+    end
+    table.sort(result.entries,function(a,b)
+        if a.categoryKey~=b.categoryKey then return a.categoryKey<b.categoryKey end
+        return a.keyType<b.keyType
+    end)
+    result.exported=#result.entries
+    result.complete=result.traversalComplete and result.exported==result.scanned and result.invalidRecords==0 and result.fieldErrors==0 and result.textTruncated==0
+    result.requiredFieldsComplete=result.complete and result.recordsWithMissingFields==0
+    result.finishedAt=os.time()
+    return result
+end
+function eggLogic.directoryStatus()
+    for _,module in ipairs(eggLogic.definitions and eggLogic.definitions.modules or {}) do
+        local d=module.directory
+        if d then
+            return string.format("Directory: %d/%s | %s | missing fields: %d",d.exported,tostring(d.totalEntries or "?"),
+                d.complete and "all rows captured" or ("limited/invalid: "..d.status),d.recordsWithMissingFields),d
+        end
+    end
 end
 function eggLogic.inspectDefinitions()
     if eggLogic.definitionRunning or busy or eggLogic.sourceRunning then return false,"Another scan is running" end
@@ -793,7 +898,12 @@ function eggLogic.inspectDefinitions()
                     break
                 end
                 eggLogic.definitionPending=nil
-                if pending.ok then entry.status="loaded";entry.snapshot=eggLogic.definitionSnapshot(pending.value,report.categories)
+                if pending.ok then
+                    entry.status="loaded"
+                    if parts[1]=="Data" and parts[2]=="Assets" then
+                        entry.directory=eggLogic.assetDirectory(pending.value)
+                        entry.snapshot=eggLogic.definitionSnapshot(pending.value,report.categories,{Directory=true,ByRarity=true,Personalities=true})
+                    else entry.snapshot=eggLogic.definitionSnapshot(pending.value,report.categories) end
                 else entry.status="load_error";entry.error=tostring(pending.value):sub(1,180) end
                 pending.value=nil
             end
@@ -1562,7 +1672,7 @@ function eggLogic.refresh()
 end
 function eggLogic.export()
     eggLogic.refresh()
-    return {version="1.48",kind="egg_data",placeId=game.PlaceId,
+    return {version="1.49",kind="egg_data",placeId=game.PlaceId,
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
             selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents,
             runtimeErrors={ui=eggLogic.lastUIError},definitionDiscovery=eggLogic.definitions}}
@@ -3198,6 +3308,8 @@ function eggUI.render()
     local catalog=eggSelect.catalog
     eggUI.countLabel.Text=string.format("%d eggs / %d linked / %d income",catalog.total or 0,catalog.fieldLinked or 0,catalog.knownIncome or 0)
     local lines={"Nearby eggs (sorted for "..eggSelect.mode..")"}
+    local directoryStatus=eggLogic.directoryStatus()
+    if directoryStatus then lines[#lines+1]=directoryStatus end
     for i,entry in ipairs(catalog.entries or {}) do
         local m=entry.metadata
         lines[#lines+1]=string.format("%d. %s | /s: %s | %s | %.1f studs%s",i,m.name or (m.assetCategory and ("Category: "..tostring(m.assetCategory))) or "Unknown egg",
@@ -3256,6 +3368,9 @@ eggUI.dataButton.Activated:Connect(function()
         if type(result)=="string" then status.Text=result;return end
         status.Text=ok and string.format("Game data: %d loaded / %d unavailable or failed. Use Copy eggs.",result.loaded,result.unavailableOrFailed)
             or "Game data read incomplete. Copy eggs includes status/errors."
+        local directoryStatus=eggLogic.directoryStatus()
+        if directoryStatus then status.Text=status.Text.." | "..directoryStatus end
+        eggUI.safeRender()
     end)
 end)
 eggUI.sourceButton.Activated:Connect(function()
@@ -3630,7 +3745,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.48", placeId = game.PlaceId,
+        local report = {version = "1.49", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -3802,7 +3917,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.48", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.49", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -3832,7 +3947,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.48 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.49 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then

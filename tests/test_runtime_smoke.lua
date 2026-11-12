@@ -166,4 +166,26 @@ check('game data button blocks loading while automation is enabled',function()
     f:button('Auto Hatch: OFF').Activated:Fire();f:button('Read game data').Activated:Fire()
     assert(calls==0)
 end)
+check('game data UI shows Directory coverage and exports compact records',function()
+    local f=fixture()
+    f.env.require=function(module)
+        if module.Name=='Assets' then
+            return {Directory={Raccoon={_id='Raccoon',DisplayName='Raccoon',EarningRate=45,
+                Egg={DisplayName='Raccoon Egg'},Rarity={_id='Rare',Rank=3},Icon='omit'}}}
+        end
+        return {}
+    end
+    local storage=f.env.game:GetService('ReplicatedStorage')
+    local function make(class,name,parent) local obj=f.env.Instance.new(class);obj.Name=name;obj.Parent=parent;return obj end
+    local data=make('Folder','Data',storage);make('ModuleScript','Assets',data);make('ModuleScript','Rarity',data)
+    make('ModuleScript','AssetEarnings',make('Folder','Util',make('Folder','Shared',storage)))
+    f:run();f.env.task.spawn=function(fn,...) fn(...) end
+    f:button('Read game data').Activated:Fire()
+    local found=false
+    for _,obj in ipairs(f.objects) do if obj.ClassName=='TextLabel' and obj.Text:find('Directory: 1/1',1,true) then found=true end end
+    assert(found)
+    f:button('Copy eggs').Activated:Fire()
+    local directory=f.http.lastPayload.eggSelection.definitionDiscovery.modules[1].directory
+    assert(directory.complete and directory.entries[1].EarningRate==45 and not directory.entries[1].Icon)
+end)
 print(string.format('%d runtime startup tests passed',tests))
