@@ -78,10 +78,10 @@ env.task.wait = function()
         movement.PlaybackState="Completed"
     end
 end
-env.placementRecord={enabled=false,last="OFF",records={}};env.placeState={enabled=false,slots={},attempts=0,observed=0};env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
+env.eggSelect={mode="Nearest",preferred={},catalog={entries={}},fieldSamples={}};env.placementRecord={enabled=false,last="OFF",records={}};env.placeState={enabled=false,slots={},attempts=0,observed=0};env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply}", "collect-engine", "t", env))()
 local hatchSource=assert(source:match("(local function hatchStep.-)\nconnections%["))
 local runHatch=assert(load(hatchSource.."\nreturn hatchStep", "hatch-step", "t", env))()
 local function prompt(distance)
@@ -94,6 +94,7 @@ local function prompt(distance)
     return p
 end
 local function reset()
+    env.eggSelect={mode="Nearest",preferred={},catalog={entries={}},fieldSamples={}}
     funcs.stopRecord("reset");env.placementRecord={enabled=false,last="OFF",records={}}
     env.hatch.enabled=true;env.hatch.attempts=0;env.hatch.lastAttempt=nil;env.attemptState={}
     env.placeState={enabled=false,slots={},attempts=0,observed=0}
@@ -1246,5 +1247,128 @@ end)
 check("invisible placed render does not count as an observed egg", function()
     setupNamedRenderRecording();local _,body=addNamedRender(42);body.Transparency=1
     finishRecording();assert(not env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+local function qualityPrompt(distance,income,name,uid)
+    local p=prompt(distance);p.attrs={IncomePerSecond=income,EggName=name,UID=uid}
+    function p:GetAttribute(key) return self.attrs[key] end
+    function p:GetAttributes() return self.attrs end
+    function p:FindFirstChild() return nil end
+    env.promptCache[p]=true
+    return p
+end
+check("egg metadata reads exact identity and per-second income with provenance", function()
+    local p=qualityPrompt(3,250,"Sample Egg","egg-a");p.attrs.Rarity="Rare"
+    local m=funcs.eggMeta(p)
+    assert(m.name=="Sample Egg" and m.uid=="egg-a" and m.incomePerSecond==250 and m.rarity=="Rare")
+    assert(m.sources.incomePerSecond and #m.raw>0)
+end)
+check("egg metadata never ranks an unknown egg by name rarity or price", function()
+    local p=qualityPrompt(3,nil,"Mythic Egg");p.attrs.Rarity="Mythic";p.attrs.Price=999999999
+    local m=funcs.eggMeta(p);assert(m.incomePerSecond==nil)
+    env.eggSelect.mode="Income";assert(not funcs.eggRank(root,humanoid,false)[1].accepted)
+end)
+check("income priority ranks a distant valuable egg above a nearby cheap egg", function()
+    local low=qualityPrompt(3,1,"Low Egg");local high=qualityPrompt(40,100,"High Egg")
+    env.eggSelect.mode="Income"
+    local ranked=funcs.eggRank(root,humanoid,false);assert(ranked[1].prompt==high and ranked[2].prompt==low)
+end)
+check("income mode actually approaches and collects the better distant target", function()
+    local low=qualityPrompt(3,1,"Low Egg");local high=qualityPrompt(40,100,"High Egg")
+    env.eggSelect.mode="Income";funcs.dispatch()
+    assert(high.began==1 and low.began==0 and root.Position.X>30)
+    assert(env.collectEgg.lastInput.eggSelection.metadata.incomePerSecond==100)
+end)
+check("nearest mode preserves nearby collection even with richer distant targets", function()
+    local near=qualityPrompt(3,1,"Near");local far=qualityPrompt(40,100,"Far")
+    funcs.dispatch();assert(near.began==1 and far.began==0)
+end)
+check("income ties prefer the closer egg", function()
+    local near=qualityPrompt(3,100,"Near");qualityPrompt(30,100,"Far")
+    env.eggSelect.mode="Income";assert(funcs.eggRank(root,humanoid,false)[1].prompt==near)
+end)
+check("missing income in best mode sends no input and does not fall back to nearest", function()
+    local p=qualityPrompt(3,nil,"Unknown")
+    env.eggSelect.mode="Income";funcs.dispatch()
+    assert(p.began==0 and not movement and env.collectEgg.last:find("Income",1,true))
+end)
+check("conflicting income fields stay unknown", function()
+    local p=qualityPrompt(3,100,"Sample");p.attrs.CashPerSecond=200
+    local m=funcs.eggMeta(p);assert(m.conflicts.incomePerSecond and m.incomePerSecond==nil)
+end)
+check("malformed negative infinite and NaN incomes cannot influence ranking", function()
+    for _,value in ipairs({"$100/s",-1,math.huge,0/0}) do
+        local p=qualityPrompt(3,value,"Sample");local m=funcs.eggMeta(p)
+        assert(m.incomePerSecond==nil)
+    end
+end)
+check("explicit numeric string income is supported but ambiguous units are not", function()
+    local p=qualityPrompt(3,"100","Sample");assert(funcs.eggMeta(p).incomePerSecond==100)
+    p.attrs.IncomePerSecond="100K";assert(funcs.eggMeta(p).incomePerSecond==nil)
+end)
+check("preferred names are ordered trimmed and case insensitive", function()
+    local ok=funcs.eggPrefs(" Rare Egg, Common Egg, rare egg ");assert(ok and #env.eggSelect.preferred==2)
+    local common=qualityPrompt(3,1000,"Common Egg");local rare=qualityPrompt(40,1,"RARE EGG")
+    env.eggSelect.mode="Preferred";local ranked=funcs.eggRank(root,humanoid,false)
+    assert(ranked[1].prompt==rare and ranked[2].prompt==common)
+end)
+check("preferred mode skips unknown and unlisted names", function()
+    local p=qualityPrompt(3,100,"Other Egg");assert(funcs.eggPrefs("Wanted Egg"))
+    env.eggSelect.mode="Preferred";funcs.dispatch();assert(p.began==0)
+end)
+check("preferred list rejects overlong input atomically", function()
+    assert(funcs.eggPrefs("Keep Egg"));assert(not funcs.eggPrefs(string.rep("x",1201)))
+    assert(env.eggSelect.preferred[1]=="Keep Egg")
+end)
+check("quality sorting still respects range cooldown and action guards", function()
+    local wrong=qualityPrompt(3,10000,"Wrong");wrong.ActionText="Hatch!"
+    local far=qualityPrompt(260,10000,"Far")
+    local cooling=qualityPrompt(4,10000,"Cooling");env.collectAttempts[cooling]={count=3,time=0}
+    local valid=qualityPrompt(5,10,"Valid")
+    env.eggSelect.mode="Income";local ranked=funcs.eggRank(root,humanoid,false)
+    assert(#ranked==1 and ranked[1].prompt==valid)
+end)
+check("metadata changing during travel prevents pickup of a now-unknown target", function()
+    local p=qualityPrompt(40,100,"Sample")
+    env.eggSelect.mode="Income";onWait=function() p.attrs.IncomePerSecond=nil end
+    funcs.dispatch();assert(p.began==0)
+end)
+check("egg catalog bounds visible report rows and preserves unknown data", function()
+    for i=1,20 do qualityPrompt(i+1,nil,"Egg "..i) end
+    funcs.eggCatalog();local c=env.eggSelect.catalog
+    assert(c.total==20 and c.knownIncome==0 and #c.entries==12 and c.truncated)
+    assert(funcs.snapshot().eggSelection.catalog==c)
+end)
+check("field data samples are read-only bounded observations", function()
+    for i=1,10 do funcs.record("RE/EggWorld/FieldEggShifted",{UID="egg-"..i,IncomePerSecond=i}) end
+    assert(#env.eggSelect.fieldSamples==3 and env.eggSelect.fieldSamples[1].args[1].UID=="egg-8")
+end)
+check("UID switching during travel prevents stale-target pickup", function()
+    local p=qualityPrompt(40,100,"Sample","old-uid")
+    env.eggSelect.mode="Income";onWait=function() p.attrs.UID="new-uid" end
+    funcs.dispatch();assert(p.began==0)
+end)
+check("explicit object references can supply metadata without spatial guessing", function()
+    local p=qualityPrompt(3,nil,nil)
+    local linked=node("EggModel","Model",{EggName="Linked Egg",UID="linked-id",CashPerSecond=45})
+    function linked:IsDescendantOf(root) return root==env.workspace end
+    local ref=node("Target","ObjectValue");ref.Value=linked
+    function p:FindFirstChild(key) if key=="Target" then return ref end end
+    local m=funcs.eggMeta(p)
+    assert(m.name=="Linked Egg" and m.uid=="linked-id" and m.incomePerSecond==45)
+end)
+check("preferred collection follows user order rather than distance or income", function()
+    local near=qualityPrompt(3,500,"Near Egg");local wanted=qualityPrompt(40,1,"Wanted Egg")
+    assert(funcs.eggPrefs("Wanted Egg, Near Egg"));env.eggSelect.mode="Preferred"
+    funcs.dispatch();assert(wanted.began==1 and near.began==0)
+end)
+check("conflicting identity blocks best-income selection", function()
+    local p=qualityPrompt(3,100,"Sample","first");p.attrs.EggUID="second"
+    env.eggSelect.mode="Income";local ranked=funcs.eggRank(root,humanoid,false)
+    assert(ranked[1].meta.conflicts.uid and not ranked[1].accepted)
+end)
+check("field sample retains bounded nested egg records for later schema mapping", function()
+    funcs.record("RE/EggWorld/FieldEggBatchShifted",{Records={sample={UID="sample",IncomePerSecond=200}}})
+    local sample=env.eggSelect.fieldSamples[1]
+    assert(#sample.nested==1 and sample.nested[1].value.sample.IncomePerSecond==200)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
