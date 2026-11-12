@@ -77,6 +77,8 @@ env.placeState={enabled=false,slots={},attempts=0,observed=0};env.upgrades={mode
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
 local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement}", "collect-engine", "t", env))()
+local hatchSource=assert(source:match("(local function hatchStep.-)\nconnections%["))
+local runHatch=assert(load(hatchSource.."\nreturn hatchStep", "hatch-step", "t", env))()
 local function prompt(distance)
     local p = {Parent = {}, Name = "CarryAreaEgg", ActionText = "Steal", ObjectText = "Egg",
         Enabled = true, HoldDuration = 0, MaxActivationDistance = 8, position = position(distance), began = 0, ended = 0}
@@ -87,7 +89,7 @@ local function prompt(distance)
     return p
 end
 local function reset()
-    env.hatch.enabled=true;env.attemptState={}
+    env.hatch.enabled=true;env.hatch.attempts=0;env.hatch.lastAttempt=nil;env.attemptState={}
     env.placeState={enabled=false,slots={},attempts=0,observed=0}
     env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0}
     env.AUTO_PLACE_ENABLED=true
@@ -897,5 +899,60 @@ end)
 check("manual handoff cannot overlap slot preparation", function()
     env.placeState.preparingBind=true
     local ready=funcs.manualPlace();assert(not ready and env.placeState.preparingBind)
+end)
+local function setupHatch()
+    env.collectEgg.enabled=false
+    local center=node("CenterPoint","Part");center.Position=position(0)
+    local own=node("1","Model",{OwnerUserId=42},{center,node("SpawnPoint","Part")})
+    plotFixture=node("Plots","Folder",{}, {own})
+    local p=prompt(3);p.ActionText="Hatch!";env.promptCache[p]=true
+    return p,own
+end
+check("manual hatch sends one exact owned ready prompt and does not claim pet creation", function()
+    local p=setupHatch();env.hatch.enabled=false
+    runHatch(true)
+    assert(p.began==1 and p.ended==1 and env.hatch.attempts==1)
+    assert(env.hatch.lastAttempt.inputOK and not env.hatch.lastAttempt.resultVerified)
+    assert(not walkGoal and tweenCreated==0)
+end)
+check("hatch rejects carrying even within prompt range", function()
+    local p=setupHatch();carrying=true
+    runHatch(true);runHatch(false);assert(p.began==0)
+end)
+check("manual hatch refuses an unknown or foreign base", function()
+    local p,own=setupHatch();function own:GetAttribute(key) if key=="OwnerUserId" then return 99 end end
+    runHatch(true);assert(p.began==0)
+end)
+check("hatch ignores disabled out of range and wrong actions", function()
+    local p=setupHatch();p.Enabled=false;runHatch(true)
+    p.Enabled=true;p.ActionText="Skip";runHatch(true)
+    p.ActionText="Hatch!";p.position=position(9);runHatch(true)
+    assert(p.began==0)
+end)
+check("hatch pauses for each other worker and scan", function()
+    local p=setupHatch()
+    for _,key in ipairs({"collectRunning","placeRunning","systemRunning","busy"}) do
+        env[key]=true;runHatch(true);env[key]=false
+    end
+    assert(p.began==0)
+end)
+check("hatch observes prompt change without verifying pet", function()
+    local p=setupHatch();onWait=function() p.Enabled=false end
+    runHatch(true)
+    assert(p.began==1 and p.ended==1 and env.hatch.lastAttempt.promptChanged and not env.hatch.lastAttempt.resultVerified)
+end)
+check("hatch releases input after an error", function()
+    local p=setupHatch();failInput=true
+    runHatch(true);assert(p.began==1 and p.ended==1 and not env.hatch.lastAttempt.inputOK)
+end)
+check("hatch cooldown and attempt cap prevent repeated input", function()
+    local p=setupHatch();env.attemptState[p]={count=1,time=clock}
+    runHatch(true);assert(p.began==0)
+    env.attemptState[p]={count=3,time=0};runHatch(true);assert(p.began==0)
+end)
+check("auto hatch stops before input after cancelled approach", function()
+    local p=setupHatch();p.position=position(40)
+    onWait=function() env.hatch.enabled=false end
+    runHatch(false);assert(p.began==0)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
