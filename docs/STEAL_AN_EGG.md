@@ -1,4 +1,4 @@
-# Steal An Egg — v1.46
+# Steal An Egg — v1.47
 
 PlaceId: 107778070777162. Load through the existing universal Loader.
 All automation and placement recording start OFF. Evidence below separates user-reported game results from offline checks.
@@ -185,3 +185,27 @@ Each Tool gets a weakly referenced session-local `ref`, so even missing-UID Tool
 Limits: 1000 direct children per container, 256 observed Tool instances, 64 direct children per Tool/Configuration, at most two Configurations inspected, and 40 exported entries. Traversal, per-record and output completeness are reported separately. Inventory traversal truncation blocks unique-UID eligibility for that scan. Output truncation still reports aggregate counts and the best observed eligible entries without claiming a full export or server-confirmed best item. The Eggs list shows Tool refs, rates, rarity, UID prefixes and binding status, separately from field egg income counts. Copy eggs exports full UIDs and evidence.
 
 Validation: 237 simulated Lua cases (27 new), four Python Loader contracts and Lua 5.4 full-source compilation. New scenarios cover same-name instances, missing/duplicate/conflicting UID, UID only in Configuration, unknown/numeric UID, scalar value children, display rounding, invalid/conflicting/zero income, multiple/nested Configurations, equip transitions, duplicate snapshots, containment/owner failures, traversal/output limits and separation from field scoring. Live UID availability and binding remain pending user testing. Auto Place remains disabled.
+
+## Scoped audit and fault handling (v1.47)
+
+Reviewed the Steal An Egg script's startup, UI controls/lifecycle, metadata and field selection, collection/return, ownership, hatch, training, upgrades, manual placement/recording, diagnostics/export, and shared Loader/registry/CI integration. Roll A Stickman's gameplay implementation was not changed or subjected to a new live test.
+
+The supplied v1.46 focused export confirms the Tool reader ran successfully: 40 Tools, 38 UID-linked income records, zero duplicate UIDs, complete traversal and no metadata errors. The remaining two Tools are Gear (Bat and Trap), not missing animal identities. ItemType Asset is observed on the 38 income-bearing Tools. The scan had ten unlinked nearby egg prompts, zero field income and zero Income-mode accepted targets; the one cached field UID referred to a far-away Cosmic record. This is a data-availability limitation, not evidence of a failed Configuration reader or a UI-startup failure. The file contains no error stack establishing a runtime crash. Inventory earnings are not copied to field eggs by matching names/categories.
+
+Confirmed defects fixed:
+
+| Area | Before | v1.47 behavior |
+| --- | --- | --- |
+| Plot ownership | The first local match could override a contradictory owner; a foreign Owner value could fall through to a stale sign | Conflicting explicit values/attributes reject ownership; foreign owner attributes on PlotSign also reject its stale text |
+| Hatch after movement | Ownership was resolved before approach but could change before input | Resolve owned plot again after approach; changed ownership sends no Hatch input |
+| Egg inventory confirmation | Different AssetEgg Tools sharing a UID were collapsed into a complete snapshot | Mark duplicate/invalid UID snapshots incomplete so they cannot confirm acquisition or placement; deduplicate the same instance across container snapshots |
+| Currency upgrades | NaN/infinite/negative currency could enter affordability logic; an overflowed price or replaced control was insufficiently guarded | Reject invalid numeric amounts, nonfinite prices, changed price and replaced button after movement |
+| UI startup | Camera dimensions near zero could produce negative scale; hub order was implicit | Positive bounded scale while camera initializes; explicit DisplayOrder 1000 |
+| Worker faults | Collect/Hatch could remain enabled following an unexpected exception; an egg-list render error could terminate the main scheduler | Pause Collect, switch Hatch OFF, release held input/stop movement; isolate egg rendering and export `eggSelection.runtimeErrors.ui` |
+| Loader lookup/errors | A malformed non-table commit object could kill startup instead of falling back; runtime errors omitted stack context | Validate the object type before reading SHA; retain stack traceback when available |
+
+New `tests/test_runtime_smoke.lua` executes the full Loader and full Steal An Egg script against an isolated Roblox service/Instance model. It covers construction of all tabs with automation OFF, tiny camera viewport, controls before a humanoid exists, Alt/restore, disabled Auto Place, rerun cleanup/close, successful Loader boot, malformed/unavailable lookup fallback, compile-error reporting, unsupported place, isolated egg-list errors/export, and Hatch fault shutdown. Background game loops are queued, not exercised against a real Roblox server. This is startup/control-flow simulation, not visual rendering, executor compatibility, live networking or game-physics verification.
+
+Validation: 251 engine cases (14 new regression cases), 13 full-file startup/control-flow cases, four Python Loader contracts, and full Loader/egg Lua 5.4 compilation. CI now runs the runtime smoke suite as well as the existing checks. No production game Remote, arbitrary game module execution or placement input was added; Auto Place stays disabled.
+
+Remaining live work: retest v1.47 on Potassium, verify the corrected failure/cancellation paths in game as needed, capture field metadata for the nearby prompts, and establish a real per-egg income/rarity source before enabling quality-based field collection. Earlier user-reported Auto Hatch, training, Forest collection/return and manual world-appearance passes remain historical live results; they are not newly revalidated by this audit. Base/treadmill upgrades and Lake collection still lack confirmed live success. Source scan/output caps remain disclosed rather than treated as full-map coverage.

@@ -1480,7 +1480,7 @@ end)
 check("focused egg export includes prompt coordinates and prioritized field samples", function()
     qualityPrompt(3,nil,nil);funcs.record("RE/EggWorld/FieldEggShifted",fieldRecord("a",3,100))
     local result=funcs.eggExport()
-    assert(result.kind=="egg_data" and result.version=="1.46")
+    assert(result.kind=="egg_data" and result.version=="1.47")
     assert(result.eggSelection.catalog.entries[1].position.x==3 and result.eggSelection.catalog.fieldLinked==1)
     assert(result.eggSelection.fieldSamples[1].field.records[1].uid=="a")
 end)
@@ -1750,5 +1750,84 @@ check("AssetEgg Tool and other inventory tools retain explicit separate kinds", 
     configuredTool("Bird Egg","egg-a",nil,nil,"AssetEgg");configuredTool("Bird","pet-a",18,"Uncommon","Asset")
     local result=funcs.toolCatalog()
     assert(result.entries[1].kind=="other_inventory_tool" and result.entries[2].kind=="asset_egg_tool")
+end)
+check("foreign Owner value blocks stale matching PlotSign",function()
+    local owner=node("Owner","IntValue");owner.Value=99
+    local label=node("PlayerName","TextLabel");label.Text="TestPlayer"
+    plotFixture=node("Plots","Folder",{}, {node("1","Model",{}, {owner,node("PlotSign","Part",{}, {label}),node("SpawnPoint","Part")})})
+    assert(not funcs.resolveHome())
+end)
+check("matching username cannot override a foreign owner attribute",function()
+    plotFixture=node("Plots","Folder",{}, {node("1","Model",{OwnerUserId=99,Username="TestPlayer"},{node("SpawnPoint","Part")})})
+    assert(not funcs.resolveHome())
+end)
+check("local Owner value cannot override contradictory plot attributes",function()
+    local owner=node("Owner","IntValue");owner.Value=42
+    plotFixture=node("Plots","Folder",{}, {node("1","Model",{OwnerUserId=99},{owner,node("SpawnPoint","Part")})})
+    assert(not funcs.resolveHome())
+end)
+check("consistent owner value and attributes still confirm home",function()
+    local owner=node("Owner","IntValue");owner.Value=42
+    plotFixture=node("Plots","Folder",{}, {node("1","Model",{OwnerUserId=42,Username="TestPlayer"},{owner,node("SpawnPoint","Part")})})
+    assert(funcs.resolveHome())
+end)
+check("foreign owner attributes on PlotSign block stale matching text",function()
+    local text=node("PlayerName","TextLabel");text.Text="TestPlayer"
+    local sign=node("PlotSign","Part",{OwnerUserId=99},{text})
+    plotFixture=node("Plots","Folder",{}, {node("1","Model",{}, {sign,node("SpawnPoint","Part")})})
+    assert(not funcs.resolveHome())
+end)
+check("duplicate AssetEgg UIDs make inventory comparison incomplete",function()
+    local before=funcs.inventory();backpackChildren={eggTool("AssetEgg"),eggTool("AssetEgg")}
+    local after=funcs.inventory();assert(not after.complete and after.count==1 and #funcs.diff(before,after)==0)
+end)
+check("same AssetEgg instance in both containers is not a duplicate UID",function()
+    local tool=eggTool("AssetEgg");backpackChildren={tool};equippedChildren={tool}
+    local inventory=funcs.inventory();assert(inventory.complete and inventory.count==1)
+end)
+check("blank AssetEgg UID cannot confirm an inventory change",function()
+    local tool=eggTool("AssetEgg")
+    function tool:GetAttribute(key) if key=="ItemType" then return "AssetEgg" elseif key=="UID" then return " " end end
+    backpackChildren={tool};assert(not funcs.inventory().complete)
+end)
+check("Hatch rechecks plot ownership after movement before sending input",function()
+    local center=node("CenterPoint","Part");center.Position=position(40)
+    local plot=node("1","Model",{OwnerUserId=42},{center,node("SpawnPoint","Part")})
+    plotFixture=node("Plots","Folder",{}, {plot})
+    local ready=prompt(40);ready.ActionText="Hatch!";env.promptCache[ready]=true
+    onWait=function() plot.attrs.OwnerUserId=99 end
+    runHatch(false)
+    assert(ready.began==0 and env.hatch.last:find("ownership changed",1,true))
+end)
+check("nonfinite or negative currency cannot authorize an upgrade",function()
+    for _,cash in ipairs({math.huge,0/0,-1}) do
+        local calls=setupUpgrade(cash);funcs.upgrade();assert(calls()==0 and not env.upgrades.pending)
+    end
+end)
+check("overflowed currency prices are not valid costs",function()
+    assert(funcs.cost("$"..string.rep("9",400))==nil)
+end)
+check("upgrade never fires a replaced button after approach",function()
+    function humanoid:UnequipTools() end
+    local calls,_,button=setupUpgrade(3000000);root.Position=position(0)
+    onWait=function()
+        local price=node("Cost","TextLabel");price.Text="$1M"
+        local replacement=node("Upgrade","ImageButton",{}, {price});replacement.Parent=button.Parent
+        replacement.MouseButton1Click={};replacement.Activated={}
+        button.Parent.children[1]=replacement
+    end
+    funcs.upgrade();assert(calls()==0 and not env.upgrades.pending)
+end)
+check("upgrade waits for recheck if soft currency price changes during movement",function()
+    function humanoid:UnequipTools() end
+    local calls,_,button=setupUpgrade(3000000);root.Position=position(0)
+    onWait=function() button:FindFirstChild("Cost").Text="$2M" end
+    funcs.upgrade();assert(calls()==0 and not env.upgrades.pending)
+end)
+check("unexpected Collect error pauses instead of retrying the faulting action",function()
+    local p=qualityPrompt(3,nil,nil)
+    function p:IsDescendantOf() error("mock candidate fault") end
+    funcs.dispatch();assert(not env.collectEgg.enabled and env.collectEgg.phase=="PAUSED" and p.began==0)
+    assert(env.collectEgg.pausedReason:find("mock candidate fault",1,true))
 end)
 print(string.format("%d Auto Collect tests passed", tests))

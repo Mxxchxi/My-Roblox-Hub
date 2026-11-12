@@ -66,7 +66,7 @@ local ok, err = xpcall(function()
     local apiOk, head = pcall(function()
         return HttpService:JSONDecode(fetch(API_ROOT .. requestedRef .. "?_=" .. nonce))
     end)
-    local sha = apiOk and type(head) == "table" and head.object and head.object.sha
+    local sha = apiOk and type(head) == "table" and type(head.object) == "table" and head.object.sha
     if type(sha) == "string" and #sha == 40 and sha:match("^%x+$") then
         ref = sha
     else
@@ -107,6 +107,7 @@ local ok, err = xpcall(function()
         end)
     end
 end, function(message)
+    if type(debug)=="table" and type(debug.traceback)=="function" then return debug.traceback(tostring(message),2) end
     return tostring(message)
 end)
 if not ok then status("FAILED: " .. err, true) end

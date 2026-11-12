@@ -43,4 +43,6 @@ jobs:
       - name: Check egg script syntax and run simulated workflow tests
         run: |
           luac5.4 -p Games/StealAnEgg_Diagnostics.lua
+          luac5.4 -p Loader.lua
           lua5.4 tests/test_egg_collect.lua
+          lua5.4 tests/test_runtime_smoke.lua

@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.46
+-- Steal An Egg: structure diagnostics v1.47
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -13,6 +13,7 @@ if old then old:Destroy() end
 local gui = Instance.new("ScreenGui")
 gui.Name = "EggDiagnostics"
 gui.ResetOnSpawn = false
+gui.DisplayOrder = 1000
 gui.Parent = pg
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -50,11 +51,11 @@ create("UIGradient", border, {Color = ColorSequence.new(colors.purple, colors.cy
 local scale = create("UIScale", frame, {Scale = 1})
 local function fit()
     local camera = workspace.CurrentCamera
-    if camera then scale.Scale = math.min(1, (camera.ViewportSize.X-24)/760, (camera.ViewportSize.Y-64)/540) end
+    if camera then scale.Scale = math.max(0.1, math.min(1, (camera.ViewportSize.X-24)/760, (camera.ViewportSize.Y-64)/540)) end
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.46", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.47", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -119,7 +120,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.46 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.47 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -165,7 +166,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.46 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.47 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -210,7 +211,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.46 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.47 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -383,6 +384,8 @@ local function hatchStep(manual)
         if not ready or not active or not hatch.enabled then return end
     end
     if player.Character~=character or humanoid.Health<=0 or hatchCarryVisible() then return end
+    local _,currentPlot=hatchResolvePlot()
+    if currentPlot~=ownedPlot then hatch.last="Plot ownership changed; Hatch waits";hatchLabel.Text=hatch.last;return end
     for prompt in pairs(promptCache) do
         if hatchOwned(prompt,ownedPlot) and eligible(prompt, root, humanoid) then
             local state = attemptState[prompt] or {count = 0, time = -math.huge}
@@ -446,6 +449,13 @@ local function dispatchHatch(manual)
     local ok, err = pcall(hatchStep, manual)
     hatchRunning = false
     if not ok and active then
+        hatch.enabled=false;hatchButton.Text="Auto Hatch: OFF"
+        if hatchWalking then
+            local character=player.Character;local root=character and character:FindFirstChild("HumanoidRootPart")
+            if root then pcall(function() hatchWalking:MoveTo(root.Position) end) end
+            hatchWalking=nil
+        end
+        if holding then pcall(function() holding:InputHoldEnd() end);holding=nil end
         hatch.last = "Hatch test error: " .. tostring(err):sub(1, 100)
         hatchLabel.Text = hatch.last
     end
@@ -953,14 +963,16 @@ local function recordGameEvent(name, ...)
 end
 local function eggInventory()
     local snapshot = {items = {}, complete = true, count = 0}
+    local seen={}
     local backpack = player:FindFirstChildOfClass("Backpack")
     for _, container in pairs({character = player.Character, backpack = backpack}) do
         for i, child in ipairs(container:GetChildren()) do
             if i > 1000 then snapshot.complete = false; break end
-            if child:IsA("Tool") and child:GetAttribute("ItemType") == "AssetEgg" then
+            if not seen[child] and child:IsA("Tool") and child:GetAttribute("ItemType") == "AssetEgg" then
+                seen[child]=true
                 local uid = child:GetAttribute("UID")
-                if type(uid) == "string" and uid ~= "" then
-                    if not snapshot.items[uid] then snapshot.count = snapshot.count + 1 end
+                if type(uid) == "string" and #uid<=120 and uid:find("%S") then
+                    if snapshot.items[uid] then snapshot.complete=false else snapshot.count = snapshot.count + 1 end
                     snapshot.items[uid] = {uid = uid, name = child.Name}
                 else snapshot.complete = false end
             end
@@ -1414,9 +1426,10 @@ function eggLogic.refresh()
 end
 function eggLogic.export()
     eggLogic.refresh()
-    return {version="1.46",kind="egg_data",placeId=game.PlaceId,
+    return {version="1.47",kind="egg_data",placeId=game.PlaceId,
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
-            selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents}}
+            selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents,
+            runtimeErrors={ui=eggLogic.lastUIError}}}
 end
 function eggLogic.apply(text)
     if #text>1200 then return false,"Preferred list is too long" end
@@ -1591,7 +1604,7 @@ local function pauseCollect(reason)
 end
 local ownerKeys={"OwnerUserId","OwnerId","Owner","UserId","PlayerUserId","Player","Username","OwnerName"}
 local function signEvidence(plot)
-    local result={texts={},attributes={},usernameMatch=false,truncated=false}
+    local result={texts={},attributes={},usernameMatch=false,truncated=false,foreignOwner=false}
     local sign=plot:FindFirstChild("PlotSign")
     if not sign then return result end
     local queue,head={sign},1
@@ -1603,6 +1616,7 @@ local function signEvidence(plot)
             if type(value)=="string" or type(value)=="number" then
                 result.attributes[key]=value
                 if value==player.UserId or value==tostring(player.UserId) or value==player.Name then result.usernameMatch=true end
+                if value~="" and value~=0 and value~=player.UserId and value~=tostring(player.UserId) and value~=player.Name then result.foreignOwner=true end
             end
         end
         if obj:IsA("TextLabel") or obj:IsA("TextButton") then
@@ -1621,11 +1635,16 @@ local function ownerMatch(plot)
             or type(value)=="string" and (value==tostring(player.UserId) or value==player.Name)
     end
     local nodes={plot}
-    local explicitOwner=false
+    local explicitOwner,matched,conflict=false,nil,false
+    local function observe(value,evidence)
+        if value==nil or value=="" or value==0 or value==false then return end
+        explicitOwner=true
+        if matches(value) then matched=matched or evidence else conflict=true end
+    end
     for _,child in ipairs(plot:GetChildren()) do
         if child.Name=="Owner" or child.Name=="OwnerUserId" or child.Name=="OwnerId" then
             if child:IsA("ObjectValue") or child:IsA("StringValue") or child:IsA("IntValue") or child:IsA("NumberValue") then
-                if matches(child.Value) then return true,"value:"..child.Name end
+                observe(child.Value,"value:"..child.Name)
             end
         end
         if child.Name=="Info" or child.Name=="Config" or child.Name=="Settings" then nodes[#nodes+1]=child end
@@ -1633,13 +1652,14 @@ local function ownerMatch(plot)
     for _,node in ipairs(nodes) do
         for _,key in ipairs(ownerKeys) do
             local value=node:GetAttribute(key)
-            if matches(value) then return true,"attribute:"..key end
-            if value~=nil and value~="" and value~=0 and value~=false then explicitOwner=true end
+            observe(value,"attribute:"..key)
         end
     end
+    if conflict then return false,"Conflicting/foreign ownership evidence" end
+    if matched then return true,matched end
     if not explicitOwner then
         local sign=signEvidence(plot)
-        if sign.usernameMatch and not sign.truncated then return true,"PlotSign exact username" end
+        if sign.usernameMatch and not sign.foreignOwner and not sign.truncated then return true,"PlotSign exact username" end
     end
     return false
 end
@@ -2044,7 +2064,7 @@ local function collectSnapshot(includeEvidence)
         gameEvents = gameEvents, eventObserver = eventObserver,
         upgrades=upgrades,training=training,placementRecording=placementRecord,
         selectionBlocked=eggSelect.mode~="Nearest" and eggSelect.catalog.accepted==0 and ("No readable egg matches "..eggSelect.mode.."; inspect Eggs / Copy short") or nil,
-        eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents},
+        eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents,runtimeErrors={ui=eggLogic.lastUIError}},
         autoPlace={available=AUTO_PLACE_ENABLED,manualMode=placeState and placeState.manualMode,manualPreparing=placeState and placeState.manualPreparing,binding=placeState and placeState.binding,preparingBind=placeState and placeState.preparingBind,enabled=placeState and placeState.enabled,attempts=placeState and placeState.attempts,observed=placeState and placeState.observed,last=placeState and placeState.last,lastAttempt=placeState and placeState.lastAttempt,autoMark=placeState and placeState.autoMark,lastSlotPick=placeState and placeState.lastSlotPick},
         autoHome={enabled=autoHome.enabled,ready=autoHome.ready,reason=autoHome.reason,report=includeEvidence and autoHome.report or nil},
         lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, lastWalkingRecovery=lastWalkingRecovery, deliveryPointSet = deliveryPoint ~= nil,
@@ -2202,7 +2222,10 @@ local function dispatchCollect()
     local ok, err = pcall(collectStep)
     collectRunning = false
     if not ok then cancelCollectTween("Movement error") end
-    if not ok and active then collectEgg.last = "Collect error: " .. tostring(err):sub(1,100) end
+    if not ok and active then
+        if holding then pcall(function() holding:InputHoldEnd() end);holding=nil end
+        pauseCollect("Collect error: " .. tostring(err):sub(1,100))
+    end
 end
 local function setManualCarry(value)
     manualCarry = value == true
@@ -2881,21 +2904,23 @@ end
 local function parseSoftCost(text)
     local amount,suffix=string.upper(text:gsub("<[^>]*>",""):gsub(",","")):match("^%s*%$%s*([%d%.]+)%s*([KMBT]?)%s*$")
     local number=tonumber(amount)
-    if not number or number<0 then return nil end
-    return number*(({K=1000,M=1000000,B=1000000000,T=1000000000000})[suffix] or 1)
+    if not number or number~=number or number<0 or number==math.huge then return nil end
+    local price=number*(({K=1000,M=1000000,B=1000000000,T=1000000000000})[suffix] or 1)
+    return price<math.huge and price or nil
 end
 local function readCash()
     local found
     local function add(value)
-        if type(value)~="number" or value<0 then return true end
+        if type(value)~="number" then return true end
+        if value~=value or value<0 or value==math.huge then return false end
         if found and value~=found then return false end
         found=value;return true
     end
     local stats=player:FindFirstChild("leaderstats")
     for _,name in ipairs({"Cash","Money","Coins"}) do
-        if not add(player:GetAttribute(name)) then return nil,"Conflicting currency values" end
+        if not add(player:GetAttribute(name)) then return nil,"Conflicting or invalid currency values" end
         local value=stats and stats:FindFirstChild(name)
-        if value and (value:IsA("IntValue") or value:IsA("NumberValue")) and not add(value.Value) then return nil,"Conflicting currency values" end
+        if value and (value:IsA("IntValue") or value:IsA("NumberValue")) and not add(value.Value) then return nil,"Conflicting or invalid currency values" end
     end
     return found,found and nil or "Currency not mapped: Cash/Money/Coins unavailable"
 end
@@ -2985,7 +3010,7 @@ local function upgradeStep()
     local _,currentPlot=resolveAutoHome()
     local latest=currentPlot==plot and upgradeInfo(plot,info.kind)
     local balance=readCash()
-    if not latest or not balance or latest.level~=info.level or latest.price>balance then upgrades.last="Upgrade state changed; rechecking next cycle";return end
+    if not latest or not balance or latest.level~=info.level or latest.price~=info.price or latest.price>balance or latest.button~=info.button then upgrades.last="Upgrade state changed; rechecking next cycle";return end
     upgrades.lastAction=os.clock()
     local ok,result=pcall(fire,signal)
     if not ok or result==false then upgrades.last="Upgrade callback failed; stopped";upgrades.mode="Off";return end
@@ -3064,13 +3089,21 @@ end
 function eggUI.scan()
     local ok,err=pcall(eggLogic.refresh)
     if not ok then status.Text="Egg scan error: "..tostring(err):sub(1,140);return end
-    eggUI.render()
+    if not eggUI.safeRender() then return end
     local catalog=eggSelect.catalog
     status.Text=catalog.fieldData.fresh==0 and "Waiting for fresh field updates from the game. Keep hub open, then Scan / Copy short."
         or catalog.fieldLinked==0 and "Field records received; no unambiguous prompt binding. Copy short includes UID / positions."
         or catalog.knownIncome==0 and "Egg records linked; income is still unknown. Copy short includes prioritized field data."
         or "Egg data refreshed. Copy short includes sources and missing/conflicting fields."
     if catalog.tools then status.Text=status.Text..string.format(" | Tools: %d UID / %d income",catalog.tools.uidLinked,catalog.tools.eligibleIncome) end
+end
+function eggUI.safeRender()
+    local ok,err=pcall(eggUI.render)
+    if not ok then
+        eggLogic.lastUIError=tostring(err):sub(1,180)
+        status.Text="Egg list error: "..eggLogic.lastUIError.." | Copy eggs includes details."
+    end
+    return ok
 end
 eggUI.scanButton.Activated:Connect(eggUI.scan)
 eggUI.sourceButton.Activated:Connect(function()
@@ -3416,7 +3449,7 @@ task.spawn(function()
         dispatchCollect()
         dispatchHatch(false)
         dispatchSystems()
-        if eggUI.page.Visible then eggUI.render() end
+        if active and eggUI.page.Visible then eggUI.safeRender() end
         if active and collectEgg.enabled then
             local ok, snapshot = pcall(collectSnapshot)
             if ok then
@@ -3445,7 +3478,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.46", placeId = game.PlaceId,
+        local report = {version = "1.47", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -3617,7 +3650,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.46", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.47", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -3647,7 +3680,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.46 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.47 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
