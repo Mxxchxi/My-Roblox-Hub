@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.43
+-- Steal An Egg: structure diagnostics v1.44
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -54,7 +54,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.43", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.44", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -93,7 +93,8 @@ eggUI.preferredBox=create("TextBox",eggUI.page,{Position=UDim2.fromOffset(0,110)
     ClearTextOnFocus=false,Text="",PlaceholderText="Whale Shark Egg, Bear Egg",TextXAlignment=Enum.TextXAlignment.Left})
 round(eggUI.preferredBox,6)
 eggUI.applyButton=control(eggUI.page,"Apply names",0,150,120,32)
-eggUI.hint=label(eggUI.page,"Income / Preferred skip eggs with missing data. Stop Collect to change mode.",130,146,430,42,11,colors.muted)
+eggUI.copyButton=control(eggUI.page,"Copy eggs",130,150,120,32)
+eggUI.hint=label(eggUI.page,"Income / Preferred skip unknown data. Stop Collect to change mode.",260,146,300,42,11,colors.muted)
 eggUI.hint.TextWrapped=true
 eggUI.scroll=create("ScrollingFrame",eggUI.page,{Position=UDim2.fromOffset(0,198),Size=UDim2.fromOffset(568,184),
     BackgroundColor3=colors.panel,BorderSizePixel=0,ScrollBarThickness=5,AutomaticCanvasSize=Enum.AutomaticSize.XY,CanvasSize=UDim2.new()})
@@ -117,7 +118,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.43 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.44 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -163,7 +164,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.43 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.44 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -208,7 +209,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.43 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.44 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -496,6 +497,7 @@ local function liveHatchSnapshot()
     return snapshot
 end
 -- AUTO_COLLECT_ENGINE_BEGIN
+local eggLogic={}
 local recordingContext
 local collectTween
 local walkReturn
@@ -591,6 +593,157 @@ local function eventValue(value, depth, seen)
     seen[value]=nil
     return result
 end
+function eggLogic.resetField()
+    eggLogic.field={records={},order={},count=0,lastEvent=nil,lastAt=nil,missingUid=0,evicted=0}
+end
+eggLogic.resetField()
+function eggLogic.removeField(uid)
+    local field=eggLogic.field
+    if not field.records[uid] then return false end
+    field.records[uid]=nil;field.count=field.count-1
+    for i=#field.order,1,-1 do if field.order[i]==uid then table.remove(field.order,i) end end
+    return true
+end
+function eggLogic.fieldPoint(value)
+    local ok,point=pcall(function()
+        if typeof(value)=="CFrame" then value=value.Position end
+        if typeof(value)~="Vector3" and type(value)~="table" then return nil end
+        local x,y,z=value.X or value.x,value.Y or value.y,value.Z or value.z
+        for _,n in ipairs({x,y,z}) do if type(n)~="number" or n~=n or math.abs(n)==math.huge then return nil end end
+        if x==nil or y==nil or z==nil then return nil end
+        return {x=x,y=y,z=z}
+    end)
+    return ok and point or nil
+end
+function eggLogic.fieldRecord(payload,source,mapKey)
+    if type(payload)~="table" then return nil end
+    local record={fields={},positions={},keys={},source=source,clock=os.clock(),at=os.time()}
+    local uid
+    for _,key in ipairs({"Uid","UID","EggUid","EggUID","FieldEggUid"}) do
+        local value=payload[key]
+        if type(value)=="string" and value~="" and #value<=120 then
+            if uid and uid~=value then record.identityConflict=true end
+            uid=value;record.fields[key]=value
+        end
+    end
+    if not uid and type(mapKey)=="string" and #mapKey<=120
+        and (mapKey:match("^FirstAreaEgg_") or #mapKey==32 and mapKey:match("^%x+$")) then uid=mapKey;record.uidFromMapKey=true end
+    record.uid=not record.identityConflict and uid or nil
+    for _,key in ipairs({"DisplayName","EggName","AssetCategory","Rarity","RarityName","AreaId","BaseMutation","Mutations",
+        "IncomePerSecond","CashPerSecond","MoneyPerSecond","CoinsPerSecond","Income","Value","BaseValue","Price","ValuePerSecond",
+        "OwnerUserId","IsCarried","IsCarrying","CarrierUserId","NestScale","Stats"}) do
+        if payload[key]~=nil then record.fields[key]=eventValue(payload[key],0,{}) end
+    end
+    for _,key in ipairs({"Position","BottomCFrame","BoundsCFrame","CFrame","PivotCFrame"}) do
+        if payload[key]~=nil then
+            local point=eggLogic.fieldPoint(payload[key])
+            record.fields[key]=point and {kind=typeof(payload[key]),position=point} or eventValue(payload[key],0,{})
+            if point then record.positions[key]=point end
+        end
+    end
+    if type(payload.Stats)=="table" then
+        record.statsRates={}
+        for _,key in ipairs({"IncomePerSecond","CashPerSecond","MoneyPerSecond","CoinsPerSecond"}) do
+            if payload.Stats[key]~=nil then record.statsRates[key]=eventValue(payload.Stats[key],0,{}) end
+        end
+    end
+    for key in pairs(payload) do
+        if #record.keys>=64 then record.keysTruncated=true;break end
+        if type(key)=="string" then record.keys[#record.keys+1]=key:sub(1,80) end
+    end
+    table.sort(record.keys)
+    return record
+end
+function eggLogic.observeField(name,payload)
+    local field=eggLogic.field
+    if name=="RE/EggWorld/FieldEggGone" then
+        if type(payload)=="string" then eggLogic.removeField(payload) end
+        return
+    end
+    if name~="RE/EggWorld/FieldEggShifted" and name~="RE/EggWorld/FieldEggBatchShifted" then return end
+    if type(payload)~="table" then return end
+    field.lastEvent=name;field.lastAt=os.time()
+    local result={records={},processed=0,removed=0}
+    local function storeRecord(value,key)
+        local record=eggLogic.fieldRecord(value,name,key)
+        if not record then return end
+        result.processed=result.processed+1
+        if #result.records<4 then result.records[#result.records+1]=record end
+        if not record.uid then field.missingUid=field.missingUid+1;return end
+        if not field.records[record.uid] then
+            field.order[#field.order+1]=record.uid;field.count=field.count+1
+        end
+        field.records[record.uid]=record
+        while #field.order>256 do
+            local oldest=table.remove(field.order,1)
+            if field.records[oldest] then field.records[oldest]=nil;field.count=field.count-1;field.evicted=field.evicted+1 end
+        end
+    end
+    if name=="RE/EggWorld/FieldEggShifted" then storeRecord(payload)
+    else
+        if type(payload.RemovedUids)=="table" then
+            local count=0
+            for _,uid in pairs(payload.RemovedUids) do
+                count=count+1;if count>128 then result.removalsTruncated=true;break end
+                if type(uid)=="string" and eggLogic.removeField(uid) then result.removed=result.removed+1 end
+            end
+        end
+        local updates=payload.UpdatedRecords
+        -- Records is retained only as a bounded diagnostic compatibility shape.
+        if type(updates)~="table" then updates=payload.Records end
+        if type(updates)=="table" then
+            local count=0
+            for key,value in pairs(updates) do
+                count=count+1;if count>128 then result.updatesTruncated=true;break end
+                storeRecord(value,key)
+            end
+        end
+    end
+    result.recordsTruncated=result.processed>#result.records
+    return result
+end
+function eggLogic.resolveField(subject,metadata)
+    if subject.Name~="CarryAreaEgg" or metadata.conflicts.uid then return nil end
+    local function usable(record)
+        return record and os.clock()-record.clock<=120 and record.fields.IsCarried~=true and record.fields.IsCarrying~=true
+            and not (type(record.fields.CarrierUserId)=="number" and record.fields.CarrierUserId>0)
+    end
+    if metadata.uid then
+        local record=eggLogic.field.records[metadata.uid]
+        if usable(record) then return record,{method="explicit_uid",uid=record.uid,ageSeconds=os.clock()-record.clock} end
+        return nil
+    end
+    local ok,position=pcall(promptPosition,subject)
+    if not ok or not position then return nil end
+    local candidates={}
+    for _,record in pairs(eggLogic.field.records) do
+        if usable(record) then
+            local best,key
+            for name,point in pairs(record.positions) do
+                local dx,dz=position.X-point.x,position.Z-point.z
+                local horizontal=math.sqrt(dx*dx+dz*dz)
+                if horizontal<=1.5 and math.abs(position.Y-point.y)<=8 and (not best or horizontal<best) then best=horizontal;key=name end
+            end
+            if best then candidates[#candidates+1]={record=record,horizontal=best,key=key} end
+        end
+    end
+    if #candidates~=1 then return nil,{method="unmatched",candidateCount=#candidates} end
+    local match=candidates[1]
+    local point=match.record.positions[match.key]
+    for prompt in pairs(promptCache) do
+        if prompt~=subject and prompt.Name=="CarryAreaEgg" and prompt.Parent then
+            local good,p=pcall(promptPosition,prompt)
+            if good and p then
+                local dx,dz=p.X-point.x,p.Z-point.z
+                if math.sqrt(dx*dx+dz*dz)<=1.5 and math.abs(p.Y-point.y)<=8 then
+                    return nil,{method="ambiguous_prompts",uid=match.record.uid}
+                end
+            end
+        end
+    end
+    return match.record,{method="unique_position",uid=match.record.uid,horizontalDistance=match.horizontal,
+        positionSource=match.key,ageSeconds=os.clock()-match.record.clock}
+end
 local function recordGameEvent(name, ...)
     if name=="RE/Treadmill/SpeedGained" then
         training.events=training.events+1;training.lastEventAt=os.time()
@@ -602,10 +755,11 @@ local function recordGameEvent(name, ...)
         end
     end
     if name=="RE/EggWorld/FieldEggCarry" then updateServerCarry((...)) end
+    local fieldObservation=eggLogic.observeField(name,(...))
     local args={}
     for i=1,math.min(select("#",...),6) do args[i]=eventValue(select(i,...),0,{}) end
     if name=="RE/EggWorld/FieldEggShifted" or name=="RE/EggWorld/FieldEggBatchShifted" then
-        local sample={at=os.time(),name=name,args=args,nested={}}
+        local sample={at=os.time(),name=name,args=args,nested={},field=fieldObservation}
         for i=1,math.min(select("#",...),2) do
             local payload=select(i,...)
             if type(payload)=="table" then
@@ -769,7 +923,6 @@ local function pathMove(root, humanoid, character, destination, requireCarry, ta
     record.status="Route destination reached"
     return (root.Position-destination).Magnitude<=4,record.status
 end
-local eggLogic={}
 function eggLogic.metadata(subject)
     local data={sources={},raw={},conflicts={}}
     local function rawValue(value)
@@ -857,6 +1010,18 @@ function eggLogic.metadata(subject)
             if next(raw.values) and #data.raw<6 then data.raw[#data.raw+1]=raw end
         end
     end
+    local record,binding=eggLogic.resolveField(subject,data)
+    data.fieldBinding=binding
+    if record then
+        local source=record.source.." field "..record.uid
+        observe("uid",record.uid,source)
+        for key,group in pairs(groups) do
+            if record.fields[key]~=nil then observe(group,record.fields[key],source.."."..key) end
+            if record.statsRates and record.statsRates[key]~=nil then observe(group,record.statsRates[key],source..".Stats."..key) end
+        end
+        data.assetCategory=record.fields.AssetCategory;data.areaId=record.fields.AreaId
+        if #data.raw<6 then data.raw[#data.raw+1]={path=source,values=record.fields,keys=record.keys} end
+    end
     for group in pairs(data.conflicts) do data[group]=nil;data.sources[group]=nil end
     return data
 end
@@ -903,11 +1068,19 @@ function eggLogic.refresh()
     local root=character and character:FindFirstChild("HumanoidRootPart")
     local humanoid=character and character:FindFirstChildOfClass("Humanoid")
     local choices=eggLogic.choices(root,humanoid,false)
-    local catalog={at=os.time(),mode=eggSelect.mode,entries={},inventory={},total=#choices,knownIncome=0,accepted=0}
+    local catalog={at=os.time(),mode=eggSelect.mode,entries={},inventory={},total=#choices,knownIncome=0,fieldLinked=0,accepted=0,
+        fieldData={stored=eggLogic.field.count,lastEvent=eggLogic.field.lastEvent,lastAt=eggLogic.field.lastAt,
+            missingUid=eggLogic.field.missingUid,evicted=eggLogic.field.evicted}}
+    catalog.fieldData.fresh=0
+    for _,record in pairs(eggLogic.field.records) do
+        if os.clock()-record.clock<=120 then catalog.fieldData.fresh=catalog.fieldData.fresh+1 end
+    end
     for i,choice in ipairs(choices) do
         if choice.meta.incomePerSecond~=nil then catalog.knownIncome=catalog.knownIncome+1 end
+        if choice.meta.fieldBinding and choice.meta.fieldBinding.uid and choice.meta.fieldBinding.method~="ambiguous_prompts" then catalog.fieldLinked=catalog.fieldLinked+1 end
         if choice.accepted then catalog.accepted=catalog.accepted+1 end
         if i<=12 then catalog.entries[i]={path=choice.prompt:GetFullName(),distance=choice.distance,
+            position={x=choice.position.X,y=choice.position.Y,z=choice.position.Z},
             enabled=choice.prompt.Enabled,eligibleForMode=choice.accepted,priority=choice.priority,metadata=choice.meta} end
     end
     catalog.truncated=#choices>12
@@ -928,6 +1101,12 @@ function eggLogic.refresh()
     catalog.inventoryComplete=inventory.complete and #items<=8
     eggSelect.catalog=catalog
     return choices
+end
+function eggLogic.export()
+    eggLogic.refresh()
+    return {version="1.44",kind="egg_data",placeId=game.PlaceId,
+        eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
+            selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples}}
 end
 function eggLogic.apply(text)
     if #text>1200 then return false,"Preferred list is too long" end
@@ -2546,11 +2725,11 @@ end
 function eggUI.render()
     eggUI.modeButton.Text="Mode: "..string.upper(eggSelect.mode)
     local catalog=eggSelect.catalog
-    eggUI.countLabel.Text=string.format("%d nearby / %d income known",catalog.total or 0,catalog.knownIncome or 0)
+    eggUI.countLabel.Text=string.format("%d eggs / %d linked / %d income",catalog.total or 0,catalog.fieldLinked or 0,catalog.knownIncome or 0)
     local lines={"Nearby eggs (sorted for "..eggSelect.mode..")"}
     for i,entry in ipairs(catalog.entries or {}) do
         local m=entry.metadata
-        lines[#lines+1]=string.format("%d. %s | /s: %s | %s | %.1f studs%s",i,m.name or "Unknown egg",
+        lines[#lines+1]=string.format("%d. %s | /s: %s | %s | %.1f studs%s",i,m.name or (m.assetCategory and ("Category: "..tostring(m.assetCategory))) or "Unknown egg",
             m.incomePerSecond~=nil and tostring(m.incomePerSecond) or "?",m.rarity or "rarity ?",entry.distance,
             entry.eligibleForMode and "" or " | skipped")
     end
@@ -2562,9 +2741,19 @@ end
 function eggUI.scan()
     local ok,err=pcall(eggLogic.refresh)
     if not ok then status.Text="Egg scan error: "..tostring(err):sub(1,140);return end
-    eggUI.render();status.Text="Egg data refreshed. Copy short includes sources and missing/conflicting fields."
+    eggUI.render()
+    local catalog=eggSelect.catalog
+    status.Text=catalog.fieldData.fresh==0 and "Waiting for fresh field updates from the game. Keep hub open, then Scan / Copy short."
+        or catalog.fieldLinked==0 and "Field records received; no unambiguous prompt binding. Copy short includes UID / positions."
+        or catalog.knownIncome==0 and "Egg records linked; income is still unknown. Copy short includes prioritized field data."
+        or "Egg data refreshed. Copy short includes sources and missing/conflicting fields."
 end
 eggUI.scanButton.Activated:Connect(eggUI.scan)
+eggUI.copyButton.Activated:Connect(function()
+    local ok,payload=pcall(function() return Http:JSONEncode(eggLogic.export()) end)
+    if not ok then status.Text="Egg export failed: "..tostring(payload):sub(1,140);return end
+    task.spawn(copyPayload,payload,"Egg data")
+end)
 eggUI.modeButton.Activated:Connect(function()
     if collectEgg.enabled or collectRunning or placeState.manualPreparing or placementRecord.enabled then
         status.Text="Stop Collect / Record placement before changing egg selection";return
@@ -2916,7 +3105,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.43", placeId = game.PlaceId,
+        local report = {version = "1.44", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -3088,7 +3277,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.43", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.44", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -3118,7 +3307,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.43 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.44 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then

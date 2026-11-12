@@ -1,4 +1,4 @@
-# Steal An Egg — v1.43
+# Steal An Egg — v1.44
 
 PlaceId: 107778070777162. Load through the existing universal Loader.
 All automation and placement recording start OFF. Evidence below separates user-reported game results from offline checks.
@@ -63,7 +63,7 @@ python -m unittest discover -s tests -v
 luac5.4 -p Games/StealAnEgg_Diagnostics.lua
 lua5.4 tests/test_egg_collect.lua
 ~~~
-175 simulated cases and 4 Loader contract tests pass. The complete Lua chunk compiles locally. These checks cover cash parsing, unknown/conflicting balances, exclusion of premium controls, missing callbacks, level confirmation/no-result stop, native treadmill approach and previous automation guards. They are not Potassium/server tests and do not guarantee absence of anti-cheat kicks.
+194 simulated cases and 4 Loader contract tests pass. The complete Lua chunk compiles locally. These checks cover cash parsing, unknown/conflicting balances, exclusion of premium controls, missing callbacks, level confirmation/no-result stop, native treadmill approach and previous automation guards. They are not Potassium/server tests and do not guarantee absence of anti-cheat kicks.
 
 ## Manual placement handoff (v1.38)
 
@@ -139,3 +139,19 @@ Metadata is read from explicit attributes/named value children or labels on the 
 The range, ground-level checks, action filter, cooldown and attempt cap still apply. Target UID and policy eligibility are rechecked after moving. The last selection and pickup record include the metadata used. Missing field stats pause advanced-mode pickup with a visible explanation; open Eggs/Copy short to inspect which data is missing. Public catalog output is capped and says when truncated. Scan near eggs, wait for an ordinary field update if needed, and send Copy short to establish live names/UID/stat fields.
 
 Twenty-two added simulated cases cover metadata/provenance, unknown/ambiguous values, highest-income traversal versus nearby low-income eggs, nearest-mode preservation, tie distance, user-defined preferences, range/action/cooldown guards, changed metadata/UID during travel, bounded catalogs/event samples and explicit object links. Total: 175 Lua cases and four Loader contracts pass locally. The whole script compiles, including Lua's top-level local-variable limit; helper/UI tables keep the added functionality within that limit. The new UI and actual field statistics still require a live game test. Auto Place remains disabled.
+
+## Prioritized field records and focused export (v1.44)
+
+The user's v1.43 report showed eight empty proxy-prompt metadata records and zero known income. Server field updates did arrive, including the actual `UpdatedRecords` / `RemovedUids` batch shape, but generic diagnostics kept arbitrary first keys and reduced CFrames to userdata placeholders. Income mode correctly blocked pickup when no rate was readable; two earlier Forest deliveries occurred in Nearest mode.
+
+The observer now captures identity and relevant fields before cosmetic properties can truncate them: UID aliases, AssetCategory, DisplayName/EggName, rarity, supported per-second rate fields, mutations, AreaId, carry state, and Position/BottomCFrame/BoundsCFrame/CFrame/PivotCFrame. CFrame positions and Vector3 coordinates are normalized into JSON-safe x/y/z values. Bounded key-name lists reveal other available fields without inventing their semantics. Supported Stats per-second values have their own prioritized capture. Generic samples remain for compatibility.
+
+UpdatedRecords and FieldEggShifted populate a private session cache of at most 256 identities; at most 128 updates/removals are processed per batch. FieldEggGone and RemovedUids invalidate cached entries. Diagnostic samples retain at most four canonical records per event and three events. The cache never replays payloads or requests a game snapshot Remote.
+
+Field metadata is linked by an explicit prompt UID first. For attribute-free CarryAreaEgg proxies, a labelled `unique_position` correlation requires exactly one fresh, non-carried record within 1.5 horizontal studs and eight vertical studs using one of its observed anchors, and no second cached CarryAreaEgg prompt at that anchor. Records older than 120 seconds are excluded. Ambiguous records/prompts, wrong explicit UIDs and conflicting metadata do not receive a guessed identity or score. Position correlation is an inference among observed records, not an authoritative server identity contract; live mapping still requires verification.
+
+The Eggs counter now separates nearby prompts, linked identities and known incomes. AssetCategory is shown as a category when an actual egg name is absent, without converting categories into guessed egg names. Income still requires explicit finite per-second data; absent rates are not replaced by rarity, name, size or price estimates. No rarity quality order is invented.
+
+Use **Eggs -> Scan eggs -> Copy eggs** after ordinary field updates arrive. Copy eggs exports only `{kind:"egg_data", eggSelection:...}` through the existing clipboard/readback/fallback flow. This includes prompt coordinates, `catalog.fieldData` cache/freshness diagnostics, typed field samples and metadata binding methods. Copy short still includes the same data with the larger report. No collection action is needed to scan. If zero fresh records are present, keep the hub open for natural updates and rescan; do not enable Income expecting it to choose unknown eggs.
+
+Nineteen new simulated cases verify prioritized UID/CFrame capture, observed batch schema, unique and explicit identity links, linked-income collection, ambiguity/age/carried/range guards, invalidation, UID conflicts, cache eviction/reinsertion, Stats rates, conflicting income, batch/report limits and focused export coordinates. Total: 194 Lua cases and four Loader contracts, plus full source compilation. The code is tested on a feature branch before main is advanced; live field-rate mapping remains pending. Auto Place stays disabled.
