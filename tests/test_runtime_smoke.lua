@@ -71,7 +71,7 @@ local function fixture(options)
         if url:find('Games/StealAnEgg_Diagnostics.lua',1,true) then return options.badSource and 'local =' or source end
         error('unexpected download '..url)
     end
-    local env=setmetatable({workspace=workspace,game=game,Instance={new=function(c) return object(c) end},
+    local env=setmetatable({workspace=workspace,game=game,typeof=type,Instance={new=function(c) return object(c) end},
         task={spawn=function(fn,...) tasks[#tasks+1]={fn=fn,args={...}} end,delay=function(_,fn) tasks[#tasks+1]={fn=fn,args={}} end,defer=function(fn) tasks[#tasks+1]={fn=fn,args={}} end,wait=function() error('Background workers are not run by this startup test') end},
         Color3={fromRGB=function(...) return {...} end,new=function(...) return {...} end},ColorSequence={new=function(...) return {...} end},
         UDim={new=function(...) return {...} end},UDim2={fromOffset=function(x,y) return {X=x,Y=y} end,fromScale=function(x,y) return {X=x,Y=y} end,new=function() return {} end},
@@ -146,5 +146,24 @@ check('unexpected Hatch faults disable automation instead of retrying',function(
     local found=false
     for _,obj in ipairs(f.objects) do if obj.ClassName=='TextLabel' and obj.Text:find('mock character lookup fault',1,true) then found=true end end
     assert(found)
+end)
+check('game data modules load only after the explicit button is clicked',function()
+    local f=fixture();local calls=0
+    f.env.require=function(module) calls=calls+1;return {name=module.Name,perSecond=12} end
+    local storage=f.env.game:GetService('ReplicatedStorage')
+    local function make(class,name,parent) local obj=f.env.Instance.new(class);obj.Name=name;obj.Parent=parent;return obj end
+    local data=make('Folder','Data',storage);make('ModuleScript','Assets',data);make('ModuleScript','Rarity',data)
+    make('ModuleScript','AssetEarnings',make('Folder','Util',make('Folder','Shared',storage)))
+    f:run();assert(calls==0)
+    f.env.task.spawn=function(fn,...) fn(...) end
+    f:button('Read game data').Activated:Fire();assert(calls==3)
+    f:button('Copy eggs').Activated:Fire()
+    assert(f.http.lastPayload.eggSelection.definitionDiscovery.loaded==3)
+end)
+check('game data button blocks loading while automation is enabled',function()
+    local f=fixture();local calls=0;f.env.require=function() calls=calls+1;return {} end
+    f:run();f.env.task.spawn=function(fn,...) fn(...) end
+    f:button('Auto Hatch: OFF').Activated:Fire();f:button('Read game data').Activated:Fire()
+    assert(calls==0)
 end)
 print(string.format('%d runtime startup tests passed',tests))

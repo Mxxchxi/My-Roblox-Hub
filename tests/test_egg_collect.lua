@@ -35,7 +35,7 @@ local env = setmetatable({pg = pg, workspace = {}, player = {Character = charact
     os = {clock = function() return clock end, time = function() return 123 end},
     task = {wait = function() end}, promptPosition = function(p) return p.position end}, {__index = _G})
 function env.player:FindFirstChildOfClass() return backpack end
-env.typeof=function(v) return type(v)=="table" and v.__type or type(v) end
+env.typeof=function(v) return type(v)=="table" and rawget(v,"__type") or type(v) end
 env.RaycastParams = {new=function() return {} end}
 env.OverlapParams = {new=function() return {} end}
 env.Vector3 = {new=position}
@@ -81,7 +81,7 @@ end
 env.eggSelect={mode="Nearest",preferred={},catalog={entries={}},fieldSamples={}};env.placementRecord={enabled=false,last="OFF",records={}};env.placeState={enabled=false,slots={},attempts=0,observed=0};env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply,resetField=eggLogic.resetField,fieldRecord=eggLogic.fieldRecord,fieldIndex=function() return eggLogic.field end,eggExport=eggLogic.export,toolRead=eggLogic.toolMetadata,toolCatalog=eggLogic.toolCatalog,sourceScan=eggLogic.scanSources,sourceScalar=eggLogic.sourceScalar,sourceReset=function() eggLogic.sources=nil;eggLogic.sourceRunning=false;eggLogic.sourceEvents={} end}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply,resetField=eggLogic.resetField,fieldRecord=eggLogic.fieldRecord,fieldIndex=function() return eggLogic.field end,eggExport=eggLogic.export,toolRead=eggLogic.toolMetadata,toolCatalog=eggLogic.toolCatalog,definitions=eggLogic.inspectDefinitions,definitionSnapshot=eggLogic.definitionSnapshot,definitionTarget=eggLogic.definitionTarget,sourceScan=eggLogic.scanSources,sourceScalar=eggLogic.sourceScalar,sourceReset=function() eggLogic.sources=nil;eggLogic.sourceRunning=false;eggLogic.sourceEvents={};eggLogic.definitions=nil;eggLogic.definitionRunning=false;eggLogic.definitionPending=nil end}", "collect-engine", "t", env))()
 local hatchSource=assert(source:match("(local function hatchStep.-)\nconnections%["))
 local runHatch=assert(load(hatchSource.."\nreturn hatchStep", "hatch-step", "t", env))()
 local function prompt(distance)
@@ -94,7 +94,7 @@ local function prompt(distance)
     return p
 end
 local function reset()
-    funcs.resetField();funcs.sourceReset();env.gui=nil
+    funcs.resetField();funcs.sourceReset();env.gui=nil;env.game={PlaceId=107778070777162};env.require=nil;env.task.spawn=function(fn) fn() end
     env.eggSelect={mode="Nearest",preferred={},catalog={entries={}},fieldSamples={}}
     funcs.stopRecord("reset");env.placementRecord={enabled=false,last="OFF",records={}}
     env.hatch.enabled=true;env.hatch.attempts=0;env.hatch.lastAttempt=nil;env.attemptState={}
@@ -1480,7 +1480,7 @@ end)
 check("focused egg export includes prompt coordinates and prioritized field samples", function()
     qualityPrompt(3,nil,nil);funcs.record("RE/EggWorld/FieldEggShifted",fieldRecord("a",3,100))
     local result=funcs.eggExport()
-    assert(result.kind=="egg_data" and result.version=="1.47")
+    assert(result.kind=="egg_data" and result.version=="1.48")
     assert(result.eggSelection.catalog.entries[1].position.x==3 and result.eggSelection.catalog.fieldLinked==1)
     assert(result.eggSelection.fieldSamples[1].field.records[1].uid=="a")
 end)
@@ -1829,5 +1829,108 @@ check("unexpected Collect error pauses instead of retrying the faulting action",
     function p:IsDescendantOf() error("mock candidate fault") end
     funcs.dispatch();assert(not env.collectEgg.enabled and env.collectEgg.phase=="PAUSED" and p.began==0)
     assert(env.collectEgg.pausedReason:find("mock candidate fault",1,true))
+end)
+local function definitionFixture()
+    local assets=node("Assets","ModuleScript")
+    local rarity=node("Rarity","ModuleScript")
+    local earnings=node("AssetEarnings","ModuleScript")
+    local storage=node("ReplicatedStorage","Folder",{}, {node("Data","Folder",{}, {assets,rarity}),node("Shared","Folder",{}, {node("Util","Folder",{}, {earnings})})})
+    env.game={PlaceId=107778070777162,GetService=function(_,name) assert(name=="ReplicatedStorage");return storage end}
+    return storage,assets,rarity,earnings
+end
+check("definition reader loads only the three observed allowlisted ModuleScripts",function()
+    local _,assets,rarity,earnings=definitionFixture();local called={}
+    env.require=function(module)
+        assert(module==assets or module==rarity or module==earnings);called[#called+1]=module
+        return module==assets and {Catfish={perSecond=12,rarity="Uncommon"}} or {Common={Index=1}}
+    end
+    local ok,result=funcs.definitions()
+    assert(ok and #called==3 and #result.modules==3 and result.modulesInitializedByRequire and not result.rankingApplied)
+    assert(result.modules[1].snapshot.data.Catfish.perSecond==12 and not env.busy)
+end)
+check("exported earnings functions are described without being invoked",function()
+    definitionFixture();local invoked=0
+    env.require=function() return function() invoked=invoked+1;error("must not be invoked") end end
+    local ok,result=funcs.definitions()
+    assert(ok and invoked==0 and result.modules[3].snapshot.returnedType=="function" and result.modules[3].snapshot.data=="<function>")
+end)
+check("definition snapshots prioritize observed category and rate fields before cosmetics",function()
+    local data={};for i=1,180 do data["Cosmetic"..i]={Value=i} end
+    data.Catfish={perSecond=12,rarity="Uncommon"}
+    local snapshot=funcs.definitionSnapshot(data,{"Catfish"})
+    assert(snapshot.data.Catfish.perSecond==12 and snapshot.data.Catfish.rarity=="Uncommon" and not snapshot.complete)
+end)
+check("definition table inspection does not trigger metatable index or pairs functions",function()
+    local tableValue=setmetatable({BaseIncome=12},{__index=function() error("index invoked") end,__pairs=function() error("pairs invoked") end})
+    local snapshot=funcs.definitionSnapshot(tableValue,{"Catfish"})
+    assert(snapshot.data.BaseIncome==12)
+end)
+check("definition snapshots disclose cycles depth and entry limits",function()
+    local data={};data.cycle=data;data.deep={a={b={c={d=1}}}}
+    local snapshot=funcs.definitionSnapshot(data,{})
+    assert(snapshot.data.cycle=="<cycle>" and not snapshot.complete)
+    assert(snapshot.visited<=256)
+end)
+check("module load failures are reported and do not strand scan state",function()
+    definitionFixture();env.require=function() error("mock require failure") end
+    local ok,result=funcs.definitions()
+    assert(ok and result.modules[1].status=="load_error" and result.modules[1].error:find("mock require failure",1,true) and not env.busy)
+    assert(funcs.definitions())
+end)
+check("duplicate module names reject the path instead of choosing the first",function()
+    local storage=definitionFixture();local data=storage:FindFirstChild("Data")
+    data.children[#data.children+1]=node("Assets","ModuleScript")
+    assert(not funcs.definitionTarget(storage,{"Data","Assets"}))
+    env.require=function(module) assert(module.Name~="Assets");return {} end
+    local _,result=funcs.definitions();assert(result.modules[1].status=="ambiguous_path")
+end)
+check("non-module objects and missing definition paths are diagnosed",function()
+    local storage,assets=definitionFixture();assets.ClassName="Folder"
+    storage:FindFirstChild("Data").children[2]=nil
+    env.require=function() return {} end
+    local _,result=funcs.definitions();assert(result.modules[1].status=="not_module_script" and result.modules[2].status=="not_found")
+end)
+check("module read timeout ignores late output without cancelling game initialization",function()
+    definitionFixture();local pendingFn
+    env.require=function() return {LateIncome=999} end
+    env.task.spawn=function(fn) pendingFn=fn end
+    local ok,result=funcs.definitions()
+    assert(not ok and result.status=="timeout" and result.modules[1].lateResultIgnored and not env.busy)
+    local again,message=funcs.definitions();assert(not again and message:find("still loading",1,true))
+    pendingFn();assert(result.modules[1].status=="timeout" and not result.modules[1].snapshot)
+end)
+check("closing hub during a module load cancels observation and clears busy state",function()
+    definitionFixture();env.task.spawn=function() end
+    onWait=function() env.active=false end
+    local ok,result=funcs.definitions()
+    assert(not ok and result.status=="cancelled" and not env.busy)
+end)
+check("definition scanning never overlaps another scan",function()
+    definitionFixture();env.busy=true
+    local ok,message=funcs.definitions();assert(not ok and message:find("scan",1,true) and env.busy)
+end)
+check("game module observation errors are recoverable",function()
+    env.game={GetService=function() error("mock storage unavailable") end}
+    local ok,result=funcs.definitions();assert(not ok and result.status=="error" and not env.busy)
+    definitionFixture();env.require=function() return {} end;assert(funcs.definitions())
+end)
+check("definition exports stay separate from field income selection",function()
+    definitionFixture();env.require=function() return {Bird={IncomePerSecond=999,Rarity="Rare"}} end
+    assert(funcs.definitions());local p=qualityPrompt(3,nil,"Bird");env.eggSelect.mode="Income"
+    local report=funcs.eggExport()
+    assert(report.eggSelection.definitionDiscovery and report.eggSelection.catalog.knownIncome==0)
+    assert(not funcs.eggRank(root,humanoid,false)[1].accepted and not funcs.eggMeta(p).incomePerSecond)
+end)
+check("definition sampling uses observed Category rather than Tool names",function()
+    definitionFixture();local tool=configuredTool("Misleading name","a",12,"Uncommon");tool.attrs.Category="Catfish"
+    env.require=function() return {Catfish={perSecond=12},["Misleading name"]={perSecond=999}} end
+    local _,result=funcs.definitions()
+    assert(result.categories[1]=="Catfish" and result.categories[2]==nil)
+end)
+check("definition export string limits preserve UTF-8 boundaries",function()
+    local value=funcs.sourceScalar("x"..string.rep("ก",100))
+    assert(#value<=160 and utf8.len(value)~=nil)
+    local snapshot=funcs.definitionSnapshot({Description="x"..string.rep("ก",100)},{})
+    assert(utf8.len(snapshot.data.Description)~=nil)
 end)
 print(string.format("%d Auto Collect tests passed", tests))

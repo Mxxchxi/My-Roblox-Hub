@@ -1,4 +1,4 @@
-# Steal An Egg — v1.47
+# Steal An Egg — v1.48
 
 PlaceId: 107778070777162. Load through the existing universal Loader.
 All automation and placement recording start OFF. Evidence below separates user-reported game results from offline checks.
@@ -209,3 +209,23 @@ New `tests/test_runtime_smoke.lua` executes the full Loader and full Steal An Eg
 Validation: 251 engine cases (14 new regression cases), 13 full-file startup/control-flow cases, four Python Loader contracts, and full Loader/egg Lua 5.4 compilation. CI now runs the runtime smoke suite as well as the existing checks. No production game Remote, arbitrary game module execution or placement input was added; Auto Place stays disabled.
 
 Remaining live work: retest v1.47 on Potassium, verify the corrected failure/cancellation paths in game as needed, capture field metadata for the nearby prompts, and establish a real per-egg income/rarity source before enabling quality-based field collection. Earlier user-reported Auto Hatch, training, Forest collection/return and manual world-appearance passes remain historical live results; they are not newly revalidated by this audit. Base/treadmill upgrades and Lake collection still lack confirmed live success. Source scan/output caps remain disclosed rather than treated as full-map coverage.
+
+## Explicit game-data module export inspection (v1.48)
+
+The user selected further investigation of field-egg income. Earlier scans established useful module paths but did not inspect their exported data. The new **Eggs -> Read game data** button explicitly requests the exports of exactly three observed ModuleScripts:
+
+- ReplicatedStorage.Data.Assets
+- ReplicatedStorage.Data.Rarity
+- ReplicatedStorage.Shared.Util.AssetEarnings
+
+This is a separate manual operation from the existing passive Scan sources. It uses Roblox `require`, which can run a module's initialization and dependencies; it is not a passive property read. The UI states that it loads three game modules. It never runs at hub startup, never broad-loads discovered modules, and blocks the button while automation or another scan is active. The reader itself does not call game Remotes, decompile/read Source, invoke exported functions or modify returned tables. A returned earnings function is reported as a function, not invoked with guessed parameters. This change provides inspection tooling; no actual module exports have yet been supplied from the live game, so the income formula remains unverified.
+
+Paths are resolved through unique named children, with a 512-child scope limit at each level and a final ModuleScript class check. Missing, ambiguous and non-module targets receive explicit status. Each direct load gets a five-second observation deadline in a separate task. Timeout stops further loads, ignores late output, and prevents another read while the previous load remains pending. The observer does not attempt to cancel the game's module initialization, which may continue after the observation times out or the hub closes. Errors and cancelled observation release the hub scan lock; they are exported for inspection. Loaded/error/unavailable counts avoid treating an empty or failed scan as proof that earnings data was found.
+
+`eggSelection.definitionDiscovery` is included in Copy eggs and Copy short. Each loaded export reports its returned type, bounded raw snapshot, top-level key names/types, completion status and limits. Snapshots use raw table operations without invoking index/pairs metamethods, retain cycle/depth/truncation markers, and limit each module to 256 entries, 32 entries per table and depth four, with 96 top-level key descriptions. Strings/keys are bounded at UTF-8 boundaries. Canonical known income/rarity keys and container keys receive priority. Up to 16 observed Category values from linked field entries and inventory Tool Category attributes get priority; display names are not substituted as category identifiers.
+
+All snapshots remain observations. No guessed schema, generic Income/BaseIncome, rarity order, static category value, weight or multiplier is automatically converted into a field-egg score. Existing Income selection still requires established per-prompt/per-UID rates. The next live export must establish whether Data.Assets contains definitions, an accessor API or another shape, and whether AssetEarnings returns callable calculation logic or data.
+
+To test: start v1.48, leave all automation OFF, open Eggs, press Read game data, wait for the status, then Copy eggs and provide the resulting JSON. Scan sources remains available for passive inspection without loading modules. Auto Place remains disabled.
+
+Validation: 266 simulated engine cases (15 new), 15 full-script startup/control-flow cases (two new), four Python Loader contracts, and full Lua 5.4 source compilation. Cases cover exact module allowlist, manual-only loading, active-automation blocking, exported-function non-invocation, preferred category keys, hostile table metamethods, cycles/limits, missing/ambiguous/non-module paths, load errors/recovery, timeout/late output, cancellation, scan locking, focused export separation from field scoring, and UTF-8 boundaries. Live game data exports and Potassium module-loading support remain unverified.

@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.47
+-- Steal An Egg: structure diagnostics v1.48
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -55,7 +55,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.47", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.48", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -96,7 +96,8 @@ round(eggUI.preferredBox,6)
 eggUI.applyButton=control(eggUI.page,"Apply names",0,150,120,32)
 eggUI.copyButton=control(eggUI.page,"Copy eggs",130,150,120,32)
 eggUI.sourceButton=control(eggUI.page,"Scan sources",260,150,130,32)
-eggUI.hint=label(eggUI.page,"Read-only sources; Copy eggs exports results.",400,146,166,42,11,colors.muted)
+eggUI.dataButton=control(eggUI.page,"Read game data",400,150,166,32)
+eggUI.hint=label(eggUI.page,"Read game data loads 3 game modules; Copy eggs exports observations.",0,183,568,14,10,colors.muted)
 eggUI.hint.TextWrapped=true
 eggUI.scroll=create("ScrollingFrame",eggUI.page,{Position=UDim2.fromOffset(0,198),Size=UDim2.fromOffset(568,184),
     BackgroundColor3=colors.panel,BorderSizePixel=0,ScrollBarThickness=5,AutomaticCanvasSize=Enum.AutomaticSize.XY,CanvasSize=UDim2.new()})
@@ -120,7 +121,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.47 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.48 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -166,7 +167,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.47 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.48 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -211,7 +212,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.47 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.48 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -513,8 +514,16 @@ eggLogic.sourceEvents={}
 eggLogic.sourceFields={"IncomePerSecond","CashPerSecond","MoneyPerSecond","CoinsPerSecond","ValuePerSecond",
     "Rarity","RarityName","RarityId","Tier","Income","BaseIncome","BaseValue","Value","Price","SellPrice","Rate",
     "AssetCategory","DisplayName","EggName","AreaId","Uid","UID","EggUid","EggUID","BaseMutation","Mutations"}
-function eggLogic.sourceScalar(value)
-    if type(value)=="string" then return value:sub(1,160) end
+function eggLogic.sourceScalar(value,limit)
+    if type(value)=="string" then
+        local finish=math.min(#value,limit or 160)
+        while finish<#value do
+            local byte=value:byte(finish+1)
+            if byte<128 or byte>=192 then break end
+            finish=finish-1
+        end
+        return value:sub(1,finish)
+    end
     if type(value)=="number" and value==value and math.abs(value)~=math.huge then return value end
     if type(value)=="boolean" then return value end
 end
@@ -672,6 +681,133 @@ function eggLogic.scanSources(roots)
     result.finishedAt=os.time()
     eggLogic.sources=result
     return ok and active,result
+end
+eggLogic.definitionPaths={{"Data","Assets"},{"Data","Rarity"},{"Shared","Util","AssetEarnings"}}
+function eggLogic.definitionTarget(storage,parts)
+    local node=storage
+    for _,name in ipairs(parts) do
+        local children=node:GetChildren()
+        if #children>512 then return nil,"path_scope_limited" end
+        local match,count=nil,0
+        for _,child in ipairs(children) do if child.Name==name then match=child;count=count+1 end end
+        if count~=1 then return nil,count==0 and "not_found" or "ambiguous_path" end
+        node=match
+    end
+    if not node:IsA("ModuleScript") then return nil,"not_module_script" end
+    return node
+end
+function eggLogic.definitionSnapshot(value,categories)
+    local state={remaining=256,seen={},limited=false,visited=0}
+    local priority={"perSecond","perSecondDisplay","rarity","Category","category","BaseEarnings","EarningsPerSecond",
+        "BaseIncome","Income","Weight","Scale","Mutations","Configs","configs","Assets","assets","Definitions","definitions",
+        "Data","data","Rarities","rarities","Stats","stats","Earnings","earnings"}
+    for _,key in ipairs(eggLogic.sourceFields) do priority[#priority+1]=key end
+    local function visit(item,depth)
+        local scalar=eggLogic.sourceScalar(item)
+        if scalar~=nil then return scalar end
+        if type(item)~="table" then return "<"..typeof(item)..">" end
+        if state.seen[item] then return "<cycle>" end
+        if depth>=4 or state.remaining<=0 then state.limited=true;return "<limit>" end
+        state.seen[item]=true
+        local out,keys,used={},{},{}
+        local function add(key)
+            if not used[key] and rawget(item,key)~=nil then keys[#keys+1]=key;used[key]=true end
+        end
+        for _,category in ipairs(categories or {}) do add(category) end
+        for _,key in ipairs(priority) do add(key) end
+        local count=0
+        for key in next,item do
+            count=count+1
+            if count>128 then state.limited=true;out.__keysTruncated=true;break end
+            if type(key)=="string" or type(key)=="number" then add(key) end
+        end
+        for i,key in ipairs(keys) do
+            if i>32 or state.remaining<=0 then out.__truncated=true;state.limited=true;break end
+            state.remaining=state.remaining-1;state.visited=state.visited+1
+            out[eggLogic.sourceScalar(tostring(key),120)]=visit(rawget(item,key),depth+1)
+        end
+        state.seen[item]=nil
+        return out
+    end
+    local result={returnedType=typeof(value),data=visit(value,0),visited=0,complete=false,
+        exportedFunctionsInvoked=false,rankingApplied=false,limits={entries=256,perTable=32,depth=4}}
+    result.visited=state.visited;result.complete=not state.limited
+    if type(value)=="table" then
+        result.keys={};local count=0
+        for key in next,value do
+            count=count+1;if count>96 then result.keysTruncated=true;result.complete=false;break end
+            if type(key)=="string" or type(key)=="number" then result.keys[#result.keys+1]={name=eggLogic.sourceScalar(tostring(key),120),keyType=type(key),valueType=typeof(rawget(value,key))} end
+        end
+        table.sort(result.keys,function(a,b) return a.name<b.name end)
+    end
+    return result
+end
+function eggLogic.inspectDefinitions()
+    if eggLogic.definitionRunning or busy or eggLogic.sourceRunning then return false,"Another scan is running" end
+    if eggLogic.definitionPending and not eggLogic.definitionPending.done then return false,"Previous game module is still loading; no duplicate load started" end
+    eggLogic.definitionRunning=true;busy=true
+    local report={at=os.time(),status="running",modules={},scope="explicit_game_module_exports",modulesInitializedByRequire=true,
+        rankingApplied=false,exportedFunctionsInvoked=false,categories={},limits={modules=3,secondsPerModule=5}}
+    eggLogic.definitions=report
+    local ok,err=pcall(function()
+        local seen={}
+        local function category(value)
+            if type(value)=="string" and #value<=120 and not seen[value] and #report.categories<16 then
+                seen[value]=true;report.categories[#report.categories+1]=value
+            end
+        end
+        for _,entry in ipairs(eggSelect.catalog.entries or {}) do category(entry.metadata.assetCategory) end
+        local inventory=eggLogic.toolCatalog()
+        for _,entry in ipairs(inventory.entries) do
+            -- Tool names are not substituted for the game's Category identity.
+            for _,container in pairs({player.Character,player:FindFirstChildOfClass("Backpack")}) do
+                for i,tool in ipairs(container:GetChildren()) do
+                    if i>1000 then break end
+                    if tool:IsA("Tool") and eggLogic.toolRefs[tool]==entry.ref then category(tool:GetAttribute("Category")) end
+                end
+            end
+        end
+        local storage=game:GetService("ReplicatedStorage")
+        for _,parts in ipairs(eggLogic.definitionPaths) do
+            local entry={path="ReplicatedStorage."..table.concat(parts,"."),status="not_started"}
+            report.modules[#report.modules+1]=entry
+            if not active then report.status="cancelled";break end
+            local module,reason=eggLogic.definitionTarget(storage,parts)
+            if not module then entry.status=reason
+            elseif type(require)~="function" then entry.status="require_unavailable"
+            else
+                entry.status="loading"
+                local pending={done=false,expired=false}
+                eggLogic.definitionPending=pending
+                task.spawn(function()
+                    local loaded,value=pcall(require,module)
+                    if not pending.expired and active then pending.ok=loaded;pending.value=value end
+                    pending.done=true
+                end)
+                local deadline=os.clock()+5
+                while active and not pending.done and os.clock()<deadline do task.wait(0.05) end
+                if not active or not pending.done then
+                    pending.expired=true;entry.status=active and "timeout" or "cancelled"
+                    entry.lateResultIgnored=true;report.status=entry.status
+                    -- Do not cancel a game's module initialization or invoke exported functions.
+                    break
+                end
+                eggLogic.definitionPending=nil
+                if pending.ok then entry.status="loaded";entry.snapshot=eggLogic.definitionSnapshot(pending.value,report.categories)
+                else entry.status="load_error";entry.error=tostring(pending.value):sub(1,180) end
+                pending.value=nil
+            end
+        end
+    end)
+    eggLogic.definitionRunning=false;busy=false
+    report.loaded=0;report.unavailableOrFailed=0
+    for _,entry in ipairs(report.modules) do
+        if entry.status=="loaded" then report.loaded=report.loaded+1 else report.unavailableOrFailed=report.unavailableOrFailed+1 end
+    end
+    if not ok then report.status="error";report.error=tostring(err):sub(1,180)
+    elseif report.status=="running" then report.status="finished" end
+    report.finishedAt=os.time()
+    return ok and report.status=="finished",report
 end
 local recordingContext
 local collectTween
@@ -1426,10 +1562,10 @@ function eggLogic.refresh()
 end
 function eggLogic.export()
     eggLogic.refresh()
-    return {version="1.47",kind="egg_data",placeId=game.PlaceId,
+    return {version="1.48",kind="egg_data",placeId=game.PlaceId,
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
             selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents,
-            runtimeErrors={ui=eggLogic.lastUIError}}}
+            runtimeErrors={ui=eggLogic.lastUIError},definitionDiscovery=eggLogic.definitions}}
 end
 function eggLogic.apply(text)
     if #text>1200 then return false,"Preferred list is too long" end
@@ -2064,7 +2200,7 @@ local function collectSnapshot(includeEvidence)
         gameEvents = gameEvents, eventObserver = eventObserver,
         upgrades=upgrades,training=training,placementRecording=placementRecord,
         selectionBlocked=eggSelect.mode~="Nearest" and eggSelect.catalog.accepted==0 and ("No readable egg matches "..eggSelect.mode.."; inspect Eggs / Copy short") or nil,
-        eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents,runtimeErrors={ui=eggLogic.lastUIError}},
+        eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents,runtimeErrors={ui=eggLogic.lastUIError},definitionDiscovery=eggLogic.definitions},
         autoPlace={available=AUTO_PLACE_ENABLED,manualMode=placeState and placeState.manualMode,manualPreparing=placeState and placeState.manualPreparing,binding=placeState and placeState.binding,preparingBind=placeState and placeState.preparingBind,enabled=placeState and placeState.enabled,attempts=placeState and placeState.attempts,observed=placeState and placeState.observed,last=placeState and placeState.last,lastAttempt=placeState and placeState.lastAttempt,autoMark=placeState and placeState.autoMark,lastSlotPick=placeState and placeState.lastSlotPick},
         autoHome={enabled=autoHome.enabled,ready=autoHome.ready,reason=autoHome.reason,report=includeEvidence and autoHome.report or nil},
         lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, lastWalkingRecovery=lastWalkingRecovery, deliveryPointSet = deliveryPoint ~= nil,
@@ -3106,8 +3242,24 @@ function eggUI.safeRender()
     return ok
 end
 eggUI.scanButton.Activated:Connect(eggUI.scan)
+eggUI.dataButton.Activated:Connect(function()
+    if busy or eggLogic.definitionRunning or eggLogic.sourceRunning then status.Text="Wait for the current scan";return end
+    if collectEgg.enabled or collectRunning or hatch.enabled or hatchRunning or systemRunning or training.enabled or upgrades.mode~="Off"
+        or placementRecord.enabled or placeState.manualPreparing or placeRunning then
+        status.Text="Stop automation before reading game data modules";return
+    end
+    eggUI.dataButton.Text="Reading..."
+    task.spawn(function()
+        local ok,result=eggLogic.inspectDefinitions()
+        eggUI.dataButton.Text="Read game data"
+        if not active then return end
+        if type(result)=="string" then status.Text=result;return end
+        status.Text=ok and string.format("Game data: %d loaded / %d unavailable or failed. Use Copy eggs.",result.loaded,result.unavailableOrFailed)
+            or "Game data read incomplete. Copy eggs includes status/errors."
+    end)
+end)
 eggUI.sourceButton.Activated:Connect(function()
-    if eggLogic.sourceRunning then status.Text="Source scan already running";return end
+    if busy or eggLogic.definitionRunning or eggLogic.sourceRunning then status.Text="Source scan already running";return end
     if collectEgg.enabled or collectRunning or hatch.enabled or systemRunning or training.enabled or upgrades.mode~="Off"
         or placementRecord.enabled or placeState.manualPreparing or placeRunning then
         status.Text="Stop Collect / Hatch / Training / Record placement before scanning sources";return
@@ -3478,7 +3630,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.47", placeId = game.PlaceId,
+        local report = {version = "1.48", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -3650,7 +3802,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.47", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.48", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -3680,7 +3832,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.47 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.48 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
