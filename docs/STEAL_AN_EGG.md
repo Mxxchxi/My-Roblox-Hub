@@ -1,4 +1,4 @@
-# Steal An Egg — v1.40
+# Steal An Egg — v1.41
 
 PlaceId: 107778070777162. Load through the existing universal Loader.
 All automation and placement recording start OFF. Evidence below separates user-reported game results from offline checks.
@@ -10,7 +10,7 @@ All automation and placement recording start OFF. Evidence below separates user-
 | Auto Hatch | User reports confirm the one-shot hatch test and continuous hatching of all ready eggs on v1.39. The script still does not independently verify pet creation. |
 | Base / treadmill upgrades | Implemented using mapped soft-currency UI callbacks, affordability checks and level-change confirmation. Offline tested only. |
 | Speed training | User reports confirm walking onto the treadmill, speed increasing and the OFF control working on v1.39. |
-| Record Placement | Passive one-click recorder added in v1.40; offline tested, awaiting user report. |\n| Auto Place | Disabled in release after user-reported BAC kicks. No UI toggle can enable it. |
+| Record Placement | User's v1.40 report confirms UID capture, a click on own-plot PetArea and complete inventory changing from one egg to zero. v1.41 world-appearance matching is offline tested and awaits a live report. |\n| Auto Place | Disabled in release after user-reported BAC kicks. No UI toggle can enable it. |
 | Money collection | Removed: the game collects money automatically. |
 
 ## Auto Place remains disabled
@@ -61,7 +61,7 @@ python -m unittest discover -s tests -v
 luac5.4 -p Games/StealAnEgg_Diagnostics.lua
 lua5.4 tests/test_egg_collect.lua
 ~~~
-124 simulated cases and 4 Loader contract tests pass. The complete Lua chunk compiles locally. These checks cover cash parsing, unknown/conflicting balances, exclusion of premium controls, missing callbacks, level confirmation/no-result stop, native treadmill approach and previous automation guards. They are not Potassium/server tests and do not guarantee absence of anti-cheat kicks.
+143 simulated cases and 4 Loader contract tests pass. The complete Lua chunk compiles locally. These checks cover cash parsing, unknown/conflicting balances, exclusion of premium controls, missing callbacks, level confirmation/no-result stop, native treadmill approach and previous automation guards. They are not Potassium/server tests and do not guarantee absence of anti-cheat kicks.
 
 ## Manual placement handoff (v1.38)
 
@@ -92,3 +92,22 @@ A game handler can remove the Tool before the input listener reads it. In that c
 A UID must be absent from a complete inventory snapshot for at least 0.5 seconds before `inventoryUIDRemoved=true`. Merely moving the egg to Backpack does not count. After eight seconds the status becomes `uid_removal_observed` or `placement_unconfirmed`. Every record keeps `worldPlacementVerified=false`: UID removal, target ancestry and temporally nearby events do not prove that the server accepted a placement. A detached target outside the static plot is recorded with `target.inOwnedPlot=false`, which is ancestry evidence rather than a placement rejection. There is no anti-cheat bypass or guarantee added by this recorder.
 
 Thirteen new simulated cases exercise recorder observation, no generated placement input or camera change, stable UID removal, unequipping, incomplete inventories, invalid/processed clicks, detached targets, overlapping clicks, cancellation, timeouts, bounded event/history retention and recent versus stale egg samples. Total: 124 Lua cases and four Loader contracts pass locally. Full source compilation passes; actual recorder behavior still requires a game test.
+
+## World appearance check (v1.41)
+
+The same **Placement -> Record placement** button now captures a bounded world baseline when armed, then checks the world every 0.5 seconds during the existing eight-second post-click window. Select an inventory egg and place it manually once; reopen the hub after eight seconds and send Copy short. Auto Place remains disabled and this observer generates no placement actions.
+
+The baseline covers up to 2,048 objects in the owned plot and a spatial query of at most 128 parts within 32 studs of the player. The post-click query is centered on the hit point. The known World.Build map root and local character are excluded from the spatial query; Tool and humanoid-model descendants are excluded from world candidates. Truncation/query errors are disclosed and disqualify matches that depend on incomplete coverage. These are bounded client observations, not a global server snapshot. Spatial query behavior follows [WorldRoot:GetPartBoundsInRadius](https://create.roblox.com/docs/reference/engine/classes/WorldRoot#GetPartBoundsInRadius).
+
+The record gains `worldBefore`, `worldResult` and `worldEggAppearanceVerified`. A positive appearance requires all of:
+- Exact case-sensitive UID evidence from UID/Uid/EggUID/EggUid/AssetUID/AssetUid, or an exact UUID-shaped instance name.
+- The UID was not present in the baseline's observed scope; reused instances may qualify only when assigned a fresh UID.
+- Visible part geometry, position within eight studs of the click, and owned-plot ancestry or explicit matching OwnerUserId without conflicting ownership.
+- A complete baseline/current scan for that ownership scope. Detached matches also require the hit to be within 24 studs of the baseline query origin so the candidate area is covered by its 32-stud radius.
+- Exactly one independent matching object group (nested model/part copies are grouped), persisting at least 0.5 seconds, and stable removal of the same UID from a complete inventory observation.
+
+A positive local result sets `status=world_egg_appearance_observed` and `worldEggAppearanceVerified=true`. `worldPlacementVerified` and `worldResult.serverAcceptanceVerified` remain false: observing a client-side egg is not an authoritative placement acknowledgement. No anti-cheat cause or acceptance guarantee is inferred.
+
+Up to six nearby new/unmatched candidates are reported with paths, names, positions, known identity/ownership attributes, visibility and match information. Name-only or UID-less objects, foreign/unknown ownership, duplicates, stale UID evidence, invisible models, disappearing eggs and incomplete relevant coverage do not produce a positive flag. This diagnostic output allows the game's actual placement representation to be checked without guessing Remote arguments. The detector has not yet been verified against a placed egg in the live game.
+
+Nineteen additional simulated cases cover exact/fresh/reused UID appearances, complete inventory requirements, wrong/name-only/distant IDs, foreign and detached ownership, duplicate/nested identities, disappearing/invisible geometry, Tool exclusion, bounded/incomplete scans, plot changes and UUID names. Total: 143 Lua cases and four Loader contracts pass locally; the complete source compiles.
