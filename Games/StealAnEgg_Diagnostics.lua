@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.40
+-- Steal An Egg: structure diagnostics v1.41
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -54,7 +54,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.40", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.41", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -98,7 +98,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.40 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.41 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -144,7 +144,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.40 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.41 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -189,7 +189,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.40 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.41 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -1841,6 +1841,7 @@ local function stopPlacementRecording(reason)
     placementRecord.last=reason or "Recording stopped"
     if recordingContext and recordingContext.record and not recordingContext.record.finishedAt then
         recordingContext.record.status="cancelled"
+        recordingContext.record.worldEggAppearanceVerified=false
         recordingContext.record.stopReason=placementRecord.last
         recordingContext.record.finishedAt=os.time()
     end
@@ -1857,6 +1858,144 @@ local function recordEquippedEgg(character)
     end
     return egg,false
 end
+local function scanPlacementWorld(plot,origin)
+    local result={entries={},ids={},visible={},visited=0,treeComplete=true,spatialComplete=false,
+        at=os.clock(),origin=origin,radius=32}
+    local plots=workspace:FindFirstChild("Plots")
+    local seen={}
+    local function add(obj)
+        if seen[obj] or obj==plot or obj==plots or obj==workspace then return end
+        seen[obj]=true
+        if not obj:IsA("BasePart") and not obj:IsA("Model") then return end
+        local node,explicitOwner,foreignOwner=obj,false,false
+        for _=1,12 do
+            if not node or node==workspace then break end
+            if node==player.Character or node:IsA("Tool")
+                or node:IsA("Model") and node:FindFirstChildOfClass("Humanoid") then return end
+            if node.Parent==plots and node~=plot then foreignOwner=true end
+            local owner=node:GetAttribute("OwnerUserId")
+            if owner~=nil and owner~=0 and owner~="" and owner~=false then
+                if tostring(owner)==tostring(player.UserId) then explicitOwner=true else foreignOwner=true end
+            end
+            node=node.Parent
+        end
+        local ok,position=pcall(function() return obj:IsA("BasePart") and obj.Position or obj:GetPivot().Position end)
+        if not ok or not position then return end
+        local item={obj=obj,path=obj:GetFullName(),name=obj.Name,class=obj.ClassName,position=position,ids={},attributes={},
+            inOwnedPlot=obj:IsDescendantOf(plot),explicitOwner=explicitOwner,foreignOwner=foreignOwner}
+        for _,key in ipairs({"ItemType","EggId","EggID","DisplayName","OwnerUserId","SlotId","SlotIndex","IsEgg","IsHatching"}) do
+            local value=obj:GetAttribute(key)
+            if type(value)=="number" or type(value)=="boolean" or type(value)=="string" then
+                item.attributes[key]=type(value)=="string" and value:sub(1,120) or value
+            end
+        end
+        for _,key in ipairs({"UID","Uid","EggUID","EggUid","AssetUID","AssetUid"}) do
+            local value=obj:GetAttribute(key)
+            if type(value)=="string" and value~="" and #value<=120 then
+                item.ids[#item.ids+1]={key=key,value=value};result.ids[value]=true
+            end
+        end
+        local compact=obj.Name:gsub("-","")
+        if #compact==32 and compact:match("^%x+$") then
+            item.ids[#item.ids+1]={key="Name",value=obj.Name};result.ids[obj.Name]=true
+        end
+        result.entries[obj]=item
+    end
+    local queue,head={plot},1
+    while head<=#queue and result.visited<2048 do
+        local obj=queue[head];head=head+1;result.visited=result.visited+1
+        add(obj)
+        for _,child in ipairs(obj:GetChildren()) do
+            if #queue<2048 then queue[#queue+1]=child else result.treeComplete=false end
+        end
+    end
+    if head<=#queue then result.treeComplete=false end
+    local ok,parts=pcall(function()
+        local params=OverlapParams.new()
+        params.FilterType=Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances=player.Character and {player.Character} or {}
+        local world=workspace:FindFirstChild("World")
+        local build=world and world:FindFirstChild("Build")
+        if build then
+            local excluded=player.Character and {player.Character,build} or {build}
+            params.FilterDescendantsInstances=excluded
+        end
+        params.MaxParts=129
+        return workspace:GetPartBoundsInRadius(origin,32,params)
+    end)
+    if ok then
+        result.spatialComplete=#parts<129
+        for i=1,math.min(#parts,128) do
+            local obj=parts[i]
+            for _=1,8 do
+                if not obj or obj==workspace then break end
+                add(obj);obj=obj.Parent
+            end
+        end
+    else result.spatialError=tostring(parts):sub(1,160) end
+    for obj in pairs(result.entries) do
+        if obj:IsA("BasePart") and (1-(obj.Transparency or 0))*(1-(obj.LocalTransparencyModifier or 0))>0.05 then
+            local node=obj
+            for _=1,12 do
+                if not node or node==workspace then break end
+                result.visible[node]=true;node=node.Parent
+            end
+        end
+    end
+    return result
+end
+local function placementWorldSummary(snapshot)
+    return {at=snapshot.at,visited=snapshot.visited,treeComplete=snapshot.treeComplete,
+        spatialComplete=snapshot.spatialComplete,spatialError=snapshot.spatialError,
+        origin={x=snapshot.origin.X,y=snapshot.origin.Y,z=snapshot.origin.Z},radius=32}
+end
+local function comparePlacementWorld(before,after,record,point)
+    local result={scope="client_world_observation",serverAcceptanceVerified=false,candidates={},matchedCount=0,
+        before=placementWorldSummary(before),after=placementWorldSummary(after),candidateCount=0}
+    local candidates,groups={},{}
+    for obj,item in pairs(after.entries) do
+        local distance=(item.position-point).Magnitude
+        if distance<=8 then
+            local exact=false
+            for _,id in ipairs(item.ids) do if id.value==record.uid then exact=true end end
+            local isNew=before.entries[obj]==nil
+            if isNew or exact then
+                local scopeComplete=item.inOwnedPlot and before.treeComplete and after.treeComplete
+                    or item.explicitOwner and before.spatialComplete and after.spatialComplete
+                    and (point-before.origin).Magnitude<=24
+                local eligible=exact and not before.ids[record.uid] and scopeComplete
+                    and after.visible[obj] and not item.foreignOwner and (item.inOwnedPlot or item.explicitOwner)
+                candidates[#candidates+1]={path=item.path,name=item.name,class=item.class,
+                    position={x=item.position.X,y=item.position.Y,z=item.position.Z},distance=distance,
+                    uidEvidence=item.ids,uidMatches=exact,newInstance=isNew,uidVisibleBefore=before.ids[record.uid]==true,
+                    attributes=item.attributes,visibleGeometry=after.visible[obj]==true,
+                    inOwnedPlot=item.inOwnedPlot,explicitOwner=item.explicitOwner,foreignOwner=item.foreignOwner,
+                    baselineCompleteForMatch=scopeComplete==true}
+                if eligible then
+                    local nested=false
+                    for i=#groups,1,-1 do
+                        if obj:IsDescendantOf(groups[i]) then nested=true;break
+                        elseif groups[i]:IsDescendantOf(obj) then table.remove(groups,i) end
+                    end
+                    if not nested then groups[#groups+1]=obj end
+                end
+            end
+        end
+    end
+    table.sort(candidates,function(a,b)
+        if a.uidMatches~=b.uidMatches then return a.uidMatches end
+        if a.distance~=b.distance then return a.distance<b.distance end
+        return a.path<b.path
+    end)
+    result.candidateCount=#candidates;result.candidatesTruncated=#candidates>6
+    for i=1,math.min(#candidates,6) do result.candidates[i]=candidates[i] end
+    result.matchedCount=#groups
+    result.reason=#groups==1 and "Exact UID appeared near click in confirmed ownership scope"
+        or #groups>1 and "Multiple independent objects share the UID; ambiguous"
+        or #candidates>0 and "Objects observed but UID, ownership or baseline is not sufficient"
+        or "No new nearby world object observed"
+    return result,#groups==1 and groups[1] or nil
+end
 local function beginPlacementRecording()
     if placementRecord.enabled then return false,"Recording already active" end
     local ready,message=prepareManualPlacement()
@@ -1864,6 +2003,9 @@ local function beginPlacementRecording()
     local _,plot=resolveAutoHome()
     if not plot then return false,"Recording needs a confirmed owned base" end
     recordingContext={character=player.Character,plot=plot,startedClock=os.clock()}
+    local root=player.Character:FindFirstChild("HumanoidRootPart")
+    if not root then recordingContext=nil;return false,"Character root unavailable" end
+    recordingContext.worldBefore=scanPlacementWorld(plot,root.Position)
     placementRecord.enabled=true
     placementRecord.last="Equip an inventory egg and click an empty slot yourself; one click is recorded"
     return true,placementRecord.last
@@ -1902,7 +2044,8 @@ local function capturePlacementClick(part,point,screen,processed)
         characterPosition=placementRecordPosition(root.Position),
         before={complete=before.complete,count=before.count,uidPresent=before.items[egg.uid]~=nil},
         status="observing",inputSource="UIS.InputBegan",equippedSource=source,beforeSampleAgeMs=sampleAge,worldPlacementVerified=false,
-        note="UID removal and nearby events are observations, not proof of accepted placement"}
+        worldEggAppearanceVerified=false,worldBefore=placementWorldSummary(context.worldBefore),
+        note="World appearance is client evidence only; server acceptance is not verified"}
     record.target.inOwnedPlot=part:IsDescendantOf(context.plot)
     record.ownedPlot=context.plot:GetFullName()
     local node=part
@@ -1951,6 +2094,20 @@ local function tickPlacementRecording()
     else context.goneSince=nil end
     record.inventoryUIDRemoved=record.before.complete and record.before.uidPresent
         and context.goneSince~=nil and os.clock()-context.goneSince>=0.5 or false
+    if not context.nextWorldCheck or os.clock()>=context.nextWorldCheck or os.clock()-record.clock>=8 then
+        local _,currentPlot=resolveAutoHome()
+        if currentPlot~=context.plot then stopPlacementRecording("Plot ownership changed; recording cancelled");return end
+        local point=Vector3.new(record.hit.x,record.hit.y,record.hit.z)
+        local world=scanPlacementWorld(context.plot,point)
+        local result,match=comparePlacementWorld(context.worldBefore,world,record,point)
+        record.worldResult=result
+        if match and context.worldMatch==match then
+            context.worldSince=context.worldSince or os.clock()
+        else context.worldMatch=match;context.worldSince=match and os.clock() or nil end
+        context.nextWorldCheck=os.clock()+0.5
+    end
+    record.worldEggAppearanceVerified=record.inventoryUIDRemoved and context.worldSince~=nil
+        and os.clock()-context.worldSince>=0.5 or false
     if os.clock()-record.clock<8 then return end
     record.events={}
     for _,event in ipairs(gameEvents) do
@@ -1958,8 +2115,10 @@ local function tickPlacementRecording()
     end
     record.eventsMayBeIncomplete=true
     record.finishedAt=os.time()
-    record.status=record.inventoryUIDRemoved and "uid_removal_observed" or "placement_unconfirmed"
-    placementRecord.last=record.inventoryUIDRemoved and "UID left inventory; check egg in base. Copy short includes recording."
+    record.status=record.worldEggAppearanceVerified and "world_egg_appearance_observed"
+        or record.inventoryUIDRemoved and "uid_removal_observed" or "placement_unconfirmed"
+    placementRecord.last=record.worldEggAppearanceVerified and "Matching egg UID observed in base. Copy short includes world evidence."
+        or record.inventoryUIDRemoved and "UID left inventory; world egg not matched. Copy short includes candidates."
         or "Placement unconfirmed by inventory; Copy short includes recording."
     placementRecord.enabled=false;recordingContext=nil
 end
@@ -2461,7 +2620,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.40", placeId = game.PlaceId,
+        local report = {version = "1.41", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -2633,7 +2792,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.40", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.41", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -2663,7 +2822,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.40 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.41 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
