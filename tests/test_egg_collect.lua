@@ -43,8 +43,8 @@ env.Enum = {RaycastFilterType={Exclude="Exclude"},EasingStyle={Linear="Linear"},
 env.TweenInfo = {new=function(duration) return {duration=duration} end}
 env.collectLabel = {}
 env.math = setmetatable({clamp=function(n,lo,hi) return math.max(lo,math.min(hi,n)) end},{__index=math})
-local obstacle, movement, onWait, mockRoute, walkGoal, tweenCreated, plotFixture, worldParts
-function env.workspace:FindFirstChild(name) if name == "Plots" then return plotFixture end end
+local obstacle, movement, onWait, mockRoute, walkGoal, tweenCreated, plotFixture, worldParts, placedRenderRoot
+function env.workspace:FindFirstChild(name) if name == "Plots" then return plotFixture elseif name=="PlacedEggRenders" then return placedRenderRoot end end
 env.player.UserId=42;env.player.Name="TestPlayer"
 function humanoid:MoveTo(goal) walkGoal=goal end
 function env.workspace:GetPartBoundsInRadius(origin,radius,params)
@@ -113,7 +113,7 @@ local function reset()
     root.Position,root.CFrame = position(0),position(0)
     obstacle,movement,onWait,mockRoute,walkGoal,tweenCreated = false,nil,nil,nil,nil,0
     env.collectRunning=false
-    plotFixture=nil;worldParts={}
+    plotFixture=nil;worldParts={};placedRenderRoot=nil
     funcs.home(nil)
 end
 local tests = 0
@@ -1181,5 +1181,70 @@ check("world recorder matches exact UUID model name without UID attributes", fun
     funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={}
     local model=addWorldEgg(slot.Parent,nil);model.Name=uid
     finishRecording();assert(env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+local renderTestUid="0123456789abcdef0123456789abcdef"
+local function setupNamedRenderRecording()
+    local slot,egg=setupRecorder()
+    function egg:GetAttribute(key) if key=="UID" then return renderTestUid elseif key=="ItemType" then return "AssetEgg" end end
+    assert(funcs.captureRecord(slot,position(80),position(100),false));equippedChildren={}
+    return slot,egg
+end
+local function addNamedRender(owner,uid)
+    placedRenderRoot=placedRenderRoot or node("PlacedEggRenders","Folder")
+    local model,body=addWorldEgg(placedRenderRoot,nil)
+    model.Name=tostring(owner).."_"..(uid or renderTestUid)
+    return model,body
+end
+check("placed render namespace matches owner and UID despite a capped spatial query", function()
+    setupNamedRenderRecording();addNamedRender(42)
+    worldParts={};for i=1,129 do worldParts[i]=node("Decoration"..i,"Part") end
+    finishRecording();local rec=env.placementRecord.records[1]
+    assert(rec.worldEggAppearanceVerified and rec.worldResult.matchedCount==1)
+    assert(not rec.worldResult.after.spatialComplete and rec.worldResult.after.renderComplete)
+    local c=rec.worldResult.candidates[1]
+    assert(c.placedRender and c.renderOwnerUserId=="42" and c.uidMatches and c.explicitOwner)
+    assert(not rec.worldPlacementVerified and not rec.worldResult.serverAcceptanceVerified)
+end)
+check("placed render prefix from another user is never accepted", function()
+    setupNamedRenderRecording();local _,body=addNamedRender(99);worldParts={body}
+    finishRecording();assert(not env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+check("owner UID name is only parsed in the observed direct-child namespace", function()
+    local slot=setupNamedRenderRecording()
+    local model=addWorldEgg(slot.Parent,nil);model.Name="42_"..renderTestUid
+    finishRecording();assert(not env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+check("placed render with another UID is not matched", function()
+    setupNamedRenderRecording();addNamedRender(42,"abcdef0123456789abcdef0123456789")
+    finishRecording();assert(not env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+check("malformed placed render suffix is not treated as a UID", function()
+    setupNamedRenderRecording();local model,body=addNamedRender(42,renderTestUid.."_copy");worldParts={body}
+    finishRecording();assert(not env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+check("placed render name cannot override conflicting owner attributes", function()
+    setupNamedRenderRecording();local model=addNamedRender(42);model.attrs.OwnerUserId=99
+    finishRecording();assert(not env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+check("placed render already in baseline does not become a new appearance", function()
+    local slot,egg=setupNamedRenderRecording();funcs.stopRecord("rearm")
+    addNamedRender(42);equippedChildren={egg};assert(funcs.startRecord())
+    funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={};finishRecording()
+    assert(not env.placementRecord.records[#env.placementRecord.records].worldEggAppearanceVerified)
+end)
+check("placed render duplicate identities remain ambiguous", function()
+    setupNamedRenderRecording();addNamedRender(42);addNamedRender(42)
+    finishRecording();local rec=env.placementRecord.records[1]
+    assert(not rec.worldEggAppearanceVerified and rec.worldResult.matchedCount==2)
+end)
+check("placed render root listing truncation is reported and blocks namespace verification", function()
+    setupNamedRenderRecording();placedRenderRoot=node("PlacedEggRenders","Folder")
+    for i=1,512 do local part=node("Dirt"..i,"Part");part.Parent=placedRenderRoot;placedRenderRoot.children[i]=part end
+    addNamedRender(42);finishRecording();local rec=env.placementRecord.records[1]
+    assert(not rec.worldResult.after.renderComplete and not rec.worldEggAppearanceVerified)
+end)
+check("invisible placed render does not count as an observed egg", function()
+    setupNamedRenderRecording();local _,body=addNamedRender(42);body.Transparency=1
+    finishRecording();assert(not env.placementRecord.records[1].worldEggAppearanceVerified)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
