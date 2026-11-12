@@ -37,15 +37,20 @@ local env = setmetatable({pg = pg, workspace = {}, player = {Character = charact
 function env.player:FindFirstChildOfClass() return backpack end
 env.typeof=function(v) return type(v)=="table" and v.__type or type(v) end
 env.RaycastParams = {new=function() return {} end}
+env.OverlapParams = {new=function() return {} end}
 env.Vector3 = {new=position}
 env.Enum = {RaycastFilterType={Exclude="Exclude"},EasingStyle={Linear="Linear"},PlaybackState={Playing="Playing",Completed="Completed",Cancelled="Cancelled"}}
 env.TweenInfo = {new=function(duration) return {duration=duration} end}
 env.collectLabel = {}
 env.math = setmetatable({clamp=function(n,lo,hi) return math.max(lo,math.min(hi,n)) end},{__index=math})
-local obstacle, movement, onWait, mockRoute, walkGoal, tweenCreated, plotFixture
+local obstacle, movement, onWait, mockRoute, walkGoal, tweenCreated, plotFixture, worldParts
 function env.workspace:FindFirstChild(name) if name == "Plots" then return plotFixture end end
 env.player.UserId=42;env.player.Name="TestPlayer"
 function humanoid:MoveTo(goal) walkGoal=goal end
+function env.workspace:GetPartBoundsInRadius(origin,radius,params)
+    assert(radius==32 and params.MaxParts==129)
+    return worldParts or {}
+end
 function env.workspace:Raycast(origin,delta)
     if type(obstacle) == "function" then return obstacle(origin,delta) and {} or nil end
     return obstacle and {} or nil
@@ -76,7 +81,7 @@ end
 env.placementRecord={enabled=false,last="OFF",records={}};env.placeState={enabled=false,slots={},attempts=0,observed=0};env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld}", "collect-engine", "t", env))()
 local hatchSource=assert(source:match("(local function hatchStep.-)\nconnections%["))
 local runHatch=assert(load(hatchSource.."\nreturn hatchStep", "hatch-step", "t", env))()
 local function prompt(distance)
@@ -108,7 +113,7 @@ local function reset()
     root.Position,root.CFrame = position(0),position(0)
     obstacle,movement,onWait,mockRoute,walkGoal,tweenCreated = false,nil,nil,nil,nil,0
     env.collectRunning=false
-    plotFixture=nil
+    plotFixture=nil;worldParts={}
     funcs.home(nil)
 end
 local tests = 0
@@ -431,6 +436,8 @@ local function node(name,class,attrs,children)
     function obj:IsDescendantOf(root) local n=self.Parent;while n do if n==root then return true end;n=n.Parent end;return false end
     for _,child in ipairs(obj.children) do child.Parent=obj end
     function obj:GetChildren() return self.children end
+    function obj:GetPivot() return {Position=self.Position} end
+    function obj:FindFirstChildOfClass(kind) for _,child in ipairs(self.children) do if child:IsA(kind) then return child end end end
     function obj:FindFirstChild(name) for _,v in ipairs(self.children) do if v.Name==name then return v end end end
     function obj:GetAttribute(key) return self.attrs[key] end
     function obj:GetAttributes() return self.attrs end
@@ -1051,5 +1058,128 @@ check("recorder refuses an expired equipped-egg sample", function()
     local slot=setupRecorder();funcs.tickRecord();equippedChildren={};clock=clock+0.4
     assert(not funcs.captureRecord(slot,position(80),position(100),false))
     assert(#env.placementRecord.records==0)
+end)
+local function addWorldEgg(parent,uid,attrs)
+    local data=attrs or {};data.UID=uid
+    local body=node("EggMesh","Part")
+    local egg=node("Whale Shark Egg","Model",data,{body})
+    parent.children[#parent.children+1]=egg;egg.Parent=parent
+    return egg,body
+end
+check("world recorder matches exact new egg UID and stable inventory removal", function()
+    local slot,egg,_,_,clicks=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false)
+    equippedChildren={};addWorldEgg(slot.Parent,egg:GetAttribute("UID"))
+    finishRecording();local rec=env.placementRecord.records[1]
+    assert(rec.worldEggAppearanceVerified and rec.status=="world_egg_appearance_observed")
+    assert(rec.worldResult.matchedCount==1 and not rec.worldPlacementVerified and not rec.worldResult.serverAcceptanceVerified)
+    assert(clicks()==0)
+end)
+check("world recorder does not accept a name-only egg or UID-less object", function()
+    local slot=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={}
+    addWorldEgg(slot.Parent,nil);finishRecording()
+    local rec=env.placementRecord.records[1]
+    assert(not rec.worldEggAppearanceVerified and rec.worldResult.candidateCount>0)
+end)
+check("world recorder rejects a different UID and a distant matching UID", function()
+    local slot,egg=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={}
+    addWorldEgg(slot.Parent,"different-uid")
+    local far=addWorldEgg(slot.Parent,egg:GetAttribute("UID"));far.Position=position(100)
+    finishRecording();assert(not env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+check("world recorder excludes an egg already visible before arming", function()
+    local slot,egg=setupRecorder();funcs.stopRecord("rearm")
+    addWorldEgg(slot.Parent,egg:GetAttribute("UID"));assert(funcs.startRecord())
+    funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={};finishRecording()
+    assert(not env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+check("world recorder rejects foreign ownership even under own plot", function()
+    local slot,egg=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={}
+    addWorldEgg(slot.Parent,egg:GetAttribute("UID"),{OwnerUserId=99});finishRecording()
+    assert(not env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+check("world recorder requires inventory removal as well as world UID", function()
+    local slot,egg=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false)
+    addWorldEgg(slot.Parent,egg:GetAttribute("UID"));finishRecording()
+    assert(not env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+check("world recorder rejects independent objects sharing the same UID", function()
+    local slot,egg=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={}
+    addWorldEgg(slot.Parent,egg:GetAttribute("UID"));addWorldEgg(slot.Parent,egg:GetAttribute("UID"));finishRecording()
+    local rec=env.placementRecord.records[1]
+    assert(rec.worldResult.matchedCount==2 and not rec.worldEggAppearanceVerified)
+end)
+check("world recorder groups nested UID copies as one appearance", function()
+    local slot,egg=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={}
+    local _,body=addWorldEgg(slot.Parent,egg:GetAttribute("UID"));body.attrs.UID=egg:GetAttribute("UID")
+    finishRecording();assert(env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+check("world recorder observes detached eggs with explicit local ownership", function()
+    local slot,egg=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={}
+    local folder=node("GeneratedEggs","Folder")
+    local _,body=addWorldEgg(folder,egg:GetAttribute("UID"),{OwnerUserId=42})
+    worldParts={body};finishRecording();assert(env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+check("world recorder does not assume ownership from proximity alone", function()
+    local slot,egg=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={}
+    local folder=node("GeneratedEggs","Folder");local _,body=addWorldEgg(folder,egg:GetAttribute("UID"))
+    worldParts={body};finishRecording();assert(not env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+check("world recorder requires the matching egg to remain visible", function()
+    local slot,egg=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={}
+    local model=addWorldEgg(slot.Parent,egg:GetAttribute("UID"))
+    for i=1,20 do clock=clock+0.1;funcs.tickRecord() end
+    for i=#slot.Parent.children,1,-1 do if slot.Parent.children[i]==model then table.remove(slot.Parent.children,i) end end
+    model.Parent=nil;finishRecording();assert(not env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+check("world snapshots disclose bounded hierarchy truncation", function()
+    local children={}
+    for i=1,2050 do children[i]=node("Decoration"..i,"Part") end
+    local plot=node("1","Model",{OwnerUserId=42},children)
+    local snapshot=funcs.worldScan(plot,position(80))
+    assert(not snapshot.treeComplete and snapshot.visited<=2048)
+end)
+check("world recorder reports incomplete spatial scans without crashing", function()
+    local slot=setupRecorder();local saved=env.workspace.GetPartBoundsInRadius
+    env.workspace.GetPartBoundsInRadius=function() error("query unavailable") end
+    local snapshot=funcs.worldScan(slot.Parent,position(80))
+    env.workspace.GetPartBoundsInRadius=saved
+    assert(snapshot.treeComplete and not snapshot.spatialComplete and snapshot.spatialError)
+end)
+check("world recorder rejects invisible egg geometry", function()
+    local slot,egg=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={}
+    local _,body=addWorldEgg(slot.Parent,egg:GetAttribute("UID"));body.Transparency=1
+    finishRecording();assert(not env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+check("world recorder detects a fresh UID on an existing reused model", function()
+    local slot,egg=setupRecorder();funcs.stopRecord("rearm")
+    local model=addWorldEgg(slot.Parent,"old-uid");assert(funcs.startRecord())
+    funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={};model.attrs.UID=egg:GetAttribute("UID")
+    finishRecording();assert(env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+check("world recorder excludes tool descendants even when world parent is in own plot", function()
+    local slot,egg=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={}
+    local tool=node("VisualTool","Tool");slot.Parent.children[#slot.Parent.children+1]=tool;tool.Parent=slot.Parent
+    addWorldEgg(tool,egg:GetAttribute("UID"));finishRecording()
+    assert(not env.placementRecord.records[1].worldEggAppearanceVerified)
+end)
+check("world recorder refuses detached verification when spatial query hits limit", function()
+    local slot,egg=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={}
+    local folder=node("GeneratedEggs","Folder");local _,body=addWorldEgg(folder,egg:GetAttribute("UID"),{OwnerUserId=42})
+    worldParts={body};for i=2,129 do worldParts[i]=node("NearbyDecoration"..i,"Part") end
+    finishRecording();local rec=env.placementRecord.records[1]
+    assert(not rec.worldResult.after.spatialComplete and not rec.worldEggAppearanceVerified)
+end)
+check("world recorder cancels when local plot ownership changes", function()
+    local slot,egg=setupRecorder();funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={}
+    addWorldEgg(slot.Parent,egg:GetAttribute("UID"));slot.Parent.attrs.OwnerUserId=99
+    funcs.tickRecord();local rec=env.placementRecord.records[1]
+    assert(not env.placementRecord.enabled and rec.status=="cancelled" and not rec.worldEggAppearanceVerified)
+end)
+check("world recorder matches exact UUID model name without UID attributes", function()
+    local slot,egg=setupRecorder();local uid="0123456789abcdef0123456789abcdef"
+    function egg:GetAttribute(key) if key=="UID" then return uid elseif key=="ItemType" then return "AssetEgg" end end
+    funcs.captureRecord(slot,position(80),position(100),false);equippedChildren={}
+    local model=addWorldEgg(slot.Parent,nil);model.Name=uid
+    finishRecording();assert(env.placementRecord.records[1].worldEggAppearanceVerified)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
