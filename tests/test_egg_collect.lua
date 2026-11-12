@@ -81,7 +81,7 @@ end
 env.eggSelect={mode="Nearest",preferred={},catalog={entries={}},fieldSamples={}};env.placementRecord={enabled=false,last="OFF",records={}};env.placeState={enabled=false,slots={},attempts=0,observed=0};env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply,resetField=eggLogic.resetField,fieldRecord=eggLogic.fieldRecord,fieldIndex=function() return eggLogic.field end,eggExport=eggLogic.export}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply,resetField=eggLogic.resetField,fieldRecord=eggLogic.fieldRecord,fieldIndex=function() return eggLogic.field end,eggExport=eggLogic.export,sourceScan=eggLogic.scanSources,sourceScalar=eggLogic.sourceScalar,sourceReset=function() eggLogic.sources=nil;eggLogic.sourceRunning=false;eggLogic.sourceEvents={} end}", "collect-engine", "t", env))()
 local hatchSource=assert(source:match("(local function hatchStep.-)\nconnections%["))
 local runHatch=assert(load(hatchSource.."\nreturn hatchStep", "hatch-step", "t", env))()
 local function prompt(distance)
@@ -94,7 +94,7 @@ local function prompt(distance)
     return p
 end
 local function reset()
-    funcs.resetField()
+    funcs.resetField();funcs.sourceReset();env.gui=nil
     env.eggSelect={mode="Nearest",preferred={},catalog={entries={}},fieldSamples={}}
     funcs.stopRecord("reset");env.placementRecord={enabled=false,last="OFF",records={}}
     env.hatch.enabled=true;env.hatch.attempts=0;env.hatch.lastAttempt=nil;env.attemptState={}
@@ -1480,8 +1480,118 @@ end)
 check("focused egg export includes prompt coordinates and prioritized field samples", function()
     qualityPrompt(3,nil,nil);funcs.record("RE/EggWorld/FieldEggShifted",fieldRecord("a",3,100))
     local result=funcs.eggExport()
-    assert(result.kind=="egg_data" and result.version=="1.44")
+    assert(result.kind=="egg_data" and result.version=="1.45")
     assert(result.eggSelection.catalog.entries[1].position.x==3 and result.eggSelection.catalog.fieldLinked==1)
     assert(result.eggSelection.fieldSamples[1].field.records[1].uid=="a")
+end)
+local function sourceRoot(children,budget,label)
+    return {{object=node("ReplicatedStorage","Folder",{},children),label=label or "ReplicatedStorage",budget=budget or 100}}
+end
+check("source discovery reports modules without reading source or executing them", function()
+    local module=node("Catfish","ModuleScript",{Rarity="Rare"})
+    setmetatable(module,{__index=function(_,key) if key=="Source" then error("Source must not be read") end end})
+    local ok,result=funcs.sourceScan(sourceRoot({node("Data","Folder",{}, {module})}))
+    assert(ok and result.status=="complete" and #result.modules==1 and result.modules[1].name=="Catfish")
+    assert(result.readableFields[1].fields.Rarity=="Rare" and result.rankingApplied==false)
+end)
+check("source discovery records named values with parent context without assuming income", function()
+    local rate=node("Rate","NumberValue");rate.Value=999
+    local price=node("Price","NumberValue");price.Value=5000
+    local rarity=node("Rarity","StringValue");rarity.Value="Uncommon"
+    local _,result=funcs.sourceScan(sourceRoot({node("Catfish","Folder",{AssetCategory="Catfish"},{rate,price,rarity})}))
+    assert(#result.readableFields==4)
+    for _,item in ipairs(result.readableFields) do assert(item.parent and item.identityUnverified) end
+    local p=qualityPrompt(3,nil,nil);env.eggSelect.mode="Income"
+    assert(funcs.eggMeta(p).incomePerSecond==nil and not funcs.eggRank(root,humanoid,false)[1].accepted)
+end)
+check("source discovery retains explicit rates ahead of identity-only objects at report cap", function()
+    local children={}
+    for i=1,60 do children[i]=node("A"..i,"Folder",{UID="id"..i}) end
+    children[#children+1]=node("ZIncome","Folder",{IncomePerSecond=250,Rarity="Rare"})
+    local _,result=funcs.sourceScan(sourceRoot(children,100))
+    assert(#result.readableFields==40 and result.fieldsTruncated)
+    assert(result.readableFields[1].fields.IncomePerSecond==250)
+end)
+check("source discovery exposes node and queue truncation", function()
+    local children={};for i=1,40 do children[i]=node("Egg"..i,"ModuleScript") end
+    local _,result=funcs.sourceScan(sourceRoot(children,10))
+    assert(result.visited<=10 and result.truncated and not result.roots[1].complete and result.roots[1].queueLimited)
+end)
+check("source discovery bounds module candidates and yields during a large scan", function()
+    local children={};for i=1,180 do children[i]=node("Egg"..i,"ModuleScript") end
+    local before=clock;local _,result=funcs.sourceScan(sourceRoot(children,256))
+    assert(result.visited==181 and #result.modules==40 and result.modulesTruncated and clock>before)
+end)
+check("source discovery skips package networking and visual asset trees", function()
+    local _,result=funcs.sourceScan(sourceRoot({node("Packages","Folder",{},{node("EggIncome","ModuleScript")}),
+        node("Assets","Folder",{},{node("EggIncome","ModuleScript")}),node("Data","Folder",{},{node("EggData","ModuleScript")})}))
+    assert(#result.modules==1 and result.modules[1].name=="EggData" and result.roots[1].skippedVisualAssets)
+end)
+check("source discovery excludes its own UI", function()
+    env.gui=node("Hub","ScreenGui",{},{node("Income","TextLabel")})
+    local _,result=funcs.sourceScan(sourceRoot({env.gui}))
+    assert(#result.labels==0 and result.roots[1].skippedHub)
+end)
+check("source discovery marks hidden income labels as observations only", function()
+    local label=node("Income","TextLabel");label.Text="$250/s"
+    local hidden=node("EggDetails","Frame",{}, {label});hidden.Visible=false
+    local _,result=funcs.sourceScan(sourceRoot({hidden}))
+    assert(#result.labels==1 and result.labels[1].text=="$250/s" and not result.labels[1].visible and result.labels[1].identityUnverified)
+end)
+check("source scalar rejects nonfinite and non-scalar values and bounds strings", function()
+    assert(funcs.sourceScalar(math.huge)==nil and funcs.sourceScalar(0/0)==nil and funcs.sourceScalar({})==nil)
+    assert(funcs.sourceScalar(false)==false and funcs.sourceScalar(0)==0 and #funcs.sourceScalar(string.rep("x",200))==160)
+end)
+check("rarity event capture prioritizes explicit fields and is separate from field scoring", function()
+    local p=qualityPrompt(3,nil,nil)
+    local payload={Uid="a",Rarity="Rare",IncomePerSecond=500}
+    for i=1,80 do payload["Cosmetic"..i]=i end
+    funcs.record("RE/EggWorld/FieldEggRaritiesShown",payload)
+    local event=funcs.eggExport().eggSelection.sourceEvents[1]
+    assert(event.args[1].Uid=="a" and event.args[1].Rarity=="Rare" and event.args[1].IncomePerSecond==500 and event.observationOnly)
+    assert(funcs.eggMeta(p).incomePerSecond==nil and funcs.fieldIndex().count==0)
+end)
+check("source events handle cycles and retain only four bounded samples", function()
+    local payload={Records={{Uid="a",Rarity="Rare"}}};payload.loop=payload
+    for i=1,6 do funcs.record("RE/EggWorld/FieldEggRaritiesShown",payload) end
+    local events=funcs.eggExport().eggSelection.sourceEvents
+    assert(#events==4 and events[1].args[1].loop=="<cycle>" and events[1].args[1].Records["1"].Uid=="a")
+end)
+check("cancelled source discovery clears running state and reports incomplete scope", function()
+    env.active=false
+    local ok,result=funcs.sourceScan(sourceRoot({node("EggData","ModuleScript")}))
+    assert(not ok and result.status=="cancelled" and result.truncated)
+    env.active=true
+    assert(funcs.sourceScan(sourceRoot({node("EggData","ModuleScript")})))
+end)
+check("source discovery errors are recoverable and exported with the focused report", function()
+    local ok,result=funcs.sourceScan({{object={},label="Broken",budget=nil}})
+    assert(not ok and result.error and result.status=="error")
+    assert(funcs.sourceScan(sourceRoot({node("EggIncome","ModuleScript")})))
+    local exported=funcs.eggExport()
+    assert(exported.eggSelection.sourceDiscovery.status=="complete" and #exported.eggSelection.sourceDiscovery.modules==1)
+end)
+check("source discovery retains unfamiliar income fields as diagnostic values only", function()
+    local multiplier=node("IncomeMultiplier","NumberValue");multiplier.Value=2
+    local _,result=funcs.sourceScan(sourceRoot({node("EggSettings","Folder",{RarityWeight=0.2},{multiplier})}))
+    assert(#result.readableFields==2)
+    local observed={}
+    for _,item in ipairs(result.readableFields) do for key,value in pairs(item.fields) do observed[key]=value end end
+    assert(observed.RarityWeight==0.2 and observed.IncomeMultiplier==2 and observed.IncomePerSecond==nil)
+end)
+check("source discovery prioritizes definitions over controllers at the module limit", function()
+    local modules={};for i=1,50 do modules[i]=node("EggController"..i,"ModuleScript") end
+    local definition=node("EggDefinitions","ModuleScript")
+    function definition:GetFullName() return "ReplicatedStorage.Data.EggDefinitions" end
+    local data=node("Data","Folder",{}, {definition})
+    modules[#modules+1]=data
+    local _,result=funcs.sourceScan(sourceRoot(modules))
+    assert(#result.modules==40 and result.modules[1].name=="EggDefinitions")
+end)
+check("large rarity payloads exhaust a bounded observation budget", function()
+    local payload={};for i=1,100 do payload[i]={Uid="a"..i,Rarity="Rare",IncomePerSecond=i} end
+    funcs.record("RE/EggWorld/FieldEggRaritiesShown",payload)
+    local event=funcs.eggExport().eggSelection.sourceEvents[1]
+    assert(event.args[1].__truncated and event.args[1]["25"]==nil)
 end)
 print(string.format("%d Auto Collect tests passed", tests))

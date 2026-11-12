@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.44
+-- Steal An Egg: structure diagnostics v1.45
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -54,7 +54,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.44", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.45", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -94,7 +94,8 @@ eggUI.preferredBox=create("TextBox",eggUI.page,{Position=UDim2.fromOffset(0,110)
 round(eggUI.preferredBox,6)
 eggUI.applyButton=control(eggUI.page,"Apply names",0,150,120,32)
 eggUI.copyButton=control(eggUI.page,"Copy eggs",130,150,120,32)
-eggUI.hint=label(eggUI.page,"Income / Preferred skip unknown data. Stop Collect to change mode.",260,146,300,42,11,colors.muted)
+eggUI.sourceButton=control(eggUI.page,"Scan sources",260,150,130,32)
+eggUI.hint=label(eggUI.page,"Read-only sources; Copy eggs exports results.",400,146,166,42,11,colors.muted)
 eggUI.hint.TextWrapped=true
 eggUI.scroll=create("ScrollingFrame",eggUI.page,{Position=UDim2.fromOffset(0,198),Size=UDim2.fromOffset(568,184),
     BackgroundColor3=colors.panel,BorderSizePixel=0,ScrollBarThickness=5,AutomaticCanvasSize=Enum.AutomaticSize.XY,CanvasSize=UDim2.new()})
@@ -118,7 +119,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.44 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.45 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -164,7 +165,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.44 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.45 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -209,7 +210,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.44 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.45 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -498,6 +499,170 @@ local function liveHatchSnapshot()
 end
 -- AUTO_COLLECT_ENGINE_BEGIN
 local eggLogic={}
+eggLogic.sourceEvents={}
+eggLogic.sourceFields={"IncomePerSecond","CashPerSecond","MoneyPerSecond","CoinsPerSecond","ValuePerSecond",
+    "Rarity","RarityName","RarityId","Tier","Income","BaseIncome","BaseValue","Value","Price","SellPrice","Rate",
+    "AssetCategory","DisplayName","EggName","AreaId","Uid","UID","EggUid","EggUID","BaseMutation","Mutations"}
+function eggLogic.sourceScalar(value)
+    if type(value)=="string" then return value:sub(1,160) end
+    if type(value)=="number" and value==value and math.abs(value)~=math.huge then return value end
+    if type(value)=="boolean" then return value end
+end
+function eggLogic.sourceValue(value,depth,state)
+    local scalar=eggLogic.sourceScalar(value)
+    if scalar~=nil then return scalar end
+    if type(value)~="table" then return "<"..typeof(value)..">" end
+    if state.seen[value] then return "<cycle>" end
+    if depth>=4 or state.remaining<=0 then return "<limit>" end
+    state.seen[value]=true
+    local result,keys,used={},{},{}
+    for _,key in ipairs(eggLogic.sourceFields) do if value[key]~=nil then keys[#keys+1]=key;used[key]=true end end
+    local examined=0
+    for key in pairs(value) do
+        examined=examined+1
+        if examined>128 then result.__keysTruncated=true;break end
+        if not used[key] and (type(key)=="string" or type(key)=="number") then keys[#keys+1]=key end
+    end
+    for i,key in ipairs(keys) do
+        if i>24 or state.remaining<=0 then result.__truncated=true;break end
+        state.remaining=state.remaining-1
+        result[tostring(key):sub(1,120)]=eggLogic.sourceValue(value[key],depth+1,state)
+    end
+    state.seen[value]=nil
+    return result
+end
+function eggLogic.observeSource(name,...)
+    if name~="RE/EggWorld/FieldEggRaritiesShown" and name~="RE/EggWorld/FieldEggRedeemVerdict" then return end
+    local sample={name=name,at=os.time(),args={},observationOnly=true}
+    local state={remaining=160,seen={}}
+    for i=1,math.min(select("#",...),2) do sample.args[i]=eggLogic.sourceValue(select(i,...),0,state) end
+    sample.argumentCount=select("#",...);sample.budgetExhausted=state.remaining<=0
+    local events=eggLogic.sourceEvents
+    events[#events+1]=sample
+    if #events>4 then table.remove(events,1) end
+end
+function eggLogic.sourceScore(name)
+    local lower=name:lower()
+    for _,word in ipairs({"income","persecond","rarit","econom","earning"}) do if lower:find(word,1,true) then return 4 end end
+    for _,word in ipairs({"egg","asset","pet","animal","creature","mutation"}) do if lower:find(word,1,true) then return 3 end end
+    for _,word in ipairs({"data","config","definition","catalog","stat","value","rate","coin","cash","money"}) do
+        if lower:find(word,1,true) then return 1 end
+    end
+    return 0
+end
+function eggLogic.scanSources(roots)
+    if eggLogic.sourceRunning then return false,"Source scan already running" end
+    eggLogic.sourceRunning=true
+    local result={at=os.time(),roots={},modules={},readableFields={},labels={},
+        scope="client_readable_source_discovery",observationOnly=true,rankingApplied=false,visited=0,
+        limits={modules=40,readableFields=40,labels=16},errors=0}
+    local ok,err=pcall(function()
+        if not roots then
+            local storage=game:GetService("ReplicatedStorage")
+            roots={{object=storage,label="ReplicatedStorage",budget=6000},{object=pg,label="PlayerGui",budget=4000},
+                {object=workspace:FindFirstChild("PlacedEggRenders"),label="PlacedEggRenders",budget=2000},
+                {object=player:FindFirstChildOfClass("Backpack"),label="Backpack",budget=256},
+                {object=player.Character,label="Character",budget=256}}
+        end
+        local categories={}
+        for _,record in pairs(eggLogic.field.records) do
+            local category=record.fields.AssetCategory
+            if type(category)=="string" then categories[category:lower()]=true end
+        end
+        for _,root in ipairs(roots) do
+            local report={name=root.label,budget=root.budget,visited=0,found=root.object~=nil,complete=true}
+            result.roots[#result.roots+1]=report
+            local queue=root.object and {{object=root.object,context=0}} or {}
+            local index=1
+            while index<=#queue and report.visited<root.budget and active do
+                local item=queue[index];index=index+1
+                local obj=item.object
+                report.visited=report.visited+1;result.visited=result.visited+1
+                local good=pcall(function()
+                    if gui and (obj==gui or obj:IsDescendantOf(gui)) then report.skippedHub=true;return end
+                    if root.label=="ReplicatedStorage" and obj.Parent==root.object and obj.Name=="Assets" then
+                        report.skippedVisualAssets=true;return
+                    end
+                    local score=math.max(eggLogic.sourceScore(obj.Name),categories[obj.Name:lower()] and 5 or 0)
+                    local relevant=score>0 or item.context>0
+                    local path=obj:GetFullName()
+                    local fields,fieldScore={},0
+                    local attrs=obj:GetAttributes()
+                    for _,key in ipairs(eggLogic.sourceFields) do
+                        local value=eggLogic.sourceScalar(attrs[key])
+                        if value~=nil then fields[key]=value end
+                    end
+                    local attributeKeys,count={},0
+                    for key,value in pairs(attrs) do
+                        count=count+1
+                        if count>64 then fields.__attributesTruncated=true;break end
+                        if relevant then attributeKeys[#attributeKeys+1]=key:sub(1,80) end
+                        if eggLogic.sourceScore(key)>=4 then fields[key:sub(1,80)]=eggLogic.sourceScalar(value) end
+                    end
+                    table.sort(attributeKeys)
+                    -- Named values are observations; a price or generic Rate is never a /s score.
+                    if obj:IsA("StringValue") or obj:IsA("NumberValue") or obj:IsA("IntValue") then
+                        for _,key in ipairs(eggLogic.sourceFields) do
+                            if obj.Name==key then fields[key]=eggLogic.sourceScalar(obj.Value);break end
+                        end
+                        if eggLogic.sourceScore(obj.Name)>=4 then fields[obj.Name:sub(1,80)]=eggLogic.sourceScalar(obj.Value) end
+                    end
+                    if next(fields) then
+                        for key in pairs(fields) do fieldScore=math.max(fieldScore,eggLogic.sourceScore(key)) end
+                        result.readableFields[#result.readableFields+1]={path=path,class=obj.ClassName,fields=fields,score=fieldScore,
+                            parent=obj.Parent and obj.Parent:GetFullName(),identityUnverified=true}
+                        table.sort(result.readableFields,function(a,b) return a.score==b.score and a.path<b.path or a.score>b.score end)
+                        if #result.readableFields>40 then table.remove(result.readableFields);result.fieldsTruncated=true end
+                    end
+                    if obj:IsA("TextLabel") then
+                        local text=obj.Text:sub(1,160)
+                        if score>=4 or text:find("/s",1,true) or text:lower():find("per second",1,true) then
+                            if #result.labels<16 then
+                                local visible,node=true,obj
+                                while node and node~=root.object do
+                                    if node:IsA("GuiObject") and not node.Visible or node:IsA("LayerCollector") and not node.Enabled then visible=false end
+                                    node=node.Parent
+                                end
+                                result.labels[#result.labels+1]={path=path,text=text,visible=visible,identityUnverified=true}
+                            else result.labelsTruncated=true end
+                        end
+                    end
+                    if obj:IsA("ModuleScript") and relevant then
+                        local definitionPath=path:find(".Data.",1,true) or path:find(".Shared.",1,true)
+                        result.modules[#result.modules+1]={path=path,name=obj.Name,score=math.max(score,item.context)+(definitionPath and 2 or 0),
+                            attributeKeys=attributeKeys,inspection="path_only; module was not executed"}
+                        table.sort(result.modules,function(a,b) return a.score==b.score and a.path<b.path or a.score>b.score end)
+                        if #result.modules>40 then table.remove(result.modules);result.modulesTruncated=true end
+                    end
+                    -- Do not explore libraries, networking, arbitrary GUI scripts or source properties.
+                    local skip=obj.Name=="Packages" or obj.Name=="Networking" or obj:IsA("Script") or obj:IsA("LocalScript")
+                    if not skip then
+                        local children=obj:GetChildren()
+                        table.sort(children,function(a,b)
+                            local preferred={Data=10,Shared=9,Config=8,Definitions=8}
+                            local sa,sb=preferred[a.Name] or 0,preferred[b.Name] or 0
+                            return sa==sb and a.Name<b.Name or sa>sb
+                        end)
+                        for _,child in ipairs(children) do
+                            if #queue>=root.budget then report.complete=false;report.queueLimited=true;break end
+                            queue[#queue+1]={object=child,context=math.max(score,item.context-1)}
+                        end
+                    end
+                end)
+                if not good then result.errors=result.errors+1;report.complete=false end
+                if result.visited%128==0 then task.wait() end
+            end
+            if index<=#queue or not active then report.complete=false end
+            if not report.complete then result.truncated=true end
+        end
+    end)
+    eggLogic.sourceRunning=false
+    if not ok then result.error=tostring(err):sub(1,160) end
+    result.status=not active and "cancelled" or not ok and "error" or "complete"
+    result.finishedAt=os.time()
+    eggLogic.sources=result
+    return ok and active,result
+end
 local recordingContext
 local collectTween
 local walkReturn
@@ -745,6 +910,7 @@ function eggLogic.resolveField(subject,metadata)
         positionSource=match.key,ageSeconds=os.clock()-match.record.clock}
 end
 local function recordGameEvent(name, ...)
+    eggLogic.observeSource(name,...)
     if name=="RE/Treadmill/SpeedGained" then
         training.events=training.events+1;training.lastEventAt=os.time()
     end
@@ -1104,9 +1270,9 @@ function eggLogic.refresh()
 end
 function eggLogic.export()
     eggLogic.refresh()
-    return {version="1.44",kind="egg_data",placeId=game.PlaceId,
+    return {version="1.45",kind="egg_data",placeId=game.PlaceId,
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
-            selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples}}
+            selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents}}
 end
 function eggLogic.apply(text)
     if #text>1200 then return false,"Preferred list is too long" end
@@ -1734,7 +1900,7 @@ local function collectSnapshot(includeEvidence)
         gameEvents = gameEvents, eventObserver = eventObserver,
         upgrades=upgrades,training=training,placementRecording=placementRecord,
         selectionBlocked=eggSelect.mode~="Nearest" and eggSelect.catalog.accepted==0 and ("No readable egg matches "..eggSelect.mode.."; inspect Eggs / Copy short") or nil,
-        eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples},
+        eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents},
         autoPlace={available=AUTO_PLACE_ENABLED,manualMode=placeState and placeState.manualMode,manualPreparing=placeState and placeState.manualPreparing,binding=placeState and placeState.binding,preparingBind=placeState and placeState.preparingBind,enabled=placeState and placeState.enabled,attempts=placeState and placeState.attempts,observed=placeState and placeState.observed,last=placeState and placeState.last,lastAttempt=placeState and placeState.lastAttempt,autoMark=placeState and placeState.autoMark,lastSlotPick=placeState and placeState.lastSlotPick},
         autoHome={enabled=autoHome.enabled,ready=autoHome.ready,reason=autoHome.reason,report=includeEvidence and autoHome.report or nil},
         lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, lastWalkingRecovery=lastWalkingRecovery, deliveryPointSet = deliveryPoint ~= nil,
@@ -2749,6 +2915,21 @@ function eggUI.scan()
         or "Egg data refreshed. Copy short includes sources and missing/conflicting fields."
 end
 eggUI.scanButton.Activated:Connect(eggUI.scan)
+eggUI.sourceButton.Activated:Connect(function()
+    if eggLogic.sourceRunning then status.Text="Source scan already running";return end
+    if collectEgg.enabled or collectRunning or hatch.enabled or systemRunning or training.enabled or upgrades.mode~="Off"
+        or placementRecord.enabled or placeState.manualPreparing or placeRunning then
+        status.Text="Stop Collect / Hatch / Training / Record placement before scanning sources";return
+    end
+    eggUI.sourceButton.Text="Scanning..."
+    task.spawn(function()
+        local ok,result=eggLogic.scanSources()
+        eggUI.sourceButton.Text="Scan sources"
+        if not active then return end
+        status.Text=ok and string.format("Sources: %d modules / %d field objects / %d labels. Use Copy eggs.",
+            #result.modules,#result.readableFields,#result.labels) or "Source scan incomplete; use Copy eggs for details."
+    end)
+end)
 eggUI.copyButton.Activated:Connect(function()
     local ok,payload=pcall(function() return Http:JSONEncode(eggLogic.export()) end)
     if not ok then status.Text="Egg export failed: "..tostring(payload):sub(1,140);return end
@@ -2921,6 +3102,7 @@ end)
 -- Read-only event observations. Payloads are bounded and are not interpreted as
 -- authoritative carry state until the event contract is established.
 local watchedEvents = {
+    ["RE/EggWorld/FieldEggRaritiesShown"]=true,
     ["RE/EggWorld/FieldEggShifted"]=true,["RE/EggWorld/FieldEggBatchShifted"]=true,
     ["RE/EggWorld/FieldEggCarry"]=true, ["RE/EggWorld/FieldEggGone"]=true,
     ["RE/EggWorld/FieldEggRedeemVerdict"]=true, ["RE/EggWorld/OwnerDropped"]=true,
@@ -3105,7 +3287,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.44", placeId = game.PlaceId,
+        local report = {version = "1.45", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -3277,7 +3459,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.44", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.45", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -3307,7 +3489,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.44 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.45 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
