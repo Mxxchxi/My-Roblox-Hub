@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.41
+-- Steal An Egg: structure diagnostics v1.42
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -54,7 +54,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.41", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.42", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -98,7 +98,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.41 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.42 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -144,7 +144,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.41 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.42 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -189,7 +189,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.41 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.42 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -1858,16 +1858,27 @@ local function recordEquippedEgg(character)
     end
     return egg,false
 end
+local function placedRenderIdentity(obj,root)
+    if not root or obj.Parent~=root or not obj:IsA("Model") then return nil end
+    local owner,uid=obj.Name:match("^(%d+)_(%x+)$")
+    if owner and #uid==32 then return owner,uid end
+end
 local function scanPlacementWorld(plot,origin)
     local result={entries={},ids={},visible={},visited=0,treeComplete=true,spatialComplete=false,
-        at=os.clock(),origin=origin,radius=32}
+        at=os.clock(),origin=origin,radius=32,renderComplete=true,renderVisited=0}
     local plots=workspace:FindFirstChild("Plots")
+    local renderRoot=workspace:FindFirstChild("PlacedEggRenders")
+    result.renderRootFound=renderRoot~=nil
     local seen={}
     local function add(obj)
         if seen[obj] or obj==plot or obj==plots or obj==workspace then return end
         seen[obj]=true
         if not obj:IsA("BasePart") and not obj:IsA("Model") then return end
+        local renderOwner,renderUid=placedRenderIdentity(obj,renderRoot)
         local node,explicitOwner,foreignOwner=obj,false,false
+        if renderOwner then
+            if renderOwner==tostring(player.UserId) then explicitOwner=true else foreignOwner=true end
+        end
         for _=1,12 do
             if not node or node==workspace then break end
             if node==player.Character or node:IsA("Tool")
@@ -1882,7 +1893,11 @@ local function scanPlacementWorld(plot,origin)
         local ok,position=pcall(function() return obj:IsA("BasePart") and obj.Position or obj:GetPivot().Position end)
         if not ok or not position then return end
         local item={obj=obj,path=obj:GetFullName(),name=obj.Name,class=obj.ClassName,position=position,ids={},attributes={},
-            inOwnedPlot=obj:IsDescendantOf(plot),explicitOwner=explicitOwner,foreignOwner=foreignOwner}
+            inOwnedPlot=obj:IsDescendantOf(plot),explicitOwner=explicitOwner,foreignOwner=foreignOwner,
+            placedRender=renderOwner~=nil,renderOwnerUserId=renderOwner}
+        if renderUid then
+            item.ids[#item.ids+1]={key="PlacedEggRenderName",value=renderUid};result.ids[renderUid]=true
+        end
         for _,key in ipairs({"ItemType","EggId","EggID","DisplayName","OwnerUserId","SlotId","SlotIndex","IsEgg","IsHatching"}) do
             local value=obj:GetAttribute(key)
             if type(value)=="number" or type(value)=="boolean" or type(value)=="string" then
@@ -1910,6 +1925,25 @@ local function scanPlacementWorld(plot,origin)
         end
     end
     if head<=#queue then result.treeComplete=false end
+    -- The observed game uses direct Model children named <UserId>_<32hex UID>.
+    -- Walk this owned namespace separately so spatial-query caps cannot hide it.
+    if renderRoot then
+        local renders=renderRoot:GetChildren()
+        if #renders>512 then result.renderComplete=false end
+        local renderQueue,renderHead={},1
+        for i=1,math.min(#renders,512) do
+            local owner=placedRenderIdentity(renders[i],renderRoot)
+            if owner==tostring(player.UserId) then renderQueue[#renderQueue+1]=renders[i] end
+        end
+        while renderHead<=#renderQueue and result.renderVisited<2048 do
+            local obj=renderQueue[renderHead];renderHead=renderHead+1;result.renderVisited=result.renderVisited+1
+            add(obj)
+            for _,child in ipairs(obj:GetChildren()) do
+                if #renderQueue<2048 then renderQueue[#renderQueue+1]=child else result.renderComplete=false end
+            end
+        end
+        if renderHead<=#renderQueue then result.renderComplete=false end
+    end
     local ok,parts=pcall(function()
         local params=OverlapParams.new()
         params.FilterType=Enum.RaycastFilterType.Exclude
@@ -1946,11 +1980,12 @@ local function scanPlacementWorld(plot,origin)
 end
 local function placementWorldSummary(snapshot)
     return {at=snapshot.at,visited=snapshot.visited,treeComplete=snapshot.treeComplete,
+        renderRootFound=snapshot.renderRootFound,renderComplete=snapshot.renderComplete,renderVisited=snapshot.renderVisited,
         spatialComplete=snapshot.spatialComplete,spatialError=snapshot.spatialError,
         origin={x=snapshot.origin.X,y=snapshot.origin.Y,z=snapshot.origin.Z},radius=32}
 end
 local function comparePlacementWorld(before,after,record,point)
-    local result={scope="client_world_observation",serverAcceptanceVerified=false,candidates={},matchedCount=0,
+    local result={scope="client_world_observation",localUserId=player.UserId,serverAcceptanceVerified=false,candidates={},matchedCount=0,
         before=placementWorldSummary(before),after=placementWorldSummary(after),candidateCount=0}
     local candidates,groups={},{}
     for obj,item in pairs(after.entries) do
@@ -1960,7 +1995,8 @@ local function comparePlacementWorld(before,after,record,point)
             for _,id in ipairs(item.ids) do if id.value==record.uid then exact=true end end
             local isNew=before.entries[obj]==nil
             if isNew or exact then
-                local scopeComplete=item.inOwnedPlot and before.treeComplete and after.treeComplete
+                local scopeComplete=item.placedRender and before.renderComplete and after.renderComplete
+                    or item.inOwnedPlot and before.treeComplete and after.treeComplete
                     or item.explicitOwner and before.spatialComplete and after.spatialComplete
                     and (point-before.origin).Magnitude<=24
                 local eligible=exact and not before.ids[record.uid] and scopeComplete
@@ -1970,6 +2006,7 @@ local function comparePlacementWorld(before,after,record,point)
                     uidEvidence=item.ids,uidMatches=exact,newInstance=isNew,uidVisibleBefore=before.ids[record.uid]==true,
                     attributes=item.attributes,visibleGeometry=after.visible[obj]==true,
                     inOwnedPlot=item.inOwnedPlot,explicitOwner=item.explicitOwner,foreignOwner=item.foreignOwner,
+                    placedRender=item.placedRender,renderOwnerUserId=item.renderOwnerUserId,
                     baselineCompleteForMatch=scopeComplete==true}
                 if eligible then
                     local nested=false
@@ -2620,7 +2657,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.41", placeId = game.PlaceId,
+        local report = {version = "1.42", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -2792,7 +2829,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.41", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.42", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -2822,7 +2859,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.41 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.42 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
