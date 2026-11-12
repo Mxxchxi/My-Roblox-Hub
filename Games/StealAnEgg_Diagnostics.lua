@@ -746,7 +746,7 @@ function eggLogic.inspectDefinitions()
     if eggLogic.definitionRunning or busy or eggLogic.sourceRunning then return false,"Another scan is running" end
     if eggLogic.definitionPending and not eggLogic.definitionPending.done then return false,"Previous game module is still loading; no duplicate load started" end
     eggLogic.definitionRunning=true;busy=true
-    local report={at=os.time(),status="running",modules={},scope="explicit_game_module_exports",modulesInitializedByRequire=true,
+    local report={at=os.time(),status="running",modules={},scope="explicit_game_module_exports",loadMethod="require",moduleInitializationMayRun=true,
         rankingApplied=false,exportedFunctionsInvoked=false,categories={},limits={modules=3,secondsPerModule=5}}
     eggLogic.definitions=report
     local ok,err=pcall(function()

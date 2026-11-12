@@ -1845,7 +1845,7 @@ check("definition reader loads only the three observed allowlisted ModuleScripts
         return module==assets and {Catfish={perSecond=12,rarity="Uncommon"}} or {Common={Index=1}}
     end
     local ok,result=funcs.definitions()
-    assert(ok and #called==3 and #result.modules==3 and result.modulesInitializedByRequire and not result.rankingApplied)
+    assert(ok and #called==3 and #result.modules==3 and result.loadMethod=="require" and result.moduleInitializationMayRun and not result.rankingApplied)
     assert(result.modules[1].snapshot.data.Catfish.perSecond==12 and not env.busy)
 end)
 check("exported earnings functions are described without being invoked",function()
