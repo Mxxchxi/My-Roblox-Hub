@@ -1,4 +1,4 @@
-# Steal An Egg — v1.42
+# Steal An Egg — v1.43
 
 PlaceId: 107778070777162. Load through the existing universal Loader.
 All automation and placement recording start OFF. Evidence below separates user-reported game results from offline checks.
@@ -10,7 +10,9 @@ All automation and placement recording start OFF. Evidence below separates user-
 | Auto Hatch | User reports confirm the one-shot hatch test and continuous hatching of all ready eggs on v1.39. The script still does not independently verify pet creation. |
 | Base / treadmill upgrades | Implemented using mapped soft-currency UI callbacks, affordability checks and level-change confirmation. Offline tested only. |
 | Speed training | User reports confirm walking onto the treadmill, speed increasing and the OFF control working on v1.39. |
-| Record Placement | User's v1.40 report confirms UID capture, a click on own-plot PetArea and complete inventory changing from one egg to zero. v1.41 world-appearance matching is offline tested and awaits a live report. |\n| Auto Place | Disabled in release after user-reported BAC kicks. No UI toggle can enable it. |
+| Record Placement | User's v1.42 report confirms one Bear Egg UID left inventory and exactly one visible matching owned render appeared at the click; worldEggAppearanceVerified=true. This is client evidence only. |
+| Egg data / selection | New v1.43 nearby catalog, income ranking and user-defined name priorities. Offline tested; live field metadata mapping remains to be verified. |
+| Auto Place | Disabled in release after user-reported BAC kicks. No UI toggle can enable it. |
 | Money collection | Removed: the game collects money automatically. |
 
 ## Auto Place remains disabled
@@ -61,7 +63,7 @@ python -m unittest discover -s tests -v
 luac5.4 -p Games/StealAnEgg_Diagnostics.lua
 lua5.4 tests/test_egg_collect.lua
 ~~~
-153 simulated cases and 4 Loader contract tests pass. The complete Lua chunk compiles locally. These checks cover cash parsing, unknown/conflicting balances, exclusion of premium controls, missing callbacks, level confirmation/no-result stop, native treadmill approach and previous automation guards. They are not Potassium/server tests and do not guarantee absence of anti-cheat kicks.
+175 simulated cases and 4 Loader contract tests pass. The complete Lua chunk compiles locally. These checks cover cash parsing, unknown/conflicting balances, exclusion of premium controls, missing callbacks, level confirmation/no-result stop, native treadmill approach and previous automation guards. They are not Potassium/server tests and do not guarantee absence of anti-cheat kicks.
 
 ## Manual placement handoff (v1.38)
 
@@ -123,3 +125,17 @@ A separate bounded scan enumerates up to 512 direct render-root children and up 
 Candidate diagnostics now include `placedRender`, `renderOwnerUserId` and UID evidence with key `PlacedEggRenderName`; `worldResult.localUserId` makes the owner comparison auditable. The distance, visible geometry, unique matching group, stable presence, complete inventory removal and previous-UID rejection rules remain required. `worldPlacementVerified` and server acceptance remain unverified. Auto Place stays disabled.
 
 Ten new simulated cases cover the reported owner_UID namespace with capped spatial queries, foreign owners, wrong folders/UIDs, malformed names, conflicting ownership, pre-existing renders, duplicate identities, namespace truncation and invisible geometry. Total: 153 Lua cases plus four Loader contracts pass locally, and full source compilation passes. Repeat one manual placement with Record placement and send Copy short to verify the new mapping live.
+
+## Egg data and selection (v1.43)
+
+Open the new **Eggs** tab, stop Collect, and press **Scan eggs** near the field eggs you want to inspect. The catalog shows up to 12 nearby approachable field prompts with observed name, exact UID, rarity text, income per second, distance and missing data. Copy short refreshes data and exports `autoCollect.eggSelection` with source paths, bounded raw attributes, conflicts, selected-target evidence and up to eight inventory egg names/metadata. The scan does not move the character or collect eggs. Raw data is session-only.
+
+The mode button cycles **NEAREST -> INCOME -> PREFERRED -> NEAREST**. NEAREST is the default and preserves the existing nearest-ready/nearest-approach behavior. INCOME selects the highest readable income per second within the existing approach range, even when a lower-value egg is ready nearby; equal income uses distance. PREFERRED uses up to ten comma/semicolon/newline-separated egg names in the order supplied, matching exact trimmed names case-insensitively; press Apply names to save the list for this session. In both advanced modes, unknown/unlisted targets are skipped and there is no silent fallback to NEAREST. Stop Collect/Record placement before changing mode or priorities, then enable Collect to use the chosen strategy.
+
+Income is accepted only from finite nonnegative numeric values or plain numeric strings in `IncomePerSecond`, `CashPerSecond`, `MoneyPerSecond` or `CoinsPerSecond`. These aliases are candidate mappings, not a confirmed contract for this game. Rates with formatted/unknown units remain unknown. Price and rarity names are not interpreted as income or an invented quality order. Conflicting identity or income sources suppress advanced selection. Income/source data must be validated with the real game before treating this mode as a verified best-egg collector.
+
+Metadata is read from explicit attributes/named value children or labels on the prompt, up to three containing objects (stopping at folders, Workspace and the local character), and bounded explicit ObjectValue links named Target/Egg/EggModel into Workspace. Tool names are accepted only for inventory tools. No nearest-render identity guess, client module execution, hidden API call or new game Remote invocation is used to obtain stats. The existing FieldEggShifted/FieldEggBatchShifted incoming events are observed read-only; at most three bounded samples, with limited nested records, are retained for mapping the game's actual schema. Their payloads are not replayed or used as scores without an established identity link.
+
+The range, ground-level checks, action filter, cooldown and attempt cap still apply. Target UID and policy eligibility are rechecked after moving. The last selection and pickup record include the metadata used. Missing field stats pause advanced-mode pickup with a visible explanation; open Eggs/Copy short to inspect which data is missing. Public catalog output is capped and says when truncated. Scan near eggs, wait for an ordinary field update if needed, and send Copy short to establish live names/UID/stat fields.
+
+Twenty-two added simulated cases cover metadata/provenance, unknown/ambiguous values, highest-income traversal versus nearby low-income eggs, nearest-mode preservation, tie distance, user-defined preferences, range/action/cooldown guards, changed metadata/UID during travel, bounded catalogs/event samples and explicit object links. Total: 175 Lua cases and four Loader contracts pass locally. The whole script compiles, including Lua's top-level local-variable limit; helper/UI tables keep the added functionality within that limit. The new UI and actual field statistics still require a live game test. Auto Place remains disabled.
