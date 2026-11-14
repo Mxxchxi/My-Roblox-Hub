@@ -1,4 +1,4 @@
--- Steal An Egg: automation v1.58
+-- Steal An Egg: automation v1.59
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -54,7 +54,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.58", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.59", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -1338,7 +1338,13 @@ local function recordGameEvent(name, ...)
             lastRedeem={clock=os.clock(),displayName=payload.DisplayName}
         end
     end
-    if name=="RE/EggWorld/FieldEggCarry" then updateServerCarry((...)) end
+    if name=="RE/EggWorld/FieldEggCarry" then
+        local payload=(...)
+        updateServerCarry(payload)
+        if type(payload)=="table" and type(payload.IsCarrying)=="boolean" then
+            eggLogic.log("carry.event","carrying "..tostring(payload.IsCarrying).." | UID "..tostring(payload.Uid).." | phase "..tostring(collectEgg.phase).." | UI "..tostring(dropCarryVisible()).." | wake delay "..tostring(payload.RunBackWakeDelayRequired))
+        end
+    end
     local fieldObservation=eggLogic.observeField(name,(...))
     local args={}
     for i=1,math.min(select("#",...),6) do args[i]=eventValue(select(i,...),0,{}) end
@@ -2076,7 +2082,7 @@ function eggLogic.refresh()
 end
 function eggLogic.export()
     eggLogic.refresh()
-    return {version="1.58",kind="egg_data",placeId=game.PlaceId,
+    return {version="1.59",kind="egg_data",placeId=game.PlaceId,
         collection={enabled=collectEgg.enabled,phase=collectEgg.phase,last=collectEgg.last,attempts=collectEgg.attempts,
             retry=eggLogic.retryStatus(),promptWait=collectEgg.promptWait,lastMovement=collectEgg.lastMovement,lastInput=collectEgg.lastInput},
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
@@ -2437,16 +2443,34 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target,allo
     params.FilterDescendantsInstances={character}
     params.RespectCanCollide=true
     local route
+    nav.plans={};nav.startedClock=os.clock()
     if workspace:Raycast(root.Position,destination-root.Position,params) then
-        local ok,result=pcall(function()
-            local path=PathfindingService:CreatePath({AgentRadius=2,AgentHeight=5,AgentCanJump=false,WaypointSpacing=5})
-            path:ComputeAsync(root.Position,destination)
-            if path.Status~=Enum.PathStatus.Success then return nil end
-            return path:GetWaypoints()
-        end)
-        if not ok or not result or #result<2 or #result>80 then nav.status="No ground return path";return false,nav.status end
-        route=result
+        local function plan(canJump)
+            local attempt={jumpAllowed=canJump};nav.plans[#nav.plans+1]=attempt
+            local ok,result=pcall(function()
+                local path=PathfindingService:CreatePath({AgentRadius=2,AgentHeight=5,AgentCanJump=canJump,WaypointSpacing=5})
+                path:ComputeAsync(root.Position,destination)
+                attempt.status=tostring(path.Status)
+                if path.Status~=Enum.PathStatus.Success then return nil end
+                return path:GetWaypoints()
+            end)
+            attempt.count=ok and type(result)=="table" and #result or 0
+            if not ok then attempt.error=tostring(result):sub(1,140) end
+            if ok and type(result)=="table" and #result>=2 and #result<=(requireCarry and 160 or 80) then return result end
+        end
+        route=plan(false)
+        if not active or not movementAllowed() or player.Character~=character then nav.status="Return cancelled";return false,nav.status end
+        if not route and requireCarry then route=plan(true) end
+        if not route and requireCarry then
+            -- Native movement can still work where the navigation mesh has no route.
+            -- Keep the existing range/carry/cancellation and two-jump stall guards.
+            route={{Position=destination}};nav.fallback=true
+            nav.status="No mesh route; trying bounded native return"
+            recordGameEvent("return.route.fallback",nav.status)
+        elseif not route then nav.status="No ground return path";return false,nav.status end
     else route={{Position=destination}} end
+    if not active or not movementAllowed() or player.Character~=character then nav.status="Return cancelled";return false,nav.status end
+    if requireCarry then recordGameEvent("return.route.ready",tostring(#route).." waypoints | fallback "..tostring(nav.fallback==true)) end
     nav.waypoints=#route
     local total=0
     local previous=root.Position
@@ -2478,6 +2502,7 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target,allo
         local goal=i==#route and destination or point.Position
         local started=os.clock()
         local deadline=(root.Position-goal).Magnitude/math.max(humanoid.WalkSpeed,1)+5
+        if nav.fallback then deadline=math.min(deadline,12) end
         nav.currentWaypoint=i
         if not active or not movementAllowed() then return stop("Return cancelled") end
         if player.Character~=character or not root.Parent or humanoid.Health<=0 then return stop("Character changed during return") end
@@ -2487,6 +2512,11 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target,allo
         walkingHumanoid=humanoid
         collectEgg.moving=true
         humanoid:MoveTo(goal)
+        if requireCarry and point.Action==Enum.PathWaypointAction.Jump and humanoid.FloorMaterial~=Enum.Material.Air then
+            if humanoid.Sit then humanoid.Sit=false end
+            humanoid.Jump=true;nav.pathJumps=(nav.pathJumps or 0)+1
+            recordGameEvent("return.route.jump","Waypoint "..i)
+        end
         local refreshed=os.clock()
         local recovery={origin=root.Position,checked=os.clock(),lastJump=-math.huge,attempts=0}
         -- Waypoints lie on the floor; compare horizontal arrival without lifting the root.
@@ -2506,7 +2536,7 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target,allo
             if recoverWalking(recovery,root,humanoid,goal) then return stop("Walking stuck after two jump attempts") end
             if os.clock()-started>deadline then return stop("Ground return stalled at waypoint "..i) end
             if os.clock()-refreshed>=1 then humanoid:MoveTo(goal);refreshed=os.clock() end
-            nav.status=requireCarry and "Walking home" or allowEquipped=="training" and "Walking to treadmill" or allowEquipped=="upgrade" and "Walking to upgrade sign" or "Walking to egg";collectLabel.Text=string.format("%s %d/%d",nav.status,i,#route)
+            nav.status=requireCarry and "Walking home" or allowEquipped=="training" and "Walking to treadmill" or allowEquipped=="upgrade" and "Walking to upgrade sign" or "Walking to egg";collectEgg.last=nav.status;collectLabel.Text=string.format("%s %d/%d",nav.status,i,#route)
             task.wait(0.1)
         end
         nav.completed=i
@@ -2526,6 +2556,8 @@ local function returnHome(root, humanoid, character)
     local record = {at = os.time(), status = "Returning", startDistance = delta.Magnitude,
         destination = {x=deliveryPoint.X,y=deliveryPoint.Y,z=deliveryPoint.Z}}
     collectEgg.lastReturn = record
+    collectEgg.last="Planning route home"
+    recordGameEvent("return.start","distance "..string.format("%.1f",delta.Magnitude).." | source "..carryState().source)
     collectEgg.earlyDelivery=nil
     record.startedClock=os.clock()
     if serverCarry and serverCarry.character==character and serverCarry.isCarrying then
@@ -2560,7 +2592,8 @@ local function returnHome(root, humanoid, character)
         end
     end
     collectEgg.phase = "DELIVERING"
-    collectLabel.Text = "At delivery point; waiting for game result"
+    collectEgg.last="At delivery point; waiting for game result"
+    collectLabel.Text = collectEgg.last
     local before = collectEgg.tripInventory
     local deadline = os.clock()+5
     local clearSince
@@ -2776,7 +2809,7 @@ function eggLogic.logReport()
     local catalog=eggSelect.catalog or {}
     local discovery=eggLogic.discoveryStatus()
     local field=catalog.fieldData or {}
-    local lines={"MY ROBLOX HUB | Steal An Egg v1.58 | place "..tostring(game.PlaceId)}
+    local lines={"MY ROBLOX HUB | Steal An Egg v1.59 | place "..tostring(game.PlaceId)}
     local function add(name,value) lines[#lines+1]=name..": "..eggLogic.logText(value,320) end
     add("Collect",string.format("%s | %s | mode %s | approach %s | attempts %d",collectEgg.enabled and "ON" or "OFF",
         collectEgg.phase or "IDLE",eggSelect.mode,collectEgg.approachMode or "Walk",collectEgg.attempts or 0))
@@ -2844,6 +2877,13 @@ function eggLogic.logReport()
     end
     if collectEgg.lastMovement then add("Movement",tostring(collectEgg.lastMovement.status).." | "..tostring(collectEgg.lastMovement.stopReason or "")) end
     if collectEgg.lastReturn then add("Return history",collectEgg.lastReturn.status.." | current phase "..tostring(collectEgg.phase)) end
+    if collectEgg.lastNavigation then
+        local nav=collectEgg.lastNavigation
+        add("Route history",tostring(nav.status).." | waypoint "..tostring(nav.currentWaypoint or 0).."/"..tostring(nav.waypoints or 0).." | fallback "..tostring(nav.fallback==true).." | planned jumps "..tostring(nav.pathJumps or 0))
+        for i,attempt in ipairs(nav.plans or {}) do
+            add("Route plan "..i,"jump "..tostring(attempt.jumpAllowed).." | "..tostring(attempt.status).." | points "..tostring(attempt.count).." | "..tostring(attempt.error or ""))
+        end
+    end
     add("Other automation","Hatch "..tostring(hatch.enabled).." | "..tostring(hatch.last).." | Upgrade "..upgrades.mode.." | Train "..tostring(training.enabled))
     if not refreshed then add("Snapshot error",refreshError) end
     local state=eggLogic.logs or {entries={},dropped=0}
@@ -3866,7 +3906,7 @@ end
 function logUI.prepare()
     eggLogic.observeLogState()
     local ok,text=pcall(eggLogic.logReport)
-    if not ok then text="MY ROBLOX HUB v1.58\nLog snapshot error: "..tostring(text) end
+    if not ok then text="MY ROBLOX HUB v1.59\nLog snapshot error: "..tostring(text) end
     logUI.frozen=true;logUI.copyText=text;showTab("Log")
     local wrote,writeError=pcall(function() logUI.box.Text=text end)
     if not wrote then logUI.hint.Text="Text display failed: "..tostring(writeError):sub(1,100) end
@@ -3927,7 +3967,7 @@ logUI.clear.Activated:Connect(function()
     logUI.hint.Text="History cleared. Collection and current status are unchanged."
     logUI.refresh()
 end)
-eggLogic.log("hub.ready","v1.58 | automatic discovery | all automation OFF")
+eggLogic.log("hub.ready","v1.59 | automatic discovery | all automation OFF")
 priorityButton.Activated:Connect(function()
     if collectEgg.enabled or collectRunning or busy or placeState.manualPreparing or placementRecord.enabled then
         status.Text="Stop Collect before changing priority";return

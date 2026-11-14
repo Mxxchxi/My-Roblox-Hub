@@ -1,4 +1,4 @@
-# Steal An Egg — v1.58
+# Steal An Egg — v1.59
 
 PlaceId: 107778070777162. Load through the existing universal Loader.
 All automation and placement recording start OFF. Evidence below separates user-reported game results from offline checks.
@@ -388,3 +388,16 @@ Log includes Identity before/after, changed fields, conflicts, binding/candidate
 Validation: 403 engine tests, 36 full-file runtime tests, four Loader contracts and Lua 5.4 compilation pass. Added cases cover a full stable ranked hold, brief binding loss/recovery, sustained missing identity, immediate positive UID changes, duplicate records, field removal, no strategy switch after identity cancellation and unresolved identity at a short hold deadline. Live pickup success is not yet confirmed.
 
 Retest v1.58 with Pickup input AUTO. After a completed attempt/retry, send Log -> Copy log; if it cancels, include Hold identity and Identity before/after.
+
+
+## Return routes after confirmed pickup (v1.59)
+
+The user's v1.58 Log shows three game-reported field carries. Two returned `No ground return path` immediately, before MoveTo. A third stopped when the server reported that carrying had ended. The user clarified that monsters hitting the character caused the loss of carrying. That transition remains authoritative: no movement or delivery claim is synthesized after an egg is lost.
+
+Return navigation now tries its ground path first, then a jump-capable native path if necessary. Carrying routes allow up to 160 waypoints to cover the existing 600-stud route limit at five-stud spacing. Native jump waypoints are honoured only when grounded. When both mesh plans fail, return attempts Humanoid.MoveTo with the existing two-jump stall recovery and a 12-second attempt ceiling. It never tweens or teleports the loaded character. A real obstacle still causes a disclosed retry; fallback movement is not proof of a valid route or delivery. Non-return approaches retain the earlier planner limits.
+
+Log includes route plan outcomes/errors, waypoint counts/progress, fallback use, planned jumps and carry event transitions. No-monster detection is claimed; the event records what the game reported, and the user's report supplies the cause. Auto Place remains disabled.
+
+Validation: 413 engine tests, 36 runtime startup/control cases, four Loader contracts and Lua 5.4 compilation pass. New cases cover a jump-capable path after ground failure, preferred ground paths, a 121-waypoint route, airborne jump suppression, successful native fallback without delivery claims, blocked fallback recovery, OFF cancellation, egg loss cancellation, planner error visibility, the 12-second fallback ceiling and the 600-stud detour limit. These are offline simulations; live return still needs verification.
+
+Rerun the usual Loader and confirm v1.59. Collect should begin a return after a game-reported pickup; send Copy log if it remains stationary, especially Route history and Route plan lines.

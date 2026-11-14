@@ -247,7 +247,7 @@ end)
 check('Log tab renders compact current state and history',function()
     local f=fixture();f:run();f:button('Log').Activated:Fire()
     local text=f:logBox().Text
-    assert(text:find('v1.58',1,true) and text:find('hub.ready',1,true) and text:find('Collect: OFF',1,true))
+    assert(text:find('v1.59',1,true) and text:find('hub.ready',1,true) and text:find('Collect: OFF',1,true))
     assert(#text<=18000 and f:logBox().TextEditable and f:logBox().ClearTextOnFocus==false)
 end)
 check('Copy log verifies clipboard readback against the exact displayed snapshot',function()

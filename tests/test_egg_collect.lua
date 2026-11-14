@@ -43,7 +43,7 @@ env.Enum = {RaycastFilterType={Exclude="Exclude"},EasingStyle={Linear="Linear"},
 env.TweenInfo = {new=function(duration) return {duration=duration} end}
 env.collectLabel = {}
 env.math = setmetatable({clamp=function(n,lo,hi) return math.max(lo,math.min(hi,n)) end},{__index=math})
-local obstacle, movement, onWait, mockRoute, walkGoal, tweenCreated, plotFixture, worldParts, placedRenderRoot
+local obstacle, movement, onWait, mockRoute, walkGoal, tweenCreated, plotFixture, worldParts, placedRenderRoot, pathPlanHook, pathCalls
 function env.workspace:FindFirstChild(name) if name == "Plots" then return plotFixture elseif name=="PlacedEggRenders" then return placedRenderRoot end end
 env.player.UserId=42;env.player.Name="TestPlayer"
 function humanoid:MoveTo(goal) walkGoal=goal end
@@ -58,7 +58,9 @@ end
 env.Enum.Material={Air="Air"}
 env.Enum.PathStatus={Success="Success",NoPath="NoPath"}
 env.Enum.PathWaypointAction={Walk="Walk",Jump="Jump"}
-env.PathfindingService={CreatePath=function()
+env.PathfindingService={CreatePath=function(_,options)
+    pathCalls=pathCalls or {};pathCalls[#pathCalls+1]=options
+    if pathPlanHook then return pathPlanHook(options) end
     return {Status=mockRoute and "Success" or "NoPath",ComputeAsync=function() end,
         GetWaypoints=function() return mockRoute end}
 end}
@@ -81,7 +83,7 @@ end
 env.eggSelect={mode="Nearest",preferred={},catalog={entries={}},fieldSamples={}};env.placementRecord={enabled=false,last="OFF",records={}};env.placeState={enabled=false,slots={},attempts=0,observed=0};env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {pickupMethod=eggLogic.pickupMethod,performPickup=eggLogic.performPickup,releasePickupKey=eggLogic.releasePickupKey,candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply,resetField=eggLogic.resetField,fieldRecord=eggLogic.fieldRecord,fieldIndex=function() return eggLogic.field end,eggExport=eggLogic.export,toolRead=eggLogic.toolMetadata,toolCatalog=eggLogic.toolCatalog,epoch=function(value) eggLogic.collectEpoch=value end,log=eggLogic.log,logText=eggLogic.logText,logReport=eggLogic.logReport,logs=function() return eggLogic.logs end,bootstrap=eggLogic.bootstrapField,importSnapshot=eggLogic.importFieldSnapshot,snapshotTarget=eggLogic.snapshotTarget,autoData=eggLogic.ensureCollectData,autoStatus=eggLogic.discoveryStatus,definitions=eggLogic.inspectDefinitions,directory=eggLogic.assetDirectory,rarityDefer=eggLogic.deferRarity,rarityDeferred=eggLogic.rarityDeferred,rarityBuild=eggLogic.rebuildRarityIndex,rarityStatus=eggLogic.rarityStatus,directoryCost=eggLogic.directoryByteCost,definitionSnapshot=eggLogic.definitionSnapshot,definitionTarget=eggLogic.definitionTarget,sourceScan=eggLogic.scanSources,sourceScalar=eggLogic.sourceScalar,sourceReset=function() eggLogic.pickupKey=nil;eggLogic.sources=nil;eggLogic.sourceRunning=false;eggLogic.sourceEvents={};eggLogic.definitions=nil;eggLogic.definitionRunning=false;eggLogic.definitionPending=nil;eggLogic.rarityIndex=nil;eggLogic.rarityDeferrals=nil;eggLogic.autoDiscovery=nil;eggLogic.collectEpoch=0;eggLogic.logs=nil;eggLogic.lastLoggedState=nil;eggLogic.fieldSnapshot=nil;eggLogic.fieldSnapshotPending=nil end}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {walkNative=walkReturn,pickupMethod=eggLogic.pickupMethod,performPickup=eggLogic.performPickup,releasePickupKey=eggLogic.releasePickupKey,candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply,resetField=eggLogic.resetField,fieldRecord=eggLogic.fieldRecord,fieldIndex=function() return eggLogic.field end,eggExport=eggLogic.export,toolRead=eggLogic.toolMetadata,toolCatalog=eggLogic.toolCatalog,epoch=function(value) eggLogic.collectEpoch=value end,log=eggLogic.log,logText=eggLogic.logText,logReport=eggLogic.logReport,logs=function() return eggLogic.logs end,bootstrap=eggLogic.bootstrapField,importSnapshot=eggLogic.importFieldSnapshot,snapshotTarget=eggLogic.snapshotTarget,autoData=eggLogic.ensureCollectData,autoStatus=eggLogic.discoveryStatus,definitions=eggLogic.inspectDefinitions,directory=eggLogic.assetDirectory,rarityDefer=eggLogic.deferRarity,rarityDeferred=eggLogic.rarityDeferred,rarityBuild=eggLogic.rebuildRarityIndex,rarityStatus=eggLogic.rarityStatus,directoryCost=eggLogic.directoryByteCost,definitionSnapshot=eggLogic.definitionSnapshot,definitionTarget=eggLogic.definitionTarget,sourceScan=eggLogic.scanSources,sourceScalar=eggLogic.sourceScalar,sourceReset=function() eggLogic.pickupKey=nil;eggLogic.sources=nil;eggLogic.sourceRunning=false;eggLogic.sourceEvents={};eggLogic.definitions=nil;eggLogic.definitionRunning=false;eggLogic.definitionPending=nil;eggLogic.rarityIndex=nil;eggLogic.rarityDeferrals=nil;eggLogic.autoDiscovery=nil;eggLogic.collectEpoch=0;eggLogic.logs=nil;eggLogic.lastLoggedState=nil;eggLogic.fieldSnapshot=nil;eggLogic.fieldSnapshotPending=nil end}", "collect-engine", "t", env))()
 local hatchSource=assert(source:match("(local function hatchStep.-)\nconnections%["))
 local runHatch=assert(load(hatchSource.."\nreturn hatchStep", "hatch-step", "t", env))()
 local function prompt(distance)
@@ -94,6 +96,7 @@ local function prompt(distance)
     return p
 end
 local function reset()
+    pathPlanHook=nil;pathCalls={}
     funcs.resetField();funcs.sourceReset();env.UIS=nil;env.gui=nil;env.game={PlaceId=107778070777162};env.require=nil;env.task.spawn=function(fn) fn() end
     env.eggSelect={mode="Nearest",preferred={},catalog={entries={}},fieldSamples={}}
     funcs.stopRecord("reset");env.placementRecord={enabled=false,last="OFF",records={}}
@@ -311,11 +314,12 @@ check("carry clearing away from home is not delivery", function()
     assert(not env.collectEgg.deliveriesObserved and env.collectEgg.enabled and env.collectEgg.retry)
     assert(env.collectEgg.lastReturn.status == "Game no longer reports field egg carrying")
 end)
-check("return blocked by wall waits to retry with no delivery claim", function()
+check("missing mesh route tries native return without claiming delivery", function()
     funcs.home(position(40)); carrying=true; obstacle=true
     funcs.dispatch()
     assert(not movement and env.collectEgg.enabled and env.collectEgg.retry and not env.collectEgg.deliveriesObserved)
-    assert(env.collectEgg.lastReturn.status == "No ground return path")
+    assert(root.Position.X==40 and env.collectEgg.lastNavigation.fallback and #env.collectEgg.lastNavigation.plans==2)
+    assert(env.collectEgg.lastReturn.status == "Home reached but game did not accept the egg")
 end)
 check("arrival without game accepting egg stays ON and waits", function()
     funcs.home(position(40)); carrying=true
@@ -1479,7 +1483,7 @@ end)
 check("focused egg export includes prompt coordinates and prioritized field samples", function()
     qualityPrompt(3,nil,nil);funcs.record("RE/EggWorld/FieldEggShifted",fieldRecord("a",3,100))
     local result=funcs.eggExport()
-    assert(result.kind=="egg_data" and result.version=="1.58")
+    assert(result.kind=="egg_data" and result.version=="1.59")
     assert(result.eggSelection.catalog.entries[1].position.x==3 and result.eggSelection.catalog.fieldLinked==1)
     assert(result.eggSelection.fieldSamples[1].field.records[1].uid=="a")
 end)
@@ -2537,7 +2541,7 @@ end)
 check("log report explains missing UID bindings even when Rank data is loaded",function()
     automaticFixture();assert(funcs.autoData());qualityPrompt(3,nil,nil)
     local text=funcs.logReport()
-    assert(text:find("v1.58",1,true) and text:find("UID linked 0",1,true) and text:find("fresh 0",1,true))
+    assert(text:find("v1.59",1,true) and text:find("UID linked 0",1,true) and text:find("fresh 0",1,true))
     assert(text:find("Fresh unique field UID binding required",1,true))
 end)
 check("log report includes candidate UID category and game Rank without Directory dumps",function()
@@ -2878,5 +2882,70 @@ check("unresolved identity at a short hold deadline is not marked complete",func
     local p,m=holdFixture();p.HoldDuration=0;local r={};onWait=function() p.position=position(4) end
     assert(not funcs.performPickup(p,root,humanoid,character,m,r,{name="Prompt"}))
     assert(not r.holdCompleted and r.interrupted=="Target identity unavailable at hold completion" and p.ended==1)
+end)
+local function nativeRoute(points,status)
+    return {Status=status or "Success",ComputeAsync=function() end,GetWaypoints=function() return points end}
+end
+check("home return retries a missing ground path with a native jump-capable path",function()
+    carrying=true;obstacle=true
+    pathPlanHook=function(options)
+        return options.AgentCanJump and nativeRoute({{Position=position(10),Action=env.Enum.PathWaypointAction.Jump},{Position=position(40)}}) or nativeRoute(nil,"NoPath")
+    end
+    assert(funcs.walkNative(root,humanoid,character,position(40)))
+    assert(#pathCalls==2 and not pathCalls[1].AgentCanJump and pathCalls[2].AgentCanJump)
+    assert(root.Position.X==40 and humanoid.Jump and env.collectEgg.lastNavigation.pathJumps==1 and tweenCreated==0)
+end)
+check("a usable ground return path does not request jumping",function()
+    carrying=true;obstacle=true;mockRoute=detour(40)
+    assert(funcs.walkNative(root,humanoid,character,position(40)))
+    assert(#pathCalls==1 and not pathCalls[1].AgentCanJump and not humanoid.Jump)
+end)
+check("native return accepts 121 waypoints inside the 600 stud route limit",function()
+    carrying=true;obstacle=true;mockRoute={}
+    for i=0,120 do mockRoute[#mockRoute+1]={Position=position(i*4)} end
+    assert(funcs.walkNative(root,humanoid,character,position(480)))
+    assert(env.collectEgg.lastNavigation.completed==121 and root.Position.X==480)
+end)
+check("jump path never forces a jump while airborne",function()
+    carrying=true;obstacle=true;humanoid.FloorMaterial=env.Enum.Material.Air
+    pathPlanHook=function(options) return options.AgentCanJump and nativeRoute({{Position=position(10),Action=env.Enum.PathWaypointAction.Jump},{Position=position(40)}}) or nativeRoute(nil,"NoPath") end
+    assert(funcs.walkNative(root,humanoid,character,position(40)))
+    assert(not humanoid.Jump and not env.collectEgg.lastNavigation.pathJumps)
+end)
+check("a truly blocked mesh fallback stops after normal recovery and keeps Collect ON",function()
+    carrying=true;obstacle=true;onWait=function() walkGoal=root.Position end
+    local ok,reason=funcs.walkNative(root,humanoid,character,position(40))
+    assert(not ok and reason=="Walking stuck after two jump attempts" and env.collectEgg.enabled)
+    assert(env.collectEgg.lastNavigation.fallback and tweenCreated==0 and not env.collectEgg.deliveriesObserved)
+end)
+check("mesh fallback stops immediately when Collect turns OFF",function()
+    carrying=true;obstacle=true;onWait=function() env.collectEgg.enabled=false end
+    local ok,reason=funcs.walkNative(root,humanoid,character,position(40))
+    assert(not ok and reason=="Return cancelled" and not env.collectEgg.deliveriesObserved)
+end)
+check("losing an egg during fallback stops return without claiming redemption",function()
+    carrying=true;obstacle=true;onWait=function()
+        funcs.record("RE/EggWorld/FieldEggCarry",{IsCarrying=false});walkGoal=root.Position
+    end
+    local ok,reason=funcs.walkNative(root,humanoid,character,position(40))
+    assert(not ok and reason=="Game no longer reports field egg carrying" and not env.collectEgg.deliveriesObserved)
+    assert(funcs.logReport():find("carry.event | carrying false",1,true))
+end)
+check("planner errors fall back to normal movement with error details in Log",function()
+    carrying=true;obstacle=true;pathPlanHook=function() error("mesh unavailable") end
+    assert(funcs.walkNative(root,humanoid,character,position(40)))
+    local nav=env.collectEgg.lastNavigation
+    assert(nav.fallback and #nav.plans==2 and nav.plans[1].error:find("mesh unavailable",1,true))
+    assert(funcs.logReport():find("Route plan 2: jump true",1,true))
+end)
+check("fallback movement has a twelve second per-attempt ceiling",function()
+    carrying=true;obstacle=true;onWait=function() walkGoal=root.Position+position(0.1) end
+    local started=clock;local ok,reason=funcs.walkNative(root,humanoid,character,position(500))
+    assert(not ok and reason:find("Ground return stalled",1,true) and clock-started<13)
+end)
+check("a computed detour exceeding 600 studs remains rejected",function()
+    carrying=true;obstacle=true;mockRoute={{Position=position(400)},{Position=position(-400)},{Position=position(40)}}
+    local ok,reason=funcs.walkNative(root,humanoid,character,position(40))
+    assert(not ok and reason=="Ground route exceeds 600 studs" and not walkGoal)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
