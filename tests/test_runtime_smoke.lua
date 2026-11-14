@@ -240,4 +240,22 @@ check('Copy eggs includes live collection state to diagnose arrival without pick
     f:button('Collect: ON').Activated:Fire();f:button('Copy eggs').Activated:Fire()
     assert(not f.http.lastPayload.collection.enabled and f.http.lastPayload.collection.phase=='IDLE')
 end)
+check('scheduler keeps Collect ON and shows retry reason when home is unavailable',function()
+    local f=fixture();f:run();f:button('Collect: OFF').Activated:Fire()
+    local start=assert(source:find('task.spawn(function()\n    while active do\n        task.wait(1)',1,true))
+    local _,count=source:sub(1,start):gsub('\n','');local line=count+1;local scheduler
+    for _,job in ipairs(f.tasks) do if debug.getinfo(job.fn,'S').linedefined==line then scheduler=job.fn end end
+    assert(scheduler)
+    local waits=0
+    f.env.task.wait=function() waits=waits+1;if waits>1 then error('end simulated tick') end end
+    local ok,err=pcall(scheduler);assert(not ok and tostring(err):find('end simulated tick',1,true))
+    f:button('Collect: ON');f:button('Copy eggs').Activated:Fire()
+    local c=f.http.lastPayload.collection
+    assert(c.enabled and c.phase=='WAITING_RETRY' and c.retry.reason:find('Auto home not ready',1,true))
+    local visible=false
+    for _,obj in ipairs(f.objects) do if obj.ClassName=='TextLabel' and obj.Text:find('retry in',1,true) then visible=true end end
+    assert(visible)
+    f:button('Collect: ON').Activated:Fire();f:button('Collect: OFF');f:button('Copy eggs').Activated:Fire()
+    assert(not f.http.lastPayload.collection.enabled and not f.http.lastPayload.collection.retry)
+end)
 print(string.format('%d runtime startup tests passed',tests))

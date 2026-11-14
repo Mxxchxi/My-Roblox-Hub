@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.51
+-- Steal An Egg: structure diagnostics v1.52
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -55,7 +55,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.51", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.52", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -121,7 +121,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.51 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.52 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -167,7 +167,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.51 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.52 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -212,7 +212,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.51 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.52 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -1348,6 +1348,16 @@ local function collectCandidate(prompt, root, humanoid)
     if distance > math.min(prompt.MaxActivationDistance, 8) then return nil, "Outside activation range" end
     return distance, "Ready to attempt"
 end
+function eggLogic.attemptBlock(prompt)
+    local state=collectAttempts[prompt]
+    if not state then return nil end
+    local elapsed=os.clock()-state.time
+    if state.count>=3 then
+        if elapsed>=30 then collectAttempts[prompt]=nil;return nil end
+        return string.format("Attempt limit; retry in %.1fs",30-elapsed)
+    end
+    if elapsed<4 then return "Cooldown" end
+end
 local function approachCandidate(prompt, root, humanoid)
     if not prompt.Parent or not prompt:IsDescendantOf(workspace) then return nil end
     if prompt.Name ~= "CarryAreaEgg" or prompt.ActionText ~= "Steal" or prompt.ObjectText ~= "Egg"
@@ -1357,8 +1367,7 @@ local function approachCandidate(prompt, root, humanoid)
     if not position or math.abs(position.Y - root.Position.Y) > 6 then return nil end
     local distance = (root.Position - position).Magnitude
     if distance > 250 then return nil end
-    local state = collectAttempts[prompt]
-    if state and (state.count >= 3 or os.clock() - state.time < 4) then return nil end
+    if eggLogic.attemptBlock(prompt) then return nil end
     return distance, position
 end
 local function inCollectRange(prompt, root)
@@ -1631,8 +1640,7 @@ function eggLogic.choices(root,humanoid,readyOnly)
         local distance,position
         if readyOnly then
             distance=collectCandidate(prompt,root,humanoid);position=distance and promptPosition(prompt)
-            local state=collectAttempts[prompt]
-            if state and (state.count>=3 or os.clock()-state.time<4) then distance=nil end
+            if eggLogic.attemptBlock(prompt) then distance=nil end
         else distance,position=approachCandidate(prompt,root,humanoid) end
         if distance then
             local meta=eggLogic.metadata(prompt)
@@ -1833,9 +1841,9 @@ function eggLogic.refresh()
 end
 function eggLogic.export()
     eggLogic.refresh()
-    return {version="1.51",kind="egg_data",placeId=game.PlaceId,
+    return {version="1.52",kind="egg_data",placeId=game.PlaceId,
         collection={enabled=collectEgg.enabled,phase=collectEgg.phase,last=collectEgg.last,attempts=collectEgg.attempts,
-            promptWait=collectEgg.promptWait,lastMovement=collectEgg.lastMovement,lastInput=collectEgg.lastInput},
+            retry=eggLogic.retryStatus(),promptWait=collectEgg.promptWait,lastMovement=collectEgg.lastMovement,lastInput=collectEgg.lastInput},
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
             selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents,
             runtimeErrors={ui=eggLogic.lastUIError},definitionDiscovery=eggLogic.definitions}}
@@ -2005,11 +2013,22 @@ local function carryEvidence()
     end
     return evidence
 end
-local function pauseCollect(reason)
+local function retryCollect(reason,kind,seconds)
     cancelCollectTween(reason)
-    collectEgg.enabled = false
-    collectEgg.pausedReason, collectEgg.last, collectEgg.phase = reason, reason, "PAUSED"
-    if collectButton then collectButton.Text = "Collect: PAUSED"; collectButton.BackgroundColor3 = colors.panel end
+    if not active or not collectEgg.enabled then return end
+    seconds=seconds or 5
+    collectEgg.retry={reason=reason,kind=kind or "state",at=os.time(),untilClock=os.clock()+seconds,delaySeconds=seconds}
+    collectEgg.pausedReason=nil
+    collectEgg.last=reason..string.format("; retry in %ds",seconds)
+    collectEgg.phase="WAITING_RETRY"
+    if collectButton then collectButton.Text="Collect: ON";collectButton.BackgroundColor3=colors.purple end
+    collectLabel.Text=collectEgg.last
+end
+function eggLogic.retryStatus()
+    local retry=collectEgg.retry
+    if not retry then return nil end
+    return {reason=retry.reason,kind=retry.kind,at=retry.at,delaySeconds=retry.delaySeconds,
+        remainingSeconds=math.max(0,retry.untilClock-os.clock())}
 end
 local ownerKeys={"OwnerUserId","OwnerId","Owner","UserId","PlayerUserId","Player","Username","OwnerName"}
 local function signEvidence(plot)
@@ -2262,8 +2281,8 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target,allo
 end
 local function returnHome(root, humanoid, character)
     if autoHome.enabled then refreshAutoHome(true) end
-    if not deliveryPoint then pauseCollect("Holding field egg: set your delivery point in Settings; "..autoHome.reason); return end
-    if not root or not humanoid or humanoid.Health <= 0 then pauseCollect("Character unavailable during return"); return end
+    if not deliveryPoint then retryCollect("Holding field egg: set your delivery point in Settings; "..autoHome.reason); return end
+    if not root or not humanoid or humanoid.Health <= 0 then retryCollect("Character unavailable during return"); return end
     collectEgg.phase = "RETURNING"
     collectLabel.Text = "Returning field egg to configured delivery point"
     local delta = deliveryPoint-root.Position
@@ -2275,7 +2294,7 @@ local function returnHome(root, humanoid, character)
     if serverCarry and serverCarry.character==character and serverCarry.isCarrying then
         record.confirmationToReturnMs=math.max(0,(record.startedClock-serverCarry.clock)*1000)
     end
-    if delta.Magnitude > 600 then pauseCollect("Delivery point beyond 600 studs"); record.status=collectEgg.last; return end
+    if delta.Magnitude > 600 then retryCollect("Delivery point beyond 600 studs"); record.status=collectEgg.last; return end
     if delta.Magnitude > 1.5 then
         local reached,reason=walkReturn(root,humanoid,character,deliveryPoint)
         record.status,record.endDistance=reason,(root.Position-deliveryPoint).Magnitude
@@ -2299,7 +2318,7 @@ local function returnHome(root, humanoid, character)
         end
         if not reached then
             record.routeReason=reason
-            if active and collectEgg.enabled then pauseCollect(reason) end
+            if active and collectEgg.enabled then retryCollect(reason) end
             return
         end
     end
@@ -2309,7 +2328,7 @@ local function returnHome(root, humanoid, character)
     local deadline = os.clock()+5
     local clearSince
     while active and collectEgg.enabled and player.Character == character and humanoid.Health > 0 and os.clock()<deadline do
-        if (root.Position-deliveryPoint).Magnitude > 6 then pauseCollect("Moved away from delivery point"); record.status=collectEgg.last; return end
+        if (root.Position-deliveryPoint).Magnitude > 6 then retryCollect("Moved away from delivery point"); record.status=collectEgg.last; return end
         if fieldCarryActive() then clearSince=nil else clearSince=clearSince or os.clock() end
         if clearSince and os.clock()-clearSince>=1 then
             local added = before and newInventoryEggs(before,eggInventory()) or {}
@@ -2322,14 +2341,14 @@ local function returnHome(root, humanoid, character)
                 collectEgg.last=record.status
             else
                 record.status="Carry cleared at home but inventory delivery unconfirmed"
-                pauseCollect(record.status)
+                retryCollect(record.status)
             end
             return
         end
         task.wait(0.1)
     end
     record.status="Home reached but game did not accept the egg"
-    if active and collectEgg.enabled then pauseCollect(record.status .. "; check delivery point") end
+    if active and collectEgg.enabled then retryCollect(record.status .. "; check delivery point") end
 end
 -- HATCH_NAV_BEGIN
 hatchResolvePlot=resolveAutoHome
@@ -2467,7 +2486,7 @@ local function collectSnapshot(includeEvidence)
     if includeEvidence then eggLogic.refresh() end
     local snapshot = {enabled = collectEgg.enabled, attempts = collectEgg.attempts,
         last = collectEgg.last, lastInput = collectEgg.lastInput, promptWait=collectEgg.promptWait, scanning = busy,
-        unconfirmed = collectEgg.unconfirmed or 0, pausedReason = collectEgg.pausedReason,
+        unconfirmed = collectEgg.unconfirmed or 0, retry=eggLogic.retryStatus(),
         inventoryAdditionsObserved = collectEgg.inventoryAdditionsObserved or 0,
         phase = collectEgg.phase or "IDLE", deliveriesObserved = collectEgg.deliveriesObserved or 0,
         gameEvents = gameEvents, eventObserver = eventObserver,
@@ -2494,11 +2513,10 @@ local function collectSnapshot(includeEvidence)
             if not snapshot.nearest or distance < nearestDistance then
                 nearestDistance = distance
                 local _, reason = collectCandidate(prompt, root, humanoid)
-                local state = collectAttempts[prompt]
-                if snapshot.carrying then reason = "Egg held/equipped; collection paused"
+                local blocked=eggLogic.attemptBlock(prompt)
+                if snapshot.carrying then reason = "Egg held/equipped; checking delivery"
                 elseif busy then reason = "Scan in progress"
-                elseif state and state.count >= 3 then reason = "Attempt cap reached; toggle OFF/ON to reset"
-                elseif state and os.clock() - state.time < 4 then reason = "Cooldown" end
+                elseif blocked then reason = blocked end
                 snapshot.nearest = {path = prompt:GetFullName(), enabled = prompt.Enabled,
                     allowedDistance = math.min(prompt.MaxActivationDistance, 8),
                     holdDuration = prompt.HoldDuration, attempts = state and state.count or 0, reason = reason}
@@ -2517,9 +2535,26 @@ local function collectSnapshot(includeEvidence)
 end
 local function collectStep()
     if not active or not collectEgg.enabled or busy or hatchRunning or placeRunning or systemRunning then return end
+    local retry=collectEgg.retry
+    if retry then
+        local lateAdded=retry.kind=="pickup" and retry.inventoryBefore and retry.character==player.Character
+            and newInventoryEggs(retry.inventoryBefore,eggInventory()) or {}
+        if retry.kind=="pickup" and fieldCarryActive() and retry.character==player.Character then
+            collectEgg.tripInventory=retry.inventoryBefore;collectEgg.unconfirmed=0;collectEgg.retry=nil
+            if collectEgg.lastInput then collectEgg.lastInput.lateOutcome="Field carrying observed during retry wait" end
+        elseif #lateAdded>0 then
+            collectEgg.inventoryAdditionsObserved=(collectEgg.inventoryAdditionsObserved or 0)+#lateAdded
+            collectEgg.unconfirmed=0;collectEgg.retry=nil
+            if collectEgg.lastInput then collectEgg.lastInput.lateInventoryAdded=lateAdded end
+        elseif os.clock()<retry.untilClock then
+            collectEgg.phase="WAITING_RETRY"
+            collectEgg.last=retry.reason..string.format("; retry in %.1fs",retry.untilClock-os.clock())
+            return
+        else collectEgg.retry=nil;collectEgg.phase="SEEKING" end
+    end
     if autoHome.enabled and not deliveryPoint then
         refreshAutoHome(true)
-        if not deliveryPoint then pauseCollect("Auto home not ready: "..autoHome.reason);return end
+        if not deliveryPoint then retryCollect("Auto home not ready: "..autoHome.reason);return end
     end
     local carrying = carryState()
     local character = player.Character
@@ -2573,8 +2608,7 @@ local function collectStep()
             collectEgg.last="Rarity target changed; reselecting next cycle";return
         end
     end
-    local priorAttempt=collectAttempts[best]
-    if priorAttempt and (priorAttempt.count>=3 or os.clock()-priorAttempt.time<4) then return end
+    if eggLogic.attemptBlock(best) then return end
     if not bestDistance or not eggLogic.accepts(latest) or selected.meta.uid and latest.uid~=selected.meta.uid then
         collectEgg.last="Selected egg changed or no longer matches; rechecking next cycle";return
     end
@@ -2629,17 +2663,13 @@ local function collectStep()
     else
         record.outcome = "No carry state or new egg UID detected after input"
         collectEgg.unconfirmed = (collectEgg.unconfirmed or 0) + 1
-        if collectEgg.unconfirmed >= 1 then
-            collectEgg.enabled = false
-            collectEgg.pausedReason = "Pickup state uncertain; paused after one input to avoid moving while carrying"
-            if collectButton then
-                collectButton.Text = "Collect: PAUSED"
-                collectButton.BackgroundColor3 = colors.panel
-            end
-        end
+        if eggSelect.mode=="Rarity" then eggLogic.deferRarity(selected,"Pickup not confirmed") end
+        retryCollect(ok and "Pickup not confirmed; checking carry state before retry"
+            or ("Pickup input failed: "..tostring(record.error)),"pickup",5)
+        if collectEgg.retry then collectEgg.retry.inventoryBefore=inventoryBefore;collectEgg.retry.character=character end
     end
     recordGameEvent("collect.input.outcome",record.outcome)
-    if active then collectEgg.last = collectEgg.pausedReason or record.outcome end
+    if active and not collectEgg.retry then collectEgg.last = record.outcome end
     -- Continue the pickup/return cycle in this same dispatch, without waiting
     -- for the next one-second scheduler tick.
     if active and collectEgg.enabled and not busy and player.Character==character
@@ -2656,7 +2686,7 @@ local function dispatchCollect()
     if not ok then cancelCollectTween("Movement error") end
     if not ok and active then
         if holding then pcall(function() holding:InputHoldEnd() end);holding=nil end
-        pauseCollect("Collect error: " .. tostring(err):sub(1,100))
+        retryCollect("Collect error: " .. tostring(err):sub(1,100))
     end
 end
 local function setManualCarry(value)
@@ -2664,6 +2694,7 @@ local function setManualCarry(value)
     if manualCarry then
         cancelCollectTween("User marked carrying")
         collectEgg.enabled = false
+        collectEgg.retry=nil
         collectEgg.last = "User marked carrying; Collect OFF"
     end
 end
@@ -2970,7 +3001,8 @@ local function prepareManualPlacement()
     placeState.manualMode=true
     placeState.enabled=false;placeState.binding=false;placeState.preparingBind=false
     collectEgg.enabled=false;hatch.enabled=false;upgrades.mode="Off";training.enabled=false
-    collectEgg.phase="PAUSED"
+    collectEgg.retry=nil
+    collectEgg.phase="IDLE"
     cancelCollectTween("Manual placement handoff")
     if hatchWalking then
         local character=player.Character
@@ -3820,7 +3852,8 @@ connections[#connections+1] = player.CharacterAdded:Connect(function()
     lastRedeem=nil
     collectEgg.enabled=false
     collectEgg.tripInventory=nil
-    collectEgg.phase="PAUSED"
+    collectEgg.phase="IDLE"
+    collectEgg.retry=nil
     collectButton.Text="Collect: OFF"
     setManualCarry(false)
     carryMarker.Text = "Mark: I am carrying an egg"
@@ -3832,6 +3865,7 @@ collectButton.Activated:Connect(function()
     collectEgg.phase=collectEgg.enabled and "SEEKING" or "IDLE"
     collectAttempts = setmetatable({}, {__mode = "k"})
     collectEgg.unconfirmed, collectEgg.pausedReason = 0, nil
+    collectEgg.retry=nil
     collectButton.Text = collectEgg.enabled and "Collect: ON" or "Collect: OFF"
     collectButton.BackgroundColor3 = collectEgg.enabled and colors.purple or colors.panel
     collectEgg.last = collectEgg.enabled and "Waiting for nearby egg" or "OFF"
@@ -3919,7 +3953,8 @@ task.spawn(function()
             local ok, snapshot = pcall(collectSnapshot)
             if ok then
                 local n = snapshot.nearest
-                collectLabel.Text = "Collect: " .. (snapshot.carrying and "Egg held/equipped; collection paused"
+                collectLabel.Text = "Collect: " .. (snapshot.retry and snapshot.retry.remainingSeconds>0 and collectEgg.last
+                    or snapshot.carrying and "Egg held/equipped; checking delivery"
                     or snapshot.selectionBlocked or n and (n.reason .. (n.distance and string.format(" | %.1f/%.1f studs",n.distance,n.allowedDistance) or ""))
                     or snapshot.blocked or collectEgg.last) .. " | Attempts " .. collectEgg.attempts
             end
@@ -3943,7 +3978,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.51", placeId = game.PlaceId,
+        local report = {version = "1.52", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -4115,7 +4150,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.51", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.52", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -4145,7 +4180,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.51 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.52 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
