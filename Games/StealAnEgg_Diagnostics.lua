@@ -1,4 +1,4 @@
--- Steal An Egg: automation v1.57
+-- Steal An Egg: automation v1.58
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -54,7 +54,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.57", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.58", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -1499,6 +1499,44 @@ function eggLogic.pickupMethod(prompt,root)
     end
     return unavailable("Keyboard input backend unavailable")
 end
+function eggLogic.checkHoldIdentity(prompt,expected,record)
+    if not expected.uid then return true end
+    local latest=eggLogic.metadata(prompt)
+    local changed={}
+    for _,key in ipairs({"uid","assetCategory","rarityRank"}) do
+        if latest[key]~=nil and expected[key]~=nil and latest[key]~=expected[key] then changed[#changed+1]=key end
+    end
+    local conflicts={}
+    for key,value in pairs(latest.conflicts or {}) do if value then conflicts[#conflicts+1]=key end end
+    table.sort(conflicts)
+    local missing=not latest.uid or expected.assetCategory and not latest.assetCategory or expected.rarityRank and not latest.rarityRank
+    local binding=latest.fieldBinding or {}
+    if #changed>0 or #conflicts>0 or binding.method=="ambiguous_prompts" or (binding.candidateCount or 0)>1 then
+        record.identityDifference={kind="changed_or_conflicting",fields=table.concat(changed,","),conflicts=table.concat(conflicts,","),
+            expected={uid=expected.uid,category=expected.assetCategory,rank=expected.rarityRank},
+            actual={uid=latest.uid,category=latest.assetCategory,rank=latest.rarityRank},
+            binding=binding.method,candidateCount=binding.candidateCount,reason=latest.rarityBinding and latest.rarityBinding.reason}
+        return false,"Target UID, category or Rank changed during hold"
+    end
+    if missing then
+        if expected.fieldBinding and expected.fieldBinding.uid and not eggLogic.field.records[expected.uid] then
+            record.identityDifference={kind="field_record_removed",expected={uid=expected.uid,category=expected.assetCategory,rank=expected.rarityRank},
+                actual={uid=latest.uid,category=latest.assetCategory,rank=latest.rarityRank},binding=binding.method}
+            return false,"Selected field UID removed during hold"
+        end
+        record.identityMissingSince=record.identityMissingSince or os.clock()
+        record.identityDifference={kind="temporarily_unavailable",expected={uid=expected.uid,category=expected.assetCategory,rank=expected.rarityRank},
+            actual={uid=latest.uid,category=latest.assetCategory,rank=latest.rarityRank},binding=binding.method,
+            candidateCount=binding.candidateCount,reason=latest.rarityBinding and latest.rarityBinding.reason}
+        if os.clock()-record.identityMissingSince>=0.35 then return false,"Target identity unavailable for 0.35s during hold" end
+        return nil
+    end
+    if record.identityMissingSince then
+        record.identityRecoveries=(record.identityRecoveries or 0)+1
+        record.identityMissingSince=nil;record.identityDifference=nil
+    end
+    return true
+end
 function eggLogic.performPickup(prompt,root,humanoid,character,metadata,record,method)
     record.method=method.name;record.backend=method.backend;record.key=method.keyName;record.fallbackReason=method.fallbackReason
     record.holdDuration=prompt.HoldDuration;record.startedClock=os.clock()
@@ -1528,12 +1566,8 @@ function eggLogic.performPickup(prompt,root,humanoid,character,metadata,record,m
             end
             if carryVisible() or record.promptEvents.triggered>0 then break end
             if not collectCandidate(prompt,root,humanoid) then record.interrupted="Prompt removed, disabled or out of range";break end
-            if metadata.uid then
-                local latest=eggLogic.metadata(prompt)
-                if latest.uid~=metadata.uid or latest.assetCategory~=metadata.assetCategory or latest.rarityRank~=metadata.rarityRank then
-                    record.interrupted="Target UID, category or Rank changed during hold";break
-                end
-            end
+            local identityOK,identityError=eggLogic.checkHoldIdentity(prompt,metadata,record)
+            if identityOK==false then record.interrupted=identityError;break end
             if method.key then
                 if prompt.KeyboardKeyCode~=method.key then record.interrupted="Prompt key changed during hold";break end
                 local focusOK,box=pcall(function() return UIS:GetFocusedTextBox() end)
@@ -1550,6 +1584,11 @@ function eggLogic.performPickup(prompt,root,humanoid,character,metadata,record,m
             end
             task.wait(math.min(0.05,math.max(0.01,deadline-os.clock())))
         end
+        if not record.interrupted and not carryVisible() and record.promptEvents.triggered==0 then
+            local identityOK,identityError=eggLogic.checkHoldIdentity(prompt,metadata,record)
+            if identityOK~=true then record.interrupted=identityError or "Target identity unavailable at hold completion" end
+        end
+        record.holdCompleted=not record.interrupted and (os.clock()>=deadline or record.promptEvents.triggered>0)
     end)
     local released=true
     if method.name=="Keyboard" then
@@ -2037,7 +2076,7 @@ function eggLogic.refresh()
 end
 function eggLogic.export()
     eggLogic.refresh()
-    return {version="1.57",kind="egg_data",placeId=game.PlaceId,
+    return {version="1.58",kind="egg_data",placeId=game.PlaceId,
         collection={enabled=collectEgg.enabled,phase=collectEgg.phase,last=collectEgg.last,attempts=collectEgg.attempts,
             retry=eggLogic.retryStatus(),promptWait=collectEgg.promptWait,lastMovement=collectEgg.lastMovement,lastInput=collectEgg.lastInput},
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
@@ -2737,7 +2776,7 @@ function eggLogic.logReport()
     local catalog=eggSelect.catalog or {}
     local discovery=eggLogic.discoveryStatus()
     local field=catalog.fieldData or {}
-    local lines={"MY ROBLOX HUB | Steal An Egg v1.57 | place "..tostring(game.PlaceId)}
+    local lines={"MY ROBLOX HUB | Steal An Egg v1.58 | place "..tostring(game.PlaceId)}
     local function add(name,value) lines[#lines+1]=name..": "..eggLogic.logText(value,320) end
     add("Collect",string.format("%s | %s | mode %s | approach %s | attempts %d",collectEgg.enabled and "ON" or "OFF",
         collectEgg.phase or "IDLE",eggSelect.mode,collectEgg.approachMode or "Walk",collectEgg.attempts or 0))
@@ -2793,6 +2832,13 @@ function eggLogic.logReport()
         add("Input",tostring(input.status).." | "..tostring(input.outcome or "").." | "..tostring(input.error or ""))
         add("Input method",tostring(input.method).." | "..tostring(input.backend or "native hold").." | key "..tostring(input.key or "n/a").." | "..tostring(input.fallbackReason or ""))
         add("Input hold",tostring(input.holdSeconds or input.startedClock and math.max(0,os.clock()-input.startedClock) or 0).."s / "..tostring(input.holdDuration or "?").."s | released "..tostring(input.keyReleaseOK).." | "..tostring(input.interrupted or input.releaseError or ""))
+        if input.identityDifference then
+            local d=input.identityDifference;local before=d.expected or {};local after=d.actual or {}
+            add("Hold identity",tostring(d.kind).." | changed "..tostring(d.fields or "").." | conflicts "..tostring(d.conflicts or "").." | binding "..tostring(d.binding).." | candidates "..tostring(d.candidateCount).." | "..tostring(d.reason or ""))
+            add("Identity before","UID "..tostring(before.uid).." | category "..tostring(before.category).." | Rank "..tostring(before.rank))
+            add("Identity after","UID "..tostring(after.uid).." | category "..tostring(after.category).." | Rank "..tostring(after.rank))
+        end
+        add("Hold validation","completed "..tostring(input.holdCompleted==true).." | identity recoveries "..tostring(input.identityRecoveries or 0))
         local e=input.promptEvents or {}
         add("Prompt signals","observed "..tostring(e.observed or 0).." | began "..tostring(e.holdBegan or 0).." | ended "..tostring(e.holdEnded or 0).." | Triggered "..tostring(e.triggered or 0).." | client signals only")
     end
@@ -2957,7 +3003,7 @@ local function collectStep()
     else
         record.outcome = "No carry state or new egg UID detected after input"
         collectEgg.unconfirmed = (collectEgg.unconfirmed or 0) + 1
-        if (collectEgg.inputMode or "Auto")=="Auto" and record.method=="Prompt" and record.promptEvents.triggered==0 then
+        if (collectEgg.inputMode or "Auto")=="Auto" and record.method=="Prompt" and record.holdCompleted and record.promptEvents.triggered==0 then
             collectEgg.preferKeyboard=true
             eggLogic.log("collect.input.strategy","Prompt hold unconfirmed; try observed keyboard key next cycle when unambiguous")
         end
@@ -3820,7 +3866,7 @@ end
 function logUI.prepare()
     eggLogic.observeLogState()
     local ok,text=pcall(eggLogic.logReport)
-    if not ok then text="MY ROBLOX HUB v1.57\nLog snapshot error: "..tostring(text) end
+    if not ok then text="MY ROBLOX HUB v1.58\nLog snapshot error: "..tostring(text) end
     logUI.frozen=true;logUI.copyText=text;showTab("Log")
     local wrote,writeError=pcall(function() logUI.box.Text=text end)
     if not wrote then logUI.hint.Text="Text display failed: "..tostring(writeError):sub(1,100) end
@@ -3881,7 +3927,7 @@ logUI.clear.Activated:Connect(function()
     logUI.hint.Text="History cleared. Collection and current status are unchanged."
     logUI.refresh()
 end)
-eggLogic.log("hub.ready","v1.57 | automatic discovery | all automation OFF")
+eggLogic.log("hub.ready","v1.58 | automatic discovery | all automation OFF")
 priorityButton.Activated:Connect(function()
     if collectEgg.enabled or collectRunning or busy or placeState.manualPreparing or placementRecord.enabled then
         status.Text="Stop Collect before changing priority";return

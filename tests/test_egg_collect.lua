@@ -1479,7 +1479,7 @@ end)
 check("focused egg export includes prompt coordinates and prioritized field samples", function()
     qualityPrompt(3,nil,nil);funcs.record("RE/EggWorld/FieldEggShifted",fieldRecord("a",3,100))
     local result=funcs.eggExport()
-    assert(result.kind=="egg_data" and result.version=="1.57")
+    assert(result.kind=="egg_data" and result.version=="1.58")
     assert(result.eggSelection.catalog.entries[1].position.x==3 and result.eggSelection.catalog.fieldLinked==1)
     assert(result.eggSelection.fieldSamples[1].field.records[1].uid=="a")
 end)
@@ -2537,7 +2537,7 @@ end)
 check("log report explains missing UID bindings even when Rank data is loaded",function()
     automaticFixture();assert(funcs.autoData());qualityPrompt(3,nil,nil)
     local text=funcs.logReport()
-    assert(text:find("v1.57",1,true) and text:find("UID linked 0",1,true) and text:find("fresh 0",1,true))
+    assert(text:find("v1.58",1,true) and text:find("UID linked 0",1,true) and text:find("fresh 0",1,true))
     assert(text:find("Fresh unique field UID binding required",1,true))
 end)
 check("log report includes candidate UID category and game Rank without Directory dumps",function()
@@ -2824,5 +2824,59 @@ check("newer live updates are labelled as usable live data rather than empty sna
     end)
     assert(not funcs.bootstrap());assert(funcs.fieldIndex().count==1)
     assert(funcs.logReport():find("Field snapshot: live_updates",1,true))
+end)
+local function holdFixture()
+    rarityDefinitions({Bear=assetDefinition("Bear",240,"Mythic",6)})
+    env.eggSelect.mode="Rarity";local p=rarityPrompt(2,"bear","Bear");p.HoldDuration=1.2
+    return p,funcs.eggMeta(p)
+end
+check("stable UID-linked Rank holds for the full game duration",function()
+    local p,m=holdFixture();local r={}
+    assert(funcs.performPickup(p,root,humanoid,character,m,r,{name="Prompt"}))
+    assert(r.holdCompleted and r.holdSeconds>=1.2 and not r.identityDifference and p.ended==1)
+end)
+check("a brief missing positional binding recovers without cancelling the hold",function()
+    local p,m=holdFixture();local r={};local ticks=0
+    onWait=function() ticks=ticks+1;p.position=position(ticks<3 and 4 or 2) end
+    assert(funcs.performPickup(p,root,humanoid,character,m,r,{name="Prompt"}))
+    assert(r.holdCompleted and r.identityRecoveries==1 and not r.identityDifference and r.holdSeconds>=1.2)
+end)
+check("persistent missing binding stops with before and after identity evidence",function()
+    local p,m=holdFixture();local r={};onWait=function() p.position=position(4) end
+    assert(not funcs.performPickup(p,root,humanoid,character,m,r,{name="Prompt"}))
+    assert(r.interrupted=="Target identity unavailable for 0.35s during hold" and not r.holdCompleted and p.ended==1)
+    assert(r.identityDifference.expected.uid=="bear" and r.identityDifference.actual.uid==nil)
+    env.collectEgg.lastInput=r;local text=funcs.logReport()
+    assert(text:find("Identity before: UID bear",1,true) and text:find("Identity after: UID nil",1,true))
+end)
+check("a positively different field UID cancels immediately without a grace interval",function()
+    local p,m=holdFixture();local r={}
+    onWait=function()
+        local v=fieldRecord("new",2);v.AssetCategory="Bear"
+        funcs.record("RE/EggWorld/FieldEggGone","bear");funcs.record("RE/EggWorld/FieldEggShifted",v)
+    end
+    assert(not funcs.performPickup(p,root,humanoid,character,m,r,{name="Prompt"}))
+    assert(r.holdSeconds<0.35 and r.identityDifference.actual.uid=="new" and r.identityDifference.fields=="uid")
+end)
+check("ambiguous field records cancel without a grace interval",function()
+    local p,m=holdFixture();local r={}
+    onWait=function() local v=fieldRecord("duplicate",2);v.AssetCategory="Bear";funcs.record("RE/EggWorld/FieldEggShifted",v) end
+    assert(not funcs.performPickup(p,root,humanoid,character,m,r,{name="Prompt"}))
+    assert(r.holdSeconds<0.35 and r.identityDifference.candidateCount==2)
+end)
+check("field removal stops immediately rather than waiting out identity loss",function()
+    local p,m=holdFixture();local r={};onWait=function() funcs.record("RE/EggWorld/FieldEggGone","bear") end
+    assert(not funcs.performPickup(p,root,humanoid,character,m,r,{name="Prompt"}))
+    assert(r.holdSeconds<0.35 and r.identityDifference.kind=="field_record_removed")
+end)
+check("identity interruption does not misclassify Prompt as a failed input method",function()
+    local p=holdFixture();onWait=function() p.position=position(4) end
+    funcs.dispatch();assert(env.collectEgg.lastInput.interrupted and not env.collectEgg.preferKeyboard)
+    assert(env.collectEgg.enabled and env.collectEgg.retry and not env.collectEgg.lastInput.holdCompleted)
+end)
+check("unresolved identity at a short hold deadline is not marked complete",function()
+    local p,m=holdFixture();p.HoldDuration=0;local r={};onWait=function() p.position=position(4) end
+    assert(not funcs.performPickup(p,root,humanoid,character,m,r,{name="Prompt"}))
+    assert(not r.holdCompleted and r.interrupted=="Target identity unavailable at hold completion" and p.ended==1)
 end)
 print(string.format("%d Auto Collect tests passed", tests))

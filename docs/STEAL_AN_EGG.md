@@ -1,4 +1,4 @@
-# Steal An Egg — v1.57
+# Steal An Egg — v1.58
 
 PlaceId: 107778070777162. Load through the existing universal Loader.
 All automation and placement recording start OFF. Evidence below separates user-reported game results from offline checks.
@@ -375,3 +375,16 @@ Log reports the configured/preferred input method, backend/key, hold progress, r
 Validation: 395 engine tests, 36 full-file runtime tests and four Python Loader contracts, plus Lua 5.4 compilation. Keyboard tests cover the observed F key, focus/held-key/ambiguous-prompt blocks, cancellation/release and release recovery, backend failure fallback, signal cleanup, UID/range changes, delayed Auto strategy selection, and live-data/history Log labels. These are offline simulations; live pickup remains to be retested.
 
 Rerun the usual Loader, confirm v1.57 and leave Pickup input AUTO. Enable Collect, allow a completed attempt/retry, then use Log -> Copy log.
+
+
+## Distinguish changed identity from temporarily missing reads (v1.58)
+
+The user's v1.57 report confirms the observed E key reached a client hold-began signal, and key release succeeded. The latest 1.2-second hold stopped at 0.0555 seconds because the identity comparison failed. No carry/new inventory UID was observed. That report does not expose the actual values at interruption, so a true target change versus a temporary missing binding remains unverified.
+
+Hold validation now distinguishes positive UID/category/Rank differences and conflicting/ambiguous identity from missing metadata. Positive differences, duplicate position matches, ambiguous prompts and removal of the selected field UID still stop immediately. A missing binding gets at most 0.35 seconds to recover; it must match again before the hold is marked complete. Sustained missing data cancels and releases input. Cancellation, range/disabled checks, keyboard focus guards and release handling remain active throughout.
+
+Log includes Identity before/after, changed fields, conflicts, binding/candidate count, missing-data reason, hold completion and identity recovery count. Auto changes from Prompt to Keyboard only after a completed unconfirmed Prompt hold, rather than treating an early identity interruption as evidence that Prompt input failed.
+
+Validation: 403 engine tests, 36 full-file runtime tests, four Loader contracts and Lua 5.4 compilation pass. Added cases cover a full stable ranked hold, brief binding loss/recovery, sustained missing identity, immediate positive UID changes, duplicate records, field removal, no strategy switch after identity cancellation and unresolved identity at a short hold deadline. Live pickup success is not yet confirmed.
+
+Retest v1.58 with Pickup input AUTO. After a completed attempt/retry, send Log -> Copy log; if it cancels, include Hold identity and Identity before/after.
