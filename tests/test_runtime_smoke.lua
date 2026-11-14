@@ -81,7 +81,7 @@ local function fixture(options)
     local f={env=env,pg=pg,ui=ui,tasks=tasks,objects=objects,player=player,http=http}
     function f:run(s)
         if s then assert(load(s,'@Loader.lua','t',env))()
-        else self.probe=assert(load(source..'\nreturn {snapshot=collectSnapshot,logReport=eggLogic.logReport,log=eggLogic.log}', '@Games/StealAnEgg_Diagnostics.lua','t',env))() end
+        else self.probe=assert(load(source..'\nreturn {snapshot=collectSnapshot,logReport=eggLogic.logReport,log=eggLogic.log,bootstrap=eggLogic.bootstrapField}', '@Games/StealAnEgg_Diagnostics.lua','t',env))() end
     end
     function f:button(text) for _,obj in ipairs(pg:GetDescendants()) do if obj.ClassName=='TextButton' and obj.Text==text then return obj end end;error('Button missing: '..text) end
     function f:liveConnections() local n=0;for _,s in ipairs(signals) do for _,c in ipairs(s.handlers) do if c.Connected then n=n+1 end end end;return n end
@@ -247,7 +247,7 @@ end)
 check('Log tab renders compact current state and history',function()
     local f=fixture();f:run();f:button('Log').Activated:Fire()
     local text=f:logBox().Text
-    assert(text:find('v1.55',1,true) and text:find('hub.ready',1,true) and text:find('Collect: OFF',1,true))
+    assert(text:find('v1.56',1,true) and text:find('hub.ready',1,true) and text:find('Collect: OFF',1,true))
     assert(#text<=18000 and f:logBox().TextEditable and f:logBox().ClearTextOnFocus==false)
 end)
 check('Copy log verifies clipboard readback against the exact displayed snapshot',function()
@@ -301,6 +301,49 @@ check('Clear log invalidates an older queued clipboard snapshot',function()
     f:run();f:button('Copy log').Activated:Fire();local queued=f.tasks[#f.tasks]
     f:button('Clear log').Activated:Fire();queued.fn(table.unpack(queued.args));assert(writes==0)
     f:copyLog();assert(writes==1)
+end)
+local function snapshotModule(f,response)
+    local storage=f.env.game:GetService('ReplicatedStorage')
+    local packages=f.env.Instance.new('Folder');packages.Name='Packages';packages.Parent=storage
+    local networking=f.env.Instance.new('Folder');networking.Name='Networking';networking.Parent=packages
+    local remote=f.env.Instance.new('RemoteFunction');remote.Name='RF/EggWorld/AskFieldEggSnapshot';remote.Parent=networking
+    local calls=0
+    function remote:InvokeServer(...)
+        assert(select('#',...)==0);calls=calls+1
+        return type(response)=='function' and response() or response
+    end
+    return function() return calls end
+end
+local function bootstrapNow(f)
+    local old=f.env.task.spawn;f.env.task.spawn=function(fn) fn() end
+    local ok,result=pcall(f.probe.bootstrap);f.env.task.spawn=old
+    assert(ok,tostring(result));return result
+end
+check('full script snapshot bootstrap fills an initially empty cache and exposes the result in Copy log',function()
+    local f=fixture();autoModules(f)
+    local calls=snapshotModule(f,{Records={{Uid='snapshot-a',AssetCategory='Raccoon',Position={X=3,Y=0,Z=0}}}})
+    f:run();f:button('Collect: OFF').Activated:Fire();f:tick()
+    assert(bootstrapNow(f) and calls()==1 and f:state().autoCollect.eggSelection.catalog.fieldData.stored==1)
+    f:copyLog();assert(f:logBox().Text:find('Field snapshot: received',1,true) and f:logBox().Text:find('imported 1',1,true))
+end)
+check('OFF during snapshot invocation discards the reply and keeps the button OFF',function()
+    local f=fixture();autoModules(f)
+    snapshotModule(f,function()
+        f:button('Collect: ON').Activated:Fire()
+        return {Records={{Uid='snapshot-a',AssetCategory='Raccoon',Position={X=3,Y=0,Z=0}}}}
+    end)
+    f:run();f:button('Collect: OFF').Activated:Fire();f:tick()
+    assert(not bootstrapNow(f));f:button('Collect: OFF')
+    assert(f:state().autoCollect.eggSelection.catalog.fieldData.stored==0)
+end)
+check('snapshot invocation failure remains ON and produces a useful compact log',function()
+    local f=fixture();autoModules(f);snapshotModule(f,function() error('missing snapshot parameter') end)
+    f:run();f:button('Collect: OFF').Activated:Fire();f:tick();assert(not bootstrapNow(f));f:button('Collect: ON')
+    f:copyLog();assert(f:logBox().Text:find('missing snapshot parameter',1,true))
+end)
+check('copying the log does not invoke snapshot RPCs',function()
+    local f=fixture();autoModules(f);local calls=snapshotModule(f,{Records={}})
+    f:run();f:copyLog();f:copyLog();assert(calls()==0)
 end)
 print(string.format('%d runtime startup tests passed',tests))
 

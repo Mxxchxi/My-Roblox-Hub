@@ -1,4 +1,4 @@
--- Steal An Egg: automation v1.55
+-- Steal An Egg: automation v1.56
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -54,7 +54,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.55", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.56", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -1048,10 +1048,26 @@ end
 eggLogic.resetField()
 function eggLogic.removeField(uid)
     local field=eggLogic.field
+    eggLogic.markFieldChange(uid)
     if not field.records[uid] then return false end
     field.records[uid]=nil;field.count=field.count-1
     for i=#field.order,1,-1 do if field.order[i]==uid then table.remove(field.order,i) end end
     return true
+end
+function eggLogic.markFieldChange(uid)
+    local pending=eggLogic.fieldSnapshotPending
+    if not pending or pending.expired or type(uid)~="string" or pending.changed[uid] then return end
+    if pending.changeCount>=1024 then pending.changeLimit=true;return end
+    pending.changed[uid]=true;pending.changeCount=pending.changeCount+1
+end
+function eggLogic.putField(record)
+    local field=eggLogic.field
+    if not field.records[record.uid] then field.order[#field.order+1]=record.uid;field.count=field.count+1 end
+    field.records[record.uid]=record
+    while #field.order>256 do
+        local oldest=table.remove(field.order,1)
+        if field.records[oldest] then field.records[oldest]=nil;field.count=field.count-1;field.evicted=field.evicted+1 end
+    end
 end
 function eggLogic.fieldPoint(value)
     local ok,point=pcall(function()
@@ -1119,14 +1135,8 @@ function eggLogic.observeField(name,payload)
         result.processed=result.processed+1
         if #result.records<4 then result.records[#result.records+1]=record end
         if not record.uid then field.missingUid=field.missingUid+1;return end
-        if not field.records[record.uid] then
-            field.order[#field.order+1]=record.uid;field.count=field.count+1
-        end
-        field.records[record.uid]=record
-        while #field.order>256 do
-            local oldest=table.remove(field.order,1)
-            if field.records[oldest] then field.records[oldest]=nil;field.count=field.count-1;field.evicted=field.evicted+1 end
-        end
+        eggLogic.markFieldChange(record.uid)
+        eggLogic.putField(record)
     end
     if name=="RE/EggWorld/FieldEggShifted" then storeRecord(payload)
     else
@@ -1149,7 +1159,125 @@ function eggLogic.observeField(name,payload)
         end
     end
     result.recordsTruncated=result.processed>#result.records
+    if (result.removalsTruncated or result.updatesTruncated) and eggLogic.fieldSnapshotPending and not eggLogic.fieldSnapshotPending.expired then
+        eggLogic.fieldSnapshotPending.changeLimit=true
+    end
     return result
+end
+function eggLogic.snapshotTarget()
+    local storage=game:GetService("ReplicatedStorage")
+    local current=storage
+    for _,name in ipairs({"Packages","Networking"}) do
+        local found,count=nil,0
+        local children=current:GetChildren()
+        if #children>2048 then return nil,"Snapshot path scope limited" end
+        for _,child in ipairs(children) do if child.Name==name then found=child;count=count+1 end end
+        if count~=1 then return nil,"Snapshot networking path missing or ambiguous" end
+        current=found
+    end
+    local found,count=nil,0
+    local children=current:GetChildren()
+    if #children>2048 then return nil,"Snapshot remote scope limited" end
+    for _,child in ipairs(children) do
+        if child.Name=="RF/EggWorld/AskFieldEggSnapshot" then found=child;count=count+1 end
+    end
+    if count~=1 or not found:IsA("RemoteFunction") then return nil,"Observed field snapshot RemoteFunction missing or ambiguous" end
+    return found
+end
+function eggLogic.importFieldSnapshot(values,pending)
+    local result={imported=0,valid=0,invalid=0,conflicts=0,superseded=0,visited=0,limited=false}
+    local queue,index,seen,records,duplicates={{value=values,depth=0}},1,{},{},{}
+    local examined=0
+    while index<=#queue do
+        if not active or not collectEgg.enabled or (eggLogic.collectEpoch or 0)~=pending.epoch then result.cancelled=true;return result end
+        local item=queue[index];index=index+1
+        local value=item.value
+        if type(value)=="table" and not seen[value] then
+            seen[value]=true;result.visited=result.visited+1
+            local category=rawget(value,"AssetCategory")
+            local plain={AssetCategory=category}
+            for _,key in ipairs({"Uid","UID","EggUid","EggUID","FieldEggUid","Position","BottomCFrame","BoundsCFrame","CFrame","PivotCFrame",
+                "AreaId","IsCarried","IsCarrying","CarrierUserId"}) do plain[key]=rawget(value,key) end
+            local record=type(category)=="string" and eggLogic.fieldRecord(plain,"RF/EggWorld/AskFieldEggSnapshot",item.key)
+            if record and next(record.positions) then
+                if not record.uid or #category>120 then result.invalid=result.invalid+1
+                elseif type(item.key)=="string" and (item.key:match("^FirstAreaEgg_") or #item.key==32 and item.key:match("^%x+$")) and item.key~=record.uid then
+                    result.conflicts=result.conflicts+1
+                elseif records[record.uid] or duplicates[record.uid] then
+                    records[record.uid]=nil;duplicates[record.uid]=true;result.conflicts=result.conflicts+1
+                else records[record.uid]=record;result.valid=result.valid+1 end
+            elseif item.depth<6 then
+                for key,child in next,value do
+                    examined=examined+1
+                    if examined>4096 or #queue>=1024 then result.limited=true;break end
+                    if type(child)=="table" then queue[#queue+1]={value=child,key=key,depth=item.depth+1} end
+                end
+            else result.limited=true end
+        end
+    end
+    if pending.changeLimit then result.limited=true;return result end
+    for uid,record in pairs(records) do
+        if pending.changed[uid] then result.superseded=result.superseded+1
+        else eggLogic.putField(record);result.imported=result.imported+1 end
+    end
+    if result.imported>0 then eggLogic.field.lastEvent="RF/EggWorld/AskFieldEggSnapshot";eggLogic.field.lastAt=os.time() end
+    return result
+end
+function eggLogic.bootstrapField()
+    local state=eggLogic.fieldSnapshot or {attempts=0,status="idle",nextClock=0}
+    eggLogic.fieldSnapshot=state
+    if not active or not collectEgg.enabled or busy or os.clock()<state.nextClock then return false end
+    if eggLogic.fieldSnapshotPending and not eggLogic.fieldSnapshotPending.done then state.status="pending";return false end
+    local found,remote,reason=pcall(eggLogic.snapshotTarget)
+    if not found or not remote then
+        state.status="unavailable";state.result=nil;state.reason=tostring(found and reason or remote):sub(1,180);state.nextClock=os.clock()+15
+        eggLogic.log("field.snapshot.unavailable",state.reason);return false
+    end
+    state.attempts=state.attempts+1;state.status="requesting";state.reason=nil;state.result=nil
+    local pending={done=false,expired=false,epoch=eggLogic.collectEpoch or 0,changed={},changeCount=0}
+    eggLogic.fieldSnapshotPending=pending;busy=true
+    eggLogic.log("field.snapshot.request","Observed AskFieldEggSnapshot; no arguments")
+    collectEgg.last="Requesting current field egg snapshot"
+    task.spawn(function()
+        if pending.expired or not active or not collectEgg.enabled or (eggLogic.collectEpoch or 0)~=pending.epoch then pending.done=true;return end
+        local ok,a,b,c=pcall(function() return remote:InvokeServer() end)
+        if not pending.expired and active and collectEgg.enabled and (eggLogic.collectEpoch or 0)==pending.epoch then
+            pending.ok=ok;pending.values={a,b,c};pending.error=not ok and tostring(a):sub(1,180) or nil
+            pending.rejected=ok and a==false
+            pending.returnTypes=type(a).."/"..type(b).."/"..type(c)
+            local value=type(a)=="table" and a or type(b)=="table" and b or nil
+            if value then
+                local keys={}
+                for key in next,value do
+                    if #keys>=8 then break end
+                    keys[#keys+1]=eggLogic.logText(key,24)
+                end
+                pending.rootKeys=table.concat(keys,",")
+            end
+        end
+        pending.done=true
+    end)
+    local deadline=os.clock()+5
+    while active and collectEgg.enabled and (eggLogic.collectEpoch or 0)==pending.epoch and not pending.done and os.clock()<deadline do task.wait(0.05) end
+    busy=false;state.nextClock=os.clock()+15
+    if not active or not collectEgg.enabled or (eggLogic.collectEpoch or 0)~=pending.epoch then
+        pending.expired=true;state.status="cancelled";if pending.done then eggLogic.fieldSnapshotPending=nil end;return false
+    end
+    if not pending.done then pending.expired=true;state.status="timeout";state.reason="Snapshot response timed out; late output ignored"
+    elseif not pending.ok then state.status="error";state.reason=pending.error
+    elseif pending.rejected then state.status="rejected";state.reason=type(pending.values[2])=="string" and pending.values[2]:sub(1,180) or "Snapshot returned false"
+    else
+        local ok,result=pcall(eggLogic.importFieldSnapshot,pending.values,pending)
+        if ok then
+            state.result=result;state.status=result.cancelled and "cancelled" or result.imported>0 and "received" or "empty"
+            state.reason=result.imported==0 and "No usable new field records in snapshot" or nil
+        else state.status="invalid";state.reason=tostring(result):sub(1,180) end
+    end
+    pending.values=nil
+    state.returnTypes=pending.returnTypes;state.rootKeys=pending.rootKeys
+    if pending.done then eggLogic.fieldSnapshotPending=nil end
+    eggLogic.log("field.snapshot.result",state.status.." | imported "..tostring(state.result and state.result.imported or 0).." | "..tostring(state.reason or ""))
+    return state.status=="received"
 end
 function eggLogic.resolveField(subject,metadata)
     if subject.Name~="CarryAreaEgg" or metadata.conflicts.uid then return nil end
@@ -1782,7 +1910,7 @@ function eggLogic.refresh()
 end
 function eggLogic.export()
     eggLogic.refresh()
-    return {version="1.55",kind="egg_data",placeId=game.PlaceId,
+    return {version="1.56",kind="egg_data",placeId=game.PlaceId,
         collection={enabled=collectEgg.enabled,phase=collectEgg.phase,last=collectEgg.last,attempts=collectEgg.attempts,
             retry=eggLogic.retryStatus(),promptWait=collectEgg.promptWait,lastMovement=collectEgg.lastMovement,lastInput=collectEgg.lastInput},
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
@@ -2481,7 +2609,7 @@ function eggLogic.logReport()
     local catalog=eggSelect.catalog or {}
     local discovery=eggLogic.discoveryStatus()
     local field=catalog.fieldData or {}
-    local lines={"MY ROBLOX HUB | Steal An Egg v1.55 | place "..tostring(game.PlaceId)}
+    local lines={"MY ROBLOX HUB | Steal An Egg v1.56 | place "..tostring(game.PlaceId)}
     local function add(name,value) lines[#lines+1]=name..": "..eggLogic.logText(value,320) end
     add("Collect",string.format("%s | %s | mode %s | approach %s | attempts %d",collectEgg.enabled and "ON" or "OFF",
         collectEgg.phase or "IDLE",eggSelect.mode,collectEgg.approachMode or "Walk",collectEgg.attempts or 0))
@@ -2501,6 +2629,14 @@ function eggLogic.logReport()
         catalog.fieldLinked or 0,catalog.knownRarity or 0,catalog.accepted or 0,catalog.deferred or 0))
     add("Field cache",string.format("stored %d | fresh %d | last %s | age %ss",field.stored or 0,field.fresh or 0,
         tostring(field.lastEvent or "none"),type(field.lastAt)=="number" and tostring(math.max(0,os.time()-field.lastAt)) or "?"))
+    add("Event observer","hooked "..#eventObserver.hooked.." | errors "..#eventObserver.errors.." | "..tostring(eventObserver.errors[1] or ""))
+    if eggLogic.fieldSnapshot then
+        local state=eggLogic.fieldSnapshot;local result=state.result or {}
+        add("Field snapshot",state.status.." | requests "..state.attempts.." | imported "..tostring(result.imported or 0)
+            .." | invalid "..tostring(result.invalid or 0).." | conflicts "..tostring(result.conflicts or 0).." | newer events "..tostring(result.superseded or 0)
+            .." | limited "..tostring(result.limited==true))
+        add("Snapshot detail",tostring(state.returnTypes or "").." | keys "..tostring(state.rootKeys or "").." | "..tostring(state.reason or ""))
+    end
     add("Home",tostring(autoHome.ready).." | point "..tostring(deliveryPoint~=nil).." | "..autoHome.reason)
     local snapshotOK,snapshot=pcall(collectSnapshot,false)
     if snapshotOK and snapshot.nearest then
@@ -2511,6 +2647,9 @@ function eggLogic.logReport()
         local e=catalog.entries[i];local m=e.metadata
         add("Candidate "..i,"UID "..tostring(m.uid or "?").." | "..tostring(m.assetCategory or "?").." | Rank "..tostring(m.rarityRank or "?")
             .." | enabled "..tostring(e.enabled).." | accepted "..tostring(e.eligibleForMode).." | "..tostring(e.blockedReason or m.rarityBinding and m.rarityBinding.reason or m.fieldBinding and m.fieldBinding.method or ""))
+        if m.fieldBinding and m.fieldBinding.candidateCount then
+            add("Binding "..i,tostring(m.fieldBinding.method).." | matching records "..m.fieldBinding.candidateCount)
+        end
     end
     if collectEgg.retry then add("Retry",collectEgg.retry.reason.." | remaining "..tostring(eggLogic.retryStatus().remainingSeconds).."s") end
     if collectEgg.promptWait then add("Prompt wait",collectEgg.promptWait.status.." | UID "..tostring(collectEgg.promptWait.uid)) end
@@ -2574,6 +2713,11 @@ local function collectStep()
     end
     collectEgg.phase="SEEKING"
     local all=eggLogic.refresh()
+    if eggSelect.mode=="Rarity" and (eggSelect.catalog.total or 0)>0 and (eggSelect.catalog.fieldLinked or 0)==0 then
+        eggLogic.bootstrapField()
+        if not active or not collectEgg.enabled or player.Character~=character then return end
+        all=eggLogic.refresh()
+    end
     local best,bestDistance,selected
     local deferredAtSelection={}
     if eggSelect.mode=="Nearest" then
@@ -3532,7 +3676,7 @@ end
 function logUI.prepare()
     eggLogic.observeLogState()
     local ok,text=pcall(eggLogic.logReport)
-    if not ok then text="MY ROBLOX HUB v1.55\nLog snapshot error: "..tostring(text) end
+    if not ok then text="MY ROBLOX HUB v1.56\nLog snapshot error: "..tostring(text) end
     logUI.frozen=true;logUI.copyText=text;showTab("Log")
     local wrote,writeError=pcall(function() logUI.box.Text=text end)
     if not wrote then logUI.hint.Text="Text display failed: "..tostring(writeError):sub(1,100) end
@@ -3593,7 +3737,7 @@ logUI.clear.Activated:Connect(function()
     logUI.hint.Text="History cleared. Collection and current status are unchanged."
     logUI.refresh()
 end)
-eggLogic.log("hub.ready","v1.55 | automatic discovery | all automation OFF")
+eggLogic.log("hub.ready","v1.56 | automatic discovery | all automation OFF")
 priorityButton.Activated:Connect(function()
     if collectEgg.enabled or collectRunning or busy or placeState.manualPreparing or placementRecord.enabled then
         status.Text="Stop Collect before changing priority";return
@@ -3704,6 +3848,7 @@ collectButton.Activated:Connect(function()
     eggLogic.log("collect.toggle",collectEgg.enabled and ("ON | "..eggSelect.mode.." | "..collectEgg.approachMode) or "OFF by user")
     eggLogic.collectEpoch=(eggLogic.collectEpoch or 0)+1
     if collectEgg.enabled and eggLogic.autoDiscovery then eggLogic.autoDiscovery.nextReadClock=0 end
+    if collectEgg.enabled and eggLogic.fieldSnapshot then eggLogic.fieldSnapshot.nextClock=0 end
     if collectEgg.enabled then eggLogic.rarityDeferrals=nil;collectEgg.promptWait=nil end
     collectEgg.phase=collectEgg.enabled and "SEEKING" or "IDLE"
     collectAttempts = setmetatable({}, {__mode = "k"})
