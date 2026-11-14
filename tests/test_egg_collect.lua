@@ -81,7 +81,7 @@ end
 env.eggSelect={mode="Nearest",preferred={},catalog={entries={}},fieldSamples={}};env.placementRecord={enabled=false,last="OFF",records={}};env.placeState={enabled=false,slots={},attempts=0,observed=0};env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply,resetField=eggLogic.resetField,fieldRecord=eggLogic.fieldRecord,fieldIndex=function() return eggLogic.field end,eggExport=eggLogic.export,toolRead=eggLogic.toolMetadata,toolCatalog=eggLogic.toolCatalog,definitions=eggLogic.inspectDefinitions,directory=eggLogic.assetDirectory,rarityDefer=eggLogic.deferRarity,rarityDeferred=eggLogic.rarityDeferred,rarityBuild=eggLogic.rebuildRarityIndex,rarityStatus=eggLogic.rarityStatus,directoryCost=eggLogic.directoryByteCost,definitionSnapshot=eggLogic.definitionSnapshot,definitionTarget=eggLogic.definitionTarget,sourceScan=eggLogic.scanSources,sourceScalar=eggLogic.sourceScalar,sourceReset=function() eggLogic.sources=nil;eggLogic.sourceRunning=false;eggLogic.sourceEvents={};eggLogic.definitions=nil;eggLogic.definitionRunning=false;eggLogic.definitionPending=nil;eggLogic.rarityIndex=nil;eggLogic.rarityDeferrals=nil end}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply,resetField=eggLogic.resetField,fieldRecord=eggLogic.fieldRecord,fieldIndex=function() return eggLogic.field end,eggExport=eggLogic.export,toolRead=eggLogic.toolMetadata,toolCatalog=eggLogic.toolCatalog,epoch=function(value) eggLogic.collectEpoch=value end,autoData=eggLogic.ensureCollectData,autoStatus=eggLogic.discoveryStatus,definitions=eggLogic.inspectDefinitions,directory=eggLogic.assetDirectory,rarityDefer=eggLogic.deferRarity,rarityDeferred=eggLogic.rarityDeferred,rarityBuild=eggLogic.rebuildRarityIndex,rarityStatus=eggLogic.rarityStatus,directoryCost=eggLogic.directoryByteCost,definitionSnapshot=eggLogic.definitionSnapshot,definitionTarget=eggLogic.definitionTarget,sourceScan=eggLogic.scanSources,sourceScalar=eggLogic.sourceScalar,sourceReset=function() eggLogic.sources=nil;eggLogic.sourceRunning=false;eggLogic.sourceEvents={};eggLogic.definitions=nil;eggLogic.definitionRunning=false;eggLogic.definitionPending=nil;eggLogic.rarityIndex=nil;eggLogic.rarityDeferrals=nil;eggLogic.autoDiscovery=nil;eggLogic.collectEpoch=0 end}", "collect-engine", "t", env))()
 local hatchSource=assert(source:match("(local function hatchStep.-)\nconnections%["))
 local runHatch=assert(load(hatchSource.."\nreturn hatchStep", "hatch-step", "t", env))()
 local function prompt(distance)
@@ -1479,7 +1479,7 @@ end)
 check("focused egg export includes prompt coordinates and prioritized field samples", function()
     qualityPrompt(3,nil,nil);funcs.record("RE/EggWorld/FieldEggShifted",fieldRecord("a",3,100))
     local result=funcs.eggExport()
-    assert(result.kind=="egg_data" and result.version=="1.52")
+    assert(result.kind=="egg_data" and result.version=="1.53")
     assert(result.eggSelection.catalog.entries[1].position.x==3 and result.eggSelection.catalog.fieldLinked==1)
     assert(result.eggSelection.fieldSamples[1].field.records[1].uid=="a")
 end)
@@ -2425,5 +2425,98 @@ check("retry exports show reason and decreasing remaining time without exposing 
     assert(not r.retry.inventoryBefore and not r.retry.character)
     local before=r.retry.remainingSeconds;clock=clock+1
     assert(funcs.snapshot().retry.remainingSeconds<before)
+end)
+local function automaticFixture()
+    local _,assets,rarity=definitionFixture();local calls=0
+    env.require=function(module)
+        calls=calls+1
+        if module==assets then return {Directory={A=assetDefinition("A",1),B=assetDefinition("B",1,"Secret",8)}} end
+        if module==rarity then return {Rarities={Rare={_id="Rare",DisplayName="Rare",Rank=3},Secret={_id="Secret",DisplayName="Secret",Rank=8}}} end
+        return {LiveRatePerSecond=function() error("must not invoke exported earnings") end}
+    end
+    env.eggSelect.mode="Rarity"
+    return function() return calls end
+end
+check("Collect automatically discovers definitions and picks the highest linked Rank without manual scanning",function()
+    local calls=automaticFixture()
+    local near=rarityPrompt(3,"a","A");local far=rarityPrompt(40,"b","B")
+    assert(calls()==0);funcs.dispatch()
+    assert(calls()==3 and far.began==1 and near.began==0 and env.collectEgg.enabled)
+    assert(funcs.autoStatus().status=="ready" and funcs.eggExport().eggSelection.definitionDiscovery.trigger=="collect_on")
+end)
+check("OFF never initializes game modules automatically",function()
+    local calls=automaticFixture();env.collectEgg.enabled=false
+    funcs.dispatch();assert(not funcs.autoData() and calls()==0)
+end)
+check("successful definitions are reused across Collect cycles and epoch changes",function()
+    local calls=automaticFixture();assert(funcs.autoData() and calls()==3)
+    env.collectEgg.enabled=false;funcs.epoch(1)
+    env.collectEgg.enabled=true;funcs.epoch(2)
+    assert(funcs.autoData() and calls()==3 and funcs.autoStatus().attempts==1)
+end)
+check("failed automatic reads retry with a fifteen second backoff while Collect stays ON",function()
+    automaticFixture();local calls=0;env.require=function() calls=calls+1;error("temporary module failure") end
+    assert(not funcs.autoData() and calls==3 and env.collectEgg.enabled)
+    for _=1,5 do assert(not funcs.autoData()) end
+    assert(calls==3 and funcs.autoStatus().retryInSeconds>0)
+    clock=clock+15.1;assert(not funcs.autoData() and calls==6 and env.collectEgg.enabled)
+end)
+check("OFF during automatic loading cancels observation and prevents pickup",function()
+    automaticFixture();local pending
+    env.task.spawn=function(fn) pending=fn end
+    onWait=function() env.collectEgg.enabled=false;funcs.epoch(1) end
+    local p=rarityPrompt(3,"a","A");funcs.dispatch()
+    assert(p.began==0 and not env.busy and funcs.autoStatus().status=="cancelled")
+    pending();assert(not funcs.rarityStatus().ready)
+end)
+check("rapid OFF ON epochs cannot apply results from an earlier automatic read",function()
+    local calls=automaticFixture();local pending
+    env.task.spawn=function(fn) pending=fn end
+    onWait=function() funcs.epoch(1) end
+    assert(not funcs.autoData() and calls()==0 and not env.busy)
+    pending();assert(not funcs.rarityStatus().ready)
+    onWait=nil;env.task.spawn=function(fn) fn() end
+    assert(funcs.autoData() and calls()==4)
+end)
+check("a timed out automatic module load is not duplicated while its task remains pending",function()
+    local calls=automaticFixture();local pending
+    env.task.spawn=function(fn) pending=fn end
+    assert(not funcs.autoData() and calls()==0)
+    clock=clock+15.1;assert(not funcs.autoData() and calls()==0)
+    pending();env.task.spawn=function(fn) fn() end;clock=clock+15.1
+    assert(funcs.autoData() and calls()==4)
+end)
+check("OFF during full Directory traversal cancels the automatic read",function()
+    local _,assets,rarity=definitionFixture();local directory={}
+    for i=1,300 do local key="A"..i;directory[key]=assetDefinition(key,1) end
+    env.require=function(module)
+        if module==assets then return {Directory=directory} end
+        if module==rarity then return {Rarities={Rare={_id="Rare",Rank=3}}} end
+        return {}
+    end
+    env.eggSelect.mode="Rarity";onWait=function() env.collectEgg.enabled=false end
+    assert(not funcs.autoData() and not env.busy and funcs.autoStatus().status=="cancelled")
+    assert(not funcs.rarityStatus().ready)
+end)
+check("new field eggs are linked and ranked from cached definitions without another read",function()
+    local calls=automaticFixture();assert(funcs.autoData())
+    local a=rarityPrompt(3,"a","A");local b=rarityPrompt(40,"b","B")
+    local choices=funcs.eggCatalog();assert(choices[1].prompt==b and calls()==3)
+    funcs.record("RE/EggWorld/FieldEggGone","b");env.promptCache[b]=nil
+    assert(funcs.eggCatalog()[1].prompt==a and calls()==3)
+end)
+check("Nearest collection detects live prompts without loading Rank modules",function()
+    local calls=automaticFixture();env.eggSelect.mode="Nearest"
+    local p=qualityPrompt(3,nil,nil);funcs.dispatch()
+    assert(p.began==1 and calls()==0 and funcs.autoStatus().status=="live_prompts")
+end)
+check("existing field carrying returns before attempting definition initialization",function()
+    local calls=automaticFixture();carrying=true;funcs.dispatch()
+    assert(calls()==0 and env.collectEgg.retry and env.collectEgg.enabled)
+end)
+check("automatic scan diagnostics expose readiness and retry without an Eggs UI",function()
+    local calls=automaticFixture();assert(funcs.autoData())
+    local d=funcs.snapshot().eggSelection.automaticDiscovery
+    assert(d.status=="ready" and not d.running and d.attempts==1 and d.retryInSeconds==0 and calls()==3)
 end)
 print(string.format("%d Auto Collect tests passed", tests))

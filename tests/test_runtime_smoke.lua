@@ -83,22 +83,41 @@ local function fixture(options)
     function f:button(text) for _,obj in ipairs(pg:GetDescendants()) do if obj.ClassName=='TextButton' and obj.Text==text then return obj end end;error('Button missing: '..text) end
     function f:liveConnections() local n=0;for _,s in ipairs(signals) do for _,c in ipairs(s.handlers) do if c.Connected then n=n+1 end end end;return n end
     function f:loaderStatus() local g=assert(pg:FindFirstChild('MyRobloxHub_LoaderStatus'));return g:FindFirstChildOfClass('TextLabel').Text end
+    function f:tick()
+        local start=assert(source:find('task.spawn(function()\n    while active do\n        task.wait(1)',1,true))
+        local _,count=source:sub(1,start):gsub('\n','');local scheduler
+        for _,job in ipairs(tasks) do if debug.getinfo(job.fn,'S').linedefined==count+1 then scheduler=job.fn end end
+        assert(scheduler)
+        local oldWait,oldSpawn=env.task.wait,env.task.spawn;local ticks=0
+        env.task.spawn=function(fn,...) fn(...) end
+        env.task.wait=function(seconds)
+            if seconds==1 then ticks=ticks+1;if ticks>1 then error('end simulated tick') end end
+        end
+        local ok,err=pcall(scheduler)
+        env.task.wait,env.task.spawn=oldWait,oldSpawn
+        assert(not ok and tostring(err):find('end simulated tick',1,true),tostring(err))
+    end
+    function f:short()
+        local oldSpawn=env.task.spawn;env.task.spawn=function(fn,...) fn(...) end
+        self:button('Copy short').Activated:Fire();env.task.spawn=oldSpawn
+        return assert(http.lastPayload)
+    end
     return f
 end
 local function check(name,fn) fn();tests=tests+1;print('PASS '..name) end
 check('full egg script constructs every tab and starts all automation OFF',function()
     local f=fixture();f:run();local gui=assert(f.pg:FindFirstChild('EggDiagnostics'))
     assert(gui.Enabled and gui.DisplayOrder==1000)
-    for _,name in ipairs({'Automation','Eggs','Placement','Diagnostics','Settings','Auto Hatch: OFF','Collect: OFF','Upgrade: OFF','Train: OFF','Auto Place: DISABLED','Scan eggs','Copy eggs'}) do f:button(name) end
+    for _,name in ipairs({'Automation','Placement','Diagnostics','Settings','Auto Hatch: OFF','Collect: OFF','Upgrade: OFF','Train: OFF','Auto Place: DISABLED','Priority: RARITY','Copy short'}) do f:button(name) end
 end)
 check('UI stays positively scaled while camera viewport is not ready',function()
     local f=fixture({width=1,height=1});f:run()
     for _,obj in ipairs(f.objects) do if obj.ClassName=='UIScale' then assert(obj.Scale>0 and obj.Scale<=1) end end
 end)
-check('all tabs and egg scan work before a character humanoid is available',function()
+check('remaining tabs and priority work before a character humanoid is available',function()
     local f=fixture();f:run()
-    for _,name in ipairs({'Eggs','Placement','Diagnostics','Settings','Automation'}) do f:button(name).Activated:Fire() end
-    f:button('Scan eggs').Activated:Fire();f:button('Mode: NEAREST').Activated:Fire();f:button('Mode: RARITY')
+    for _,name in ipairs({'Placement','Diagnostics','Settings','Automation'}) do f:button(name).Activated:Fire() end
+    f:button('Priority: RARITY').Activated:Fire();f:button('Priority: NEAREST')
 end)
 check('Alt hides and restores the window and leaves restore control accessible',function()
     local f=fixture();f:run();local frames={};for _,obj in ipairs(f.objects) do if obj.ClassName=='Frame' and obj.Parent==f.pg:FindFirstChild('EggDiagnostics') then frames[#frames+1]=obj end end
@@ -129,15 +148,6 @@ end)
 check('unsupported place never starts egg UI',function()
     local f=fixture({placeId=1});f:run(loader);assert(not f.pg:FindFirstChild('EggDiagnostics') and f:loaderStatus():find('Unsupported game',1,true))
 end)
-check('Egg list render faults are isolated and exported for diagnosis',function()
-    local f=fixture();f:run();local counter
-    for _,obj in ipairs(f.objects) do if obj.ClassName=='TextLabel' and obj.Text=='Not scanned' then counter=obj end end
-    assert(counter);counter.failWrite=true
-    f:button('Scan eggs').Activated:Fire()
-    f:button('Copy eggs').Activated:Fire()
-    assert(f.http.lastPayload.eggSelection.runtimeErrors.ui:find('mock UI write fault',1,true))
-    counter.failWrite=false;f:button('Scan eggs').Activated:Fire();assert(counter.Text:find('0 eggs',1,true))
-end)
 check('unexpected Hatch faults disable automation instead of retrying',function()
     local f=fixture();f:run();f:button('Auto Hatch: OFF').Activated:Fire()
     f.player.Character.failClassLookup=true;f:button('Test Hatch once').Activated:Fire()
@@ -147,115 +157,70 @@ check('unexpected Hatch faults disable automation instead of retrying',function(
     for _,obj in ipairs(f.objects) do if obj.ClassName=='TextLabel' and obj.Text:find('mock character lookup fault',1,true) then found=true end end
     assert(found)
 end)
-check('game data modules load only after the explicit button is clicked',function()
-    local f=fixture();local calls=0
-    f.env.require=function(module) calls=calls+1;return {name=module.Name,perSecond=12} end
+local function autoModules(f)
     local storage=f.env.game:GetService('ReplicatedStorage')
     local function make(class,name,parent) local obj=f.env.Instance.new(class);obj.Name=name;obj.Parent=parent;return obj end
     local data=make('Folder','Data',storage);make('ModuleScript','Assets',data);make('ModuleScript','Rarity',data)
     make('ModuleScript','AssetEarnings',make('Folder','Util',make('Folder','Shared',storage)))
-    f:run();assert(calls==0)
-    f.env.task.spawn=function(fn,...) fn(...) end
-    f:button('Read game data').Activated:Fire();assert(calls==3)
-    f:button('Copy eggs').Activated:Fire()
-    assert(f.http.lastPayload.eggSelection.definitionDiscovery.loaded==3)
-end)
-check('game data button blocks loading while automation is enabled',function()
-    local f=fixture();local calls=0;f.env.require=function() calls=calls+1;return {} end
-    f:run();f.env.task.spawn=function(fn,...) fn(...) end
-    f:button('Auto Hatch: OFF').Activated:Fire();f:button('Read game data').Activated:Fire()
-    assert(calls==0)
-end)
-check('game data UI shows Directory coverage and exports compact records',function()
-    local f=fixture()
+    local calls=0
     f.env.require=function(module)
-        if module.Name=='Assets' then
-            return {Directory={Raccoon={_id='Raccoon',DisplayName='Raccoon',EarningRate=45,
-                Egg={DisplayName='Raccoon Egg'},Rarity={_id='Rare',Rank=3},Icon='omit'}}}
-        end
-        return {}
-    end
-    local storage=f.env.game:GetService('ReplicatedStorage')
-    local function make(class,name,parent) local obj=f.env.Instance.new(class);obj.Name=name;obj.Parent=parent;return obj end
-    local data=make('Folder','Data',storage);make('ModuleScript','Assets',data);make('ModuleScript','Rarity',data)
-    make('ModuleScript','AssetEarnings',make('Folder','Util',make('Folder','Shared',storage)))
-    f:run();f.env.task.spawn=function(fn,...) fn(...) end
-    f:button('Read game data').Activated:Fire()
-    local found=false
-    for _,obj in ipairs(f.objects) do if obj.ClassName=='TextLabel' and obj.Text:find('Directory: 1/1',1,true) then found=true end end
-    assert(found)
-    f:button('Copy eggs').Activated:Fire()
-    local directory=f.http.lastPayload.eggSelection.definitionDiscovery.modules[1].directory
-    assert(directory.complete and directory.entries[1].EarningRate==45 and not directory.entries[1].Icon)
-end)
-check('selection cycles all four modes without loading game modules',function()
-    local f=fixture();local loads=0;f.env.require=function() loads=loads+1;return {} end
-    f:run()
-    for _,mode in ipairs({'NEAREST','RARITY','INCOME','PREFERRED'}) do f:button('Mode: '..mode).Activated:Fire() end
-    f:button('Mode: NEAREST');assert(loads==0)
-end)
-check('Rarity mode before reading game data visibly explains the missing source',function()
-    local f=fixture();f:run();f:button('Mode: NEAREST').Activated:Fire()
-    local found=false
-    for _,obj in ipairs(f.objects) do
-        if obj.ClassName=='TextLabel' and obj.Text:find('Read game data first',1,true) then found=true end
-    end
-    assert(found)
-    f:button('Copy eggs').Activated:Fire()
-    local c=f.http.lastPayload.eggSelection.catalog
-    assert(c.mode=='Rarity' and c.knownRarity==0 and not c.rarityRanking.ready and not c.rarityRankingApplied)
-end)
-check('mode changes remain blocked during collection',function()
-    local f=fixture();f:run();f:button('Collect: OFF').Activated:Fire()
-    f:button('Mode: NEAREST').Activated:Fire();f:button('Mode: NEAREST')
-    f:button('Collect: ON').Activated:Fire();f:button('Mode: NEAREST').Activated:Fire();f:button('Mode: RARITY')
-end)
-check('reading actual rank tables refreshes Rarity readiness and exports provenance',function()
-    local f=fixture();local loads=0
-    f.env.require=function(module)
-        loads=loads+1
+        calls=calls+1
         if module.Name=='Assets' then return {Directory={Raccoon={_id='Raccoon',DisplayName='Raccoon',EarningRate=45,
             Egg={DisplayName='Raccoon Egg'},Rarity={_id='Rare',DisplayName='Rare',Rank=3}}}} end
         if module.Name=='Rarity' then return {Rarities={Rare={_id='Rare',DisplayName='Rare',Rank=3}}} end
-        return {LiveRatePerSecond=function() error('must not be called') end}
+        return {LiveRatePerSecond=function() error('must not call exported earnings') end}
     end
-    local storage=f.env.game:GetService('ReplicatedStorage')
-    local function make(class,name,parent) local obj=f.env.Instance.new(class);obj.Name=name;obj.Parent=parent;return obj end
-    local data=make('Folder','Data',storage);make('ModuleScript','Assets',data);make('ModuleScript','Rarity',data)
-    make('ModuleScript','AssetEarnings',make('Folder','Util',make('Folder','Shared',storage)))
-    f:run();f.env.task.spawn=function(fn,...) fn(...) end
-    f:button('Mode: NEAREST').Activated:Fire();f:button('Read game data').Activated:Fire()
-    local found=false
-    for _,obj in ipairs(f.objects) do if obj.ClassName=='TextLabel' and obj.Text:find('Rank data: 1 categories',1,true) then found=true end end
-    assert(found and loads==3)
-    f:button('Copy eggs').Activated:Fire()
-    local c=f.http.lastPayload.eggSelection.catalog
-    assert(c.rarityRanking.ready and c.rarityRanking.categories==1 and c.knownRarity==0 and not c.rarityRankingApplied)
+    return function() return calls end
+end
+check('Eggs tab and all manual egg controls are removed',function()
+    local f=fixture();f:run()
+    for _,name in ipairs({'Eggs','Scan eggs','Read game data','Scan sources','Copy eggs','Apply names','Mode: NEAREST'}) do
+        assert(not pcall(function() f:button(name) end))
+    end
 end)
-check('Copy eggs includes live collection state to diagnose arrival without pickup',function()
-    local f=fixture();f:run();f:button('Collect: OFF').Activated:Fire()
-    f:button('Copy eggs').Activated:Fire()
-    local c=f.http.lastPayload.collection
-    assert(c.enabled and c.phase=='SEEKING' and c.attempts==0 and c.last=='Waiting for nearby egg')
-    f:button('Collect: ON').Activated:Fire();f:button('Copy eggs').Activated:Fire()
-    assert(not f.http.lastPayload.collection.enabled and f.http.lastPayload.collection.phase=='IDLE')
+check('Copy short shows current Collect state without first scanning diagnostics',function()
+    local f=fixture();local calls=autoModules(f);f:run();local r=f:short()
+    assert(r.version=='1.53' and r.kind=='collect_status' and not r.autoCollect.enabled and calls()==0)
+    assert(r.autoCollect.eggSelection.mode=='Rarity' and r.autoCollect.eggSelection.automaticDiscovery.status=='idle')
 end)
-check('scheduler keeps Collect ON and shows retry reason when home is unavailable',function()
-    local f=fixture();f:run();f:button('Collect: OFF').Activated:Fire()
-    local start=assert(source:find('task.spawn(function()\n    while active do\n        task.wait(1)',1,true))
-    local _,count=source:sub(1,start):gsub('\n','');local line=count+1;local scheduler
-    for _,job in ipairs(f.tasks) do if debug.getinfo(job.fn,'S').linedefined==line then scheduler=job.fn end end
-    assert(scheduler)
-    local waits=0
-    f.env.task.wait=function() waits=waits+1;if waits>1 then error('end simulated tick') end end
-    local ok,err=pcall(scheduler);assert(not ok and tostring(err):find('end simulated tick',1,true))
-    f:button('Collect: ON');f:button('Copy eggs').Activated:Fire()
-    local c=f.http.lastPayload.collection
-    assert(c.enabled and c.phase=='WAITING_RETRY' and c.retry.reason:find('Auto home not ready',1,true))
-    local visible=false
-    for _,obj in ipairs(f.objects) do if obj.ClassName=='TextLabel' and obj.Text:find('retry in',1,true) then visible=true end end
-    assert(visible)
-    f:button('Collect: ON').Activated:Fire();f:button('Collect: OFF');f:button('Copy eggs').Activated:Fire()
-    assert(not f.http.lastPayload.collection.enabled and not f.http.lastPayload.collection.retry)
+check('Collect ON automatically loads rank modules and exports complete data through Copy short',function()
+    local f=fixture();local calls=autoModules(f);f:run();assert(calls()==0)
+    f:button('Collect: OFF').Activated:Fire();f:tick();f:button('Collect: ON')
+    local r=f:short();local e=r.autoCollect.eggSelection
+    assert(calls()==3 and e.automaticDiscovery.status=='ready' and e.definitionDiscovery.trigger=='collect_on')
+    assert(e.catalog.rarityRanking.ready and e.definitionDiscovery.modules[1].directory.exported==1)
+end)
+check('automatic discovery reuses cached definitions after OFF ON',function()
+    local f=fixture();local calls=autoModules(f);f:run()
+    f:button('Collect: OFF').Activated:Fire();f:tick()
+    f:button('Collect: ON').Activated:Fire();f:button('Collect: OFF').Activated:Fire();f:tick()
+    assert(calls()==3 and f:short().autoCollect.enabled)
+end)
+check('priority toggle switches Rarity Nearest without loading modules and is locked while Collect runs',function()
+    local f=fixture();local calls=autoModules(f);f:run()
+    f:button('Priority: RARITY').Activated:Fire();f:button('Priority: NEAREST')
+    f:button('Collect: OFF').Activated:Fire();f:button('Priority: NEAREST').Activated:Fire();f:button('Priority: NEAREST')
+    f:tick();assert(calls()==0)
+    f:button('Collect: ON').Activated:Fire();f:button('Priority: NEAREST').Activated:Fire();f:button('Priority: RARITY')
+end)
+check('automatic read failure leaves Collect ON and avoids repeated immediate loading',function()
+    local f=fixture();autoModules(f);local calls=0;f.env.require=function() calls=calls+1;error('temporary load failure') end
+    f:run();f:button('Collect: OFF').Activated:Fire();f:tick();assert(calls==3)
+    f:tick();f:button('Collect: ON');assert(calls==3)
+    local e=f:short().autoCollect.eggSelection
+    assert(e.automaticDiscovery.status=='waiting_retry' and e.automaticDiscovery.retryInSeconds>0)
+end)
+check('OFF during module initialization cancels discovery and prevents later collection',function()
+    local f=fixture();autoModules(f);local calls=0
+    f.env.require=function() calls=calls+1;f:button('Collect: ON').Activated:Fire();return {} end
+    f:run();f:button('Collect: OFF').Activated:Fire();f:tick();f:button('Collect: OFF')
+    local r=f:short();assert(calls==1 and not r.autoCollect.enabled and r.autoCollect.eggSelection.automaticDiscovery.status=='cancelled')
+end)
+check('scheduler keeps Collect ON and displays retry reason when home is unavailable',function()
+    local f=fixture();f:run();f:button('Priority: RARITY').Activated:Fire()
+    f:button('Collect: OFF').Activated:Fire();f:tick();f:button('Collect: ON')
+    local r=f:short();assert(r.autoCollect.enabled and r.autoCollect.phase=='WAITING_RETRY')
+    assert(r.autoCollect.retry.reason:find('Auto home not ready',1,true))
+    f:button('Collect: ON').Activated:Fire();local stopped=f:short();assert(not stopped.autoCollect.enabled and not stopped.autoCollect.retry)
 end)
 print(string.format('%d runtime startup tests passed',tests))

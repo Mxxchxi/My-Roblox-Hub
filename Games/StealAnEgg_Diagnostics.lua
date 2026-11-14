@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.52
+-- Steal An Egg: structure diagnostics v1.53
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -55,7 +55,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.52", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.53", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -65,44 +65,22 @@ local automation = create("Frame", frame, {Position = UDim2.fromOffset(176,76), 
 local diagnostics = create("Frame", frame, {Position = automation.Position, Size = automation.Size, BackgroundTransparency = 1, Visible = false})
 local settings = create("Frame", frame, {Position = automation.Position, Size = automation.Size, BackgroundTransparency = 1, Visible = false})
 local placement = create("Frame", frame, {Position=automation.Position,Size=automation.Size,BackgroundTransparency=1,Visible=false})
-local eggUI={}
-eggUI.page = create("Frame",frame,{Position=automation.Position,Size=automation.Size,BackgroundTransparency=1,Visible=false})
 local tabs = {}
 local function showTab(name)
     automation.Visible = name == "Automation"
     diagnostics.Visible = name == "Diagnostics"
     settings.Visible = name == "Settings"
     placement.Visible = name == "Placement"
-    eggUI.page.Visible = name == "Eggs"
     for key, b in pairs(tabs) do
         b.BackgroundColor3 = key == name and colors.purple or colors.panel
     end
 end
-for i, name in ipairs({"Automation", "Eggs", "Placement", "Diagnostics", "Settings"}) do
+for i, name in ipairs({"Automation", "Placement", "Diagnostics", "Settings"}) do
     local b = control(sidebar,name,8,42+(i-1)*44,132,36)
     tabs[name] = b
     b.Activated:Connect(function() showTab(name) end)
 end
 label(sidebar,"By Yuu Walker",12,344,130,22,11,colors.muted)
-label(eggUI.page,"Egg data & selection",0,0,560,30,22)
-eggUI.scanButton=control(eggUI.page,"Scan eggs",0,42,120,34)
-eggUI.modeButton=control(eggUI.page,"Mode: NEAREST",130,42,200,34)
-eggUI.countLabel=label(eggUI.page,"Not scanned",340,42,220,34,11,colors.muted)
-label(eggUI.page,"Preferred egg names, best first (comma separated)",0,84,560,22,12)
-eggUI.preferredBox=create("TextBox",eggUI.page,{Position=UDim2.fromOffset(0,110),Size=UDim2.fromOffset(568,30),
-    BackgroundColor3=colors.panel,TextColor3=colors.text,Font=Enum.Font.Gotham,TextSize=12,
-    ClearTextOnFocus=false,Text="",PlaceholderText="Whale Shark Egg, Bear Egg",TextXAlignment=Enum.TextXAlignment.Left})
-round(eggUI.preferredBox,6)
-eggUI.applyButton=control(eggUI.page,"Apply names",0,150,120,32)
-eggUI.copyButton=control(eggUI.page,"Copy eggs",130,150,120,32)
-eggUI.sourceButton=control(eggUI.page,"Scan sources",260,150,130,32)
-eggUI.dataButton=control(eggUI.page,"Read game data",400,150,166,32)
-eggUI.hint=label(eggUI.page,"Read game data loads 3 game modules; Copy eggs exports observations.",0,183,568,14,10,colors.muted)
-eggUI.hint.TextWrapped=true
-eggUI.scroll=create("ScrollingFrame",eggUI.page,{Position=UDim2.fromOffset(0,198),Size=UDim2.fromOffset(568,184),
-    BackgroundColor3=colors.panel,BorderSizePixel=0,ScrollBarThickness=5,AutomaticCanvasSize=Enum.AutomaticSize.XY,CanvasSize=UDim2.new()})
-eggUI.listLabel=label(eggUI.scroll,"Scan to inspect nearby eggs. Unknown values stay unknown.",8,6,548,24,12,colors.text)
-eggUI.listLabel.AutomaticSize=Enum.AutomaticSize.XY;eggUI.listLabel.TextYAlignment=Enum.TextYAlignment.Top
 label(automation,"Automation",0,0,400,30,22)
 label(automation,"Egg collection • native ground return",0,32,565,22,12,colors.muted)
 local rows = {}
@@ -121,7 +99,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.52 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.53 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -167,7 +145,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.52 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.53 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -212,7 +190,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.52 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.53 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -281,13 +259,14 @@ local hatchLabel = label(automation,"Auto approaches ready eggs in your base.",1
 hatchLabel.TextWrapped = true
 local carryMarker = control(settings,"Mark: I am carrying an egg",0,268,270,34)
 local approachButton=control(settings,"Approach: WALK",0,310,270,30)
+local priorityButton=control(settings,"Priority: RARITY",280,310,250,30)
 local setHomeButton = control(settings,"Set delivery point here",0,346,260,30)
 local clearHomeButton = control(settings,"Auto home: ON",270,346,260,30)
 local upgradeToggle=control(rows[3],"Upgrade: OFF",410,8,146,34)
 local trainToggle=control(rows[4],"Train: OFF",410,8,146,34)
 local collectButton = control(rows[2], "Collect: OFF", 410,8,146,34)
 local collectEgg = {enabled = false, attempts = 0, last = "OFF", approachMode="Walk"}
-local eggSelect={mode="Nearest",preferred={},catalog={entries={}},fieldSamples={}}
+local eggSelect={mode="Rarity",preferred={},catalog={entries={}},fieldSamples={}}
 local upgrades={mode="Off",observed=0,last="OFF",lastAction=-math.huge}
 local training={enabled=false,last="OFF",events=0}
 local systemRunning=false
@@ -761,7 +740,7 @@ function eggLogic.directoryByteCost(value)
     for key,item in next,value do size=size+eggLogic.directoryByteCost(tostring(key))+eggLogic.directoryByteCost(item)+2 end
     return size
 end
-function eggLogic.assetDirectory(value)
+function eggLogic.assetDirectory(value,shouldContinue)
     local result={sourcePath="ReplicatedStorage.Data.Assets.Directory",entries={},scanned=0,exported=0,
         invalidRecords=0,fieldErrors=0,textTruncated=0,recordsWithMissingFields=0,identityConflicts=0,
         complete=false,traversalComplete=false,requiredFieldsComplete=false,
@@ -772,7 +751,7 @@ function eggLogic.assetDirectory(value)
     result.status="reading"
     local lastKey,ids=nil,{}
     while true do
-        if not active then result.status="cancelled";break end
+        if not active or shouldContinue and not shouldContinue() then result.status="cancelled";break end
         local key,definition=next(directory,lastKey)
         if key==nil then result.traversalComplete=true;result.totalEntries=result.scanned;result.status="captured";break end
         lastKey=key
@@ -849,13 +828,13 @@ function eggLogic.directoryStatus()
         end
     end
 end
-function eggLogic.inspectDefinitions()
+function eggLogic.inspectDefinitions(shouldContinue)
     if eggLogic.definitionRunning or busy or eggLogic.sourceRunning then return false,"Another scan is running" end
     if eggLogic.definitionPending and not eggLogic.definitionPending.done then return false,"Previous game module is still loading; no duplicate load started" end
     eggLogic.definitionRunning=true;busy=true
     eggLogic.rarityIndex=nil -- A new observation must not reuse the previous ranks.
     local report={at=os.time(),status="running",modules={},scope="explicit_game_module_exports",loadMethod="require",moduleInitializationMayRun=true,
-        rankingApplied=false,exportedFunctionsInvoked=false,categories={},limits={modules=3,secondsPerModule=5}}
+        trigger=shouldContinue and "collect_on" or "diagnostic",rankingApplied=false,exportedFunctionsInvoked=false,categories={},limits={modules=3,secondsPerModule=5}}
     eggLogic.definitions=report
     local ok,err=pcall(function()
         local seen={}
@@ -879,7 +858,7 @@ function eggLogic.inspectDefinitions()
         for _,parts in ipairs(eggLogic.definitionPaths) do
             local entry={path="ReplicatedStorage."..table.concat(parts,"."),status="not_started"}
             report.modules[#report.modules+1]=entry
-            if not active then report.status="cancelled";break end
+            if not active or shouldContinue and not shouldContinue() then report.status="cancelled";break end
             local module,reason=eggLogic.definitionTarget(storage,parts)
             if not module then entry.status=reason
             elseif type(require)~="function" then entry.status="require_unavailable"
@@ -889,13 +868,13 @@ function eggLogic.inspectDefinitions()
                 eggLogic.definitionPending=pending
                 task.spawn(function()
                     local loaded,value=pcall(require,module)
-                    if not pending.expired and active then pending.ok=loaded;pending.value=value end
+                    if not pending.expired and active and (not shouldContinue or shouldContinue()) then pending.ok=loaded;pending.value=value end
                     pending.done=true
                 end)
                 local deadline=os.clock()+5
-                while active and not pending.done and os.clock()<deadline do task.wait(0.05) end
-                if not active or not pending.done then
-                    pending.expired=true;entry.status=active and "timeout" or "cancelled"
+                while active and (not shouldContinue or shouldContinue()) and not pending.done and os.clock()<deadline do task.wait(0.05) end
+                if not active or shouldContinue and not shouldContinue() or not pending.done then
+                    pending.expired=true;entry.status=active and (not shouldContinue or shouldContinue()) and "timeout" or "cancelled"
                     entry.lateResultIgnored=true;report.status=entry.status
                     -- Do not cancel a game's module initialization or invoke exported functions.
                     break
@@ -904,7 +883,7 @@ function eggLogic.inspectDefinitions()
                 if pending.ok then
                     entry.status="loaded"
                     if parts[1]=="Data" and parts[2]=="Assets" then
-                        entry.directory=eggLogic.assetDirectory(pending.value)
+                        entry.directory=eggLogic.assetDirectory(pending.value,shouldContinue)
                         entry.snapshot=eggLogic.definitionSnapshot(pending.value,report.categories,{Directory=true,ByRarity=true,Personalities=true})
                     else entry.snapshot=eggLogic.definitionSnapshot(pending.value,report.categories) end
                 else entry.status="load_error";entry.error=tostring(pending.value):sub(1,180) end
@@ -918,6 +897,7 @@ function eggLogic.inspectDefinitions()
         if entry.status=="loaded" then report.loaded=report.loaded+1 else report.unavailableOrFailed=report.unavailableOrFailed+1 end
     end
     if not ok then report.status="error";report.error=tostring(err):sub(1,180)
+    elseif shouldContinue and not shouldContinue() then report.status="cancelled"
     elseif report.status=="running" then report.status="finished" end
     report.finishedAt=os.time()
     eggLogic.rebuildRarityIndex()
@@ -929,7 +909,7 @@ end
 function eggLogic.rebuildRarityIndex()
     local report=eggLogic.definitions
     local index={report=report,byCategory={},summary={ready=false,categories=0,skipped=0,issues={},
-        reason="Read game data first",metric="game Rarity.Rank",tieBreak="distance ascending",at=os.time()}}
+        reason="Collect ON loads Rank data automatically",metric="game Rarity.Rank",tieBreak="distance ascending",at=os.time()}}
     eggLogic.rarityIndex=index
     if not report or report.status~="finished" then return index.summary end
     local directory,rarities
@@ -939,7 +919,7 @@ function eggLogic.rebuildRarityIndex()
             rarities=type(module.snapshot.data)=="table" and module.snapshot.data.Rarities
         end
     end
-    index.summary.reason="Complete Directory and Rarity observations required; use Read game data"
+    index.summary.reason="Complete Directory and Rarity observations required; automatic scan will retry"
     if not directory or not directory.traversalComplete or directory.status~="captured" or type(directory.entries)~="table"
         or directory.exported~=#directory.entries or directory.scanned~=directory.exported
         or directory.totalEntries~=directory.exported or type(rarities)~="table" then return index.summary end
@@ -983,6 +963,42 @@ end
 function eggLogic.rarityStatus()
     if not eggLogic.rarityIndex or eggLogic.rarityIndex.report~=eggLogic.definitions then eggLogic.rebuildRarityIndex() end
     return eggLogic.rarityIndex.summary
+end
+function eggLogic.ensureCollectData()
+    local state=eggLogic.autoDiscovery or {attempts=0,status="idle",nextReadClock=0}
+    eggLogic.autoDiscovery=state
+    if eggSelect.mode~="Rarity" then state.status="live_prompts";state.reason=nil;return true end
+    if eggLogic.rarityStatus().ready then state.status="ready";state.reason=nil;return true end
+    if not active or not collectEgg.enabled then return false end
+    if os.clock()<state.nextReadClock then
+        collectEgg.last=string.format("Rarity data unavailable; automatic scan retries in %.1fs",state.nextReadClock-os.clock())
+        collectEgg.phase="DISCOVERING";return false
+    end
+    if busy or state.running or hatchRunning or systemRunning or placeRunning then return false end
+    local epoch=eggLogic.collectEpoch or 0
+    state.running=true;state.status="loading";state.attempts=state.attempts+1;state.startedAt=os.time()
+    collectEgg.phase="DISCOVERING";collectEgg.last="Automatically reading game Rank data"
+    collectLabel.Text=collectEgg.last
+    local worked,ok,result=pcall(eggLogic.inspectDefinitions,function()
+        return active and collectEgg.enabled and (eggLogic.collectEpoch or 0)==epoch
+    end)
+    if not worked then result=ok;ok=false;eggLogic.definitionRunning=false;busy=false end
+    state.running=false;state.finishedAt=os.time()
+    state.lastResult=type(result)=="table" and result.status or tostring(result)
+    if not active or not collectEgg.enabled or (eggLogic.collectEpoch or 0)~=epoch then state.status="cancelled";return false end
+    if ok and eggLogic.rarityStatus().ready then
+        state.status="ready";state.reason=nil;state.nextReadClock=0;collectEgg.last="Automatic Rank scan ready";return true
+    end
+    state.status="waiting_retry";state.nextReadClock=os.clock()+15
+    state.reason=worked and eggLogic.rarityStatus().reason or tostring(result):sub(1,180)
+    collectEgg.last="Rarity data unavailable; automatic scan retries in 15s"
+    return false
+end
+function eggLogic.discoveryStatus()
+    local state=eggLogic.autoDiscovery or {}
+    return {status=state.status or "idle",running=state.running==true,attempts=state.attempts or 0,
+        lastResult=state.lastResult,reason=state.reason,startedAt=state.startedAt,finishedAt=state.finishedAt,
+        retryInSeconds=math.max(0,(state.nextReadClock or 0)-os.clock())}
 end
 function eggLogic.bindRarity(data)
     local status=eggLogic.rarityStatus()
@@ -1841,12 +1857,12 @@ function eggLogic.refresh()
 end
 function eggLogic.export()
     eggLogic.refresh()
-    return {version="1.52",kind="egg_data",placeId=game.PlaceId,
+    return {version="1.53",kind="egg_data",placeId=game.PlaceId,
         collection={enabled=collectEgg.enabled,phase=collectEgg.phase,last=collectEgg.last,attempts=collectEgg.attempts,
             retry=eggLogic.retryStatus(),promptWait=collectEgg.promptWait,lastMovement=collectEgg.lastMovement,lastInput=collectEgg.lastInput},
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
             selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents,
-            runtimeErrors={ui=eggLogic.lastUIError},definitionDiscovery=eggLogic.definitions}}
+            automaticDiscovery=eggLogic.discoveryStatus(),definitionDiscovery=eggLogic.definitions}}
 end
 function eggLogic.apply(text)
     if #text>1200 then return false,"Preferred list is too long" end
@@ -1955,7 +1971,7 @@ local function approachEgg(root, humanoid,preferred)
         end
     end
     collectEgg.last = routeAttempts>0 and ("No reachable route: "..(collectEgg.lastNavigation and collectEgg.lastNavigation.status or "unknown"))
-        or #choices==0 and eggSelect.mode~="Nearest" and "No egg has readable data matching the selected mode; inspect Eggs / Copy short"
+        or #choices==0 and eggSelect.mode~="Nearest" and "No egg has readable data matching the selected mode; use Diagnostics / Copy short"
         or "No reachable egg within 250 studs on this level"
     return false
 end
@@ -2491,8 +2507,8 @@ local function collectSnapshot(includeEvidence)
         phase = collectEgg.phase or "IDLE", deliveriesObserved = collectEgg.deliveriesObserved or 0,
         gameEvents = gameEvents, eventObserver = eventObserver,
         upgrades=upgrades,training=training,placementRecording=placementRecord,
-        selectionBlocked=eggSelect.mode~="Nearest" and eggSelect.catalog.accepted==0 and ("No readable egg matches "..eggSelect.mode.."; inspect Eggs / Copy short") or nil,
-        eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents,runtimeErrors={ui=eggLogic.lastUIError},definitionDiscovery=eggLogic.definitions},
+        selectionBlocked=eggSelect.mode~="Nearest" and eggSelect.catalog.accepted==0 and ("No readable egg matches "..eggSelect.mode.."; use Diagnostics / Copy short") or nil,
+        eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents,automaticDiscovery=eggLogic.discoveryStatus(),definitionDiscovery=eggLogic.definitions},
         autoPlace={available=AUTO_PLACE_ENABLED,manualMode=placeState and placeState.manualMode,manualPreparing=placeState and placeState.manualPreparing,binding=placeState and placeState.binding,preparingBind=placeState and placeState.preparingBind,enabled=placeState and placeState.enabled,attempts=placeState and placeState.attempts,observed=placeState and placeState.observed,last=placeState and placeState.last,lastAttempt=placeState and placeState.lastAttempt,autoMark=placeState and placeState.autoMark,lastSlotPick=placeState and placeState.lastSlotPick},
         autoHome={enabled=autoHome.enabled,ready=autoHome.ready,reason=autoHome.reason,report=includeEvidence and autoHome.report or nil},
         lastReturn = collectEgg.lastReturn, lastNavigation = collectEgg.lastNavigation, lastWalkingRecovery=lastWalkingRecovery, deliveryPointSet = deliveryPoint ~= nil,
@@ -2514,6 +2530,7 @@ local function collectSnapshot(includeEvidence)
                 nearestDistance = distance
                 local _, reason = collectCandidate(prompt, root, humanoid)
                 local blocked=eggLogic.attemptBlock(prompt)
+                local state=collectAttempts[prompt]
                 if snapshot.carrying then reason = "Egg held/equipped; checking delivery"
                 elseif busy then reason = "Scan in progress"
                 elseif blocked then reason = blocked end
@@ -2552,10 +2569,6 @@ local function collectStep()
             return
         else collectEgg.retry=nil;collectEgg.phase="SEEKING" end
     end
-    if autoHome.enabled and not deliveryPoint then
-        refreshAutoHome(true)
-        if not deliveryPoint then retryCollect("Auto home not ready: "..autoHome.reason);return end
-    end
     local carrying = carryState()
     local character = player.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -2563,6 +2576,12 @@ local function collectStep()
     if carrying.manualMarker then collectEgg.last="User carrying marker active"; return end
     if carrying.fieldCarrying then returnHome(root,humanoid,character); return end
     if carrying.equippedEgg then collectEgg.last="Inventory egg equipped; unequip to collect field eggs"; return end
+    if not eggLogic.ensureCollectData() then return end
+    if not active or not collectEgg.enabled or player.Character~=character then return end
+    if autoHome.enabled and not deliveryPoint then
+        refreshAutoHome(true)
+        if not deliveryPoint then retryCollect("Auto home not ready: "..autoHome.reason);return end
+    end
     collectEgg.phase="SEEKING"
     local all=eggLogic.refresh()
     local best,bestDistance,selected
@@ -2583,7 +2602,9 @@ local function collectStep()
         if not selected or not selected.accepted then
             collectEgg.last=eggSelect.mode=="Rarity" and (eggSelect.catalog.deferred or 0)>0
                 and "Rarity: game prompts temporarily unavailable; waiting to retry"
-                or "No egg has readable data matching "..eggSelect.mode.."; inspect Eggs / Copy short"
+                or eggSelect.mode=="Rarity" and eggSelect.catalog.fieldData.fresh==0
+                and "Rank data ready; waiting for live egg updates automatically"
+                or "No egg has readable data matching "..eggSelect.mode.."; use Diagnostics / Copy short"
             return
         end
         if not collectCandidate(selected.prompt,root,humanoid) then
@@ -3521,121 +3542,13 @@ local function dispatchSystems()
     if upgrades.mode~="Off" or training.enabled then status.Text=(upgrades.mode~="Off" and upgrades.last or "").." | "..(training.enabled and training.last or "") end
 end
 -- AUTO_COLLECT_ENGINE_END
-function eggUI.render()
-    eggUI.modeButton.Text="Mode: "..string.upper(eggSelect.mode)
-    local catalog=eggSelect.catalog
-    eggUI.countLabel.Text=string.format("%d eggs / %d linked / %d %s",catalog.total or 0,catalog.fieldLinked or 0,
-        eggSelect.mode=="Rarity" and (catalog.knownRarity or 0) or (catalog.knownIncome or 0),eggSelect.mode=="Rarity" and "ranked" or "income")
-    local lines={"Nearby eggs (sorted for "..eggSelect.mode..")"}
-    if eggSelect.mode=="Rarity" then
-        local r=catalog.rarityRanking or eggLogic.rarityStatus()
-        lines[#lines+1]="Highest game Rank; ties choose nearest; unknown ranks skipped."
-        lines[#lines+1]=string.format("Rank data: %d categories | %s",r.categories,r.reason)
+priorityButton.Activated:Connect(function()
+    if collectEgg.enabled or collectRunning or busy or placeState.manualPreparing or placementRecord.enabled then
+        status.Text="Stop Collect before changing priority";return
     end
-    local directoryStatus=eggLogic.directoryStatus()
-    if directoryStatus then lines[#lines+1]=directoryStatus end
-    for i,entry in ipairs(catalog.entries or {}) do
-        local m=entry.metadata
-        lines[#lines+1]=string.format("%d. %s | /s: %s | %s | Rank: %s | %.1f studs%s",i,m.name or (m.catalogDefinition and m.catalogDefinition.eggName) or (m.assetCategory and ("Category: "..tostring(m.assetCategory))) or "Unknown egg",
-            m.incomePerSecond~=nil and tostring(m.incomePerSecond) or "?",m.rarity or (m.catalogDefinition and m.catalogDefinition.rarityName) or "rarity ?",tostring(m.rarityRank or "?"),entry.distance,
-            entry.eligibleForMode and "" or (" | skipped"..(entry.blockedReason and (": "..entry.blockedReason)
-                or eggSelect.mode=="Rarity" and m.rarityBinding and m.rarityBinding.reason and (": "..m.rarityBinding.reason) or "")))
-    end
-    if #(catalog.entries or {})==0 then lines[#lines+1]="No eligible nearby field prompts found." end
-    lines[#lines+1]="";lines[#lines+1]="Inventory egg tools"
-    for _,item in ipairs(catalog.inventory or {}) do lines[#lines+1]=item.name end
-    local tools=catalog.tools
-    if tools then
-        lines[#lines+1]=""
-        lines[#lines+1]=string.format("Inventory tools: %d / UID linked: %d / income eligible: %d",tools.total,tools.uidLinked,tools.eligibleIncome)
-        lines[#lines+1]="Same-tool observations; these rates do not score field eggs."
-        for _,entry in ipairs(tools.entries) do
-            local m=entry.metadata
-            lines[#lines+1]=string.format("%s [%s] | /s: %s | %s | UID: %s | %s",entry.name,entry.ref,
-                m.incomePerSecond~=nil and tostring(m.incomePerSecond) or "?",m.rarity or "rarity ?",
-                m.uid and m.uid:sub(1,12) or "?",entry.uidBinding.status)
-        end
-        if not tools.complete then lines[#lines+1]="Tool report limited/incomplete; Copy eggs includes completeness details." end
-    end
-    eggUI.listLabel.Text=table.concat(lines,"\n")
-end
-function eggUI.scan()
-    local ok,err=pcall(eggLogic.refresh)
-    if not ok then status.Text="Egg scan error: "..tostring(err):sub(1,140);return end
-    if not eggUI.safeRender() then return end
-    local catalog=eggSelect.catalog
-    status.Text=eggSelect.mode=="Rarity" and (not catalog.rarityRanking.ready and catalog.rarityRanking.reason
-        or string.format("Rarity: %d UID-linked eggs ranked; highest Rank first, ties nearest. Unknown ranks skipped.",catalog.knownRarity))
-        or catalog.fieldData.fresh==0 and "Waiting for fresh field updates from the game. Keep hub open, then Scan / Copy short."
-        or catalog.fieldLinked==0 and "Field records received; no unambiguous prompt binding. Copy short includes UID / positions."
-        or catalog.knownIncome==0 and "Egg records linked; income is still unknown. Copy short includes prioritized field data."
-        or "Egg data refreshed. Copy short includes sources and missing/conflicting fields."
-    if catalog.tools then status.Text=status.Text..string.format(" | Tools: %d UID / %d income",catalog.tools.uidLinked,catalog.tools.eligibleIncome) end
-end
-function eggUI.safeRender()
-    local ok,err=pcall(eggUI.render)
-    if not ok then
-        eggLogic.lastUIError=tostring(err):sub(1,180)
-        status.Text="Egg list error: "..eggLogic.lastUIError.." | Copy eggs includes details."
-    end
-    return ok
-end
-eggUI.scanButton.Activated:Connect(eggUI.scan)
-eggUI.dataButton.Activated:Connect(function()
-    if busy or eggLogic.definitionRunning or eggLogic.sourceRunning then status.Text="Wait for the current scan";return end
-    if collectEgg.enabled or collectRunning or hatch.enabled or hatchRunning or systemRunning or training.enabled or upgrades.mode~="Off"
-        or placementRecord.enabled or placeState.manualPreparing or placeRunning then
-        status.Text="Stop automation before reading game data modules";return
-    end
-    eggUI.dataButton.Text="Reading..."
-    task.spawn(function()
-        local ok,result=eggLogic.inspectDefinitions()
-        eggUI.dataButton.Text="Read game data"
-        if not active then return end
-        if type(result)=="string" then status.Text=result;return end
-        local refreshed,refreshError=pcall(eggLogic.refresh)
-        if not refreshed then status.Text="Game data read; egg refresh failed: "..tostring(refreshError):sub(1,140);return end
-        status.Text=ok and string.format("Game data: %d loaded / %d unavailable or failed. Use Copy eggs.",result.loaded,result.unavailableOrFailed)
-            or "Game data read incomplete. Copy eggs includes status/errors."
-        local directoryStatus=eggLogic.directoryStatus()
-        if directoryStatus then status.Text=status.Text.." | "..directoryStatus end
-        eggUI.safeRender()
-    end)
-end)
-eggUI.sourceButton.Activated:Connect(function()
-    if busy or eggLogic.definitionRunning or eggLogic.sourceRunning then status.Text="Source scan already running";return end
-    if collectEgg.enabled or collectRunning or hatch.enabled or systemRunning or training.enabled or upgrades.mode~="Off"
-        or placementRecord.enabled or placeState.manualPreparing or placeRunning then
-        status.Text="Stop Collect / Hatch / Training / Record placement before scanning sources";return
-    end
-    eggUI.sourceButton.Text="Scanning..."
-    task.spawn(function()
-        local ok,result=eggLogic.scanSources()
-        eggUI.sourceButton.Text="Scan sources"
-        if not active then return end
-        status.Text=ok and string.format("Sources: %d modules / %d field objects / %d labels. Use Copy eggs.",
-            #result.modules,#result.readableFields,#result.labels) or "Source scan incomplete; use Copy eggs for details."
-    end)
-end)
-eggUI.copyButton.Activated:Connect(function()
-    local ok,payload=pcall(function() return Http:JSONEncode(eggLogic.export()) end)
-    if not ok then status.Text="Egg export failed: "..tostring(payload):sub(1,140);return end
-    task.spawn(copyPayload,payload,"Egg data")
-end)
-eggUI.modeButton.Activated:Connect(function()
-    if collectEgg.enabled or collectRunning or placeState.manualPreparing or placementRecord.enabled then
-        status.Text="Stop Collect / Record placement before changing egg selection";return
-    end
-    eggSelect.mode=({Nearest="Rarity",Rarity="Income",Income="Preferred",Preferred="Nearest"})[eggSelect.mode] or "Nearest"
-    eggUI.scan()
-end)
-eggUI.applyButton.Activated:Connect(function()
-    if collectEgg.enabled or collectRunning or placeState.manualPreparing or placementRecord.enabled then
-        status.Text="Stop Collect / Record placement before editing priorities";return
-    end
-    local ok,message=eggLogic.apply(eggUI.preferredBox.Text)
-    if ok then eggUI.scan() end
-    status.Text=message
+    eggSelect.mode=eggSelect.mode=="Rarity" and "Nearest" or "Rarity"
+    priorityButton.Text="Priority: "..string.upper(eggSelect.mode)
+    status.Text="Collect ON scans eggs automatically ("..eggSelect.mode..")"
 end)
 upgradeToggle.Activated:Connect(function()
     if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
@@ -3861,6 +3774,8 @@ end)
 collectButton.Activated:Connect(function()
     if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
     collectEgg.enabled = not collectEgg.enabled
+    eggLogic.collectEpoch=(eggLogic.collectEpoch or 0)+1
+    if collectEgg.enabled and eggLogic.autoDiscovery then eggLogic.autoDiscovery.nextReadClock=0 end
     if collectEgg.enabled then eggLogic.rarityDeferrals=nil;collectEgg.promptWait=nil end
     collectEgg.phase=collectEgg.enabled and "SEEKING" or "IDLE"
     collectAttempts = setmetatable({}, {__mode = "k"})
@@ -3948,12 +3863,12 @@ task.spawn(function()
         dispatchCollect()
         dispatchHatch(false)
         dispatchSystems()
-        if active and eggUI.page.Visible then eggUI.safeRender() end
         if active and collectEgg.enabled then
             local ok, snapshot = pcall(collectSnapshot)
             if ok then
                 local n = snapshot.nearest
                 collectLabel.Text = "Collect: " .. (snapshot.retry and snapshot.retry.remainingSeconds>0 and collectEgg.last
+                    or snapshot.phase=="DISCOVERING" and collectEgg.last
                     or snapshot.carrying and "Egg held/equipped; checking delivery"
                     or snapshot.selectionBlocked or n and (n.reason .. (n.distance and string.format(" | %.1f/%.1f studs",n.distance,n.allowedDistance) or ""))
                     or snapshot.blocked or collectEgg.last) .. " | Attempts " .. collectEgg.attempts
@@ -3978,7 +3893,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.52", placeId = game.PlaceId,
+        local report = {version = "1.53", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -4150,7 +4065,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.52", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.53", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -4180,7 +4095,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.52 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.53 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then
@@ -4192,12 +4107,15 @@ scan.Activated:Connect(function() task.spawn(collect) end)
 local copying = false
 local function exportCopy(short)
     if busy or copying then status.Text = "Please wait for scan/copy to finish."; return end
-    if reportText == "" then status.Text = "No report. Press Scan first."; return end
+    if not short and reportText == "" then status.Text = "No report. Press Scan first."; return end
     copying = true
     status.Text = "Copying on TEST PC..."
     task.spawn(function()
         local ok, err = pcall(function()
-            refreshExportState()
+            if short then
+                shortReportText=Http:JSONEncode({version="1.53",placeId=game.PlaceId,kind="collect_status",summaryOnly=true,
+                    autoCollect=collectSnapshot(true),autoHatch=liveHatchSnapshot()})
+            else refreshExportState() end
             copyPayload(short and shortReportText or reportText, short and "SHORT report" or "FULL report")
         end)
         copying = false
