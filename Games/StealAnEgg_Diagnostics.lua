@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.49
+-- Steal An Egg: structure diagnostics v1.50
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -55,7 +55,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.49", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.50", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -121,7 +121,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.49 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.50 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -167,7 +167,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.49 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.50 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -212,7 +212,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.49 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.50 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -703,6 +703,7 @@ function eggLogic.definitionSnapshot(value,categories,omitRootKeys)
         "Data","data","Rarities","rarities","Stats","stats","Earnings","earnings","EarningRate","ModelWeight","_id","Rank","Egg","GrowthTime","WeightKg"}
     for _,key in ipairs(eggLogic.sourceFields) do priority[#priority+1]=key end
     local function visit(item,depth)
+        if type(item)=="string" and #item>160 then state.limited=true end
         local scalar=eggLogic.sourceScalar(item)
         if scalar~=nil then return scalar end
         if type(item)~="table" then return "<"..typeof(item)..">" end
@@ -724,6 +725,7 @@ function eggLogic.definitionSnapshot(value,categories,omitRootKeys)
         end
         for i,key in ipairs(keys) do
             if i>32 or state.remaining<=0 then out.__truncated=true;state.limited=true;break end
+            if #tostring(key)>120 then state.limited=true end
             state.remaining=state.remaining-1;state.visited=state.visited+1
             out[eggLogic.sourceScalar(tostring(key),120)]=visit(rawget(item,key),depth+1)
         end
@@ -851,6 +853,7 @@ function eggLogic.inspectDefinitions()
     if eggLogic.definitionRunning or busy or eggLogic.sourceRunning then return false,"Another scan is running" end
     if eggLogic.definitionPending and not eggLogic.definitionPending.done then return false,"Previous game module is still loading; no duplicate load started" end
     eggLogic.definitionRunning=true;busy=true
+    eggLogic.rarityIndex=nil -- A new observation must not reuse the previous ranks.
     local report={at=os.time(),status="running",modules={},scope="explicit_game_module_exports",loadMethod="require",moduleInitializationMayRun=true,
         rankingApplied=false,exportedFunctionsInvoked=false,categories={},limits={modules=3,secondsPerModule=5}}
     eggLogic.definitions=report
@@ -917,7 +920,94 @@ function eggLogic.inspectDefinitions()
     if not ok then report.status="error";report.error=tostring(err):sub(1,180)
     elseif report.status=="running" then report.status="finished" end
     report.finishedAt=os.time()
+    eggLogic.rebuildRarityIndex()
     return ok and report.status=="finished",report
+end
+function eggLogic.validRank(value)
+    return type(value)=="number" and value==value and value>0 and value<math.huge and value%1==0
+end
+function eggLogic.rebuildRarityIndex()
+    local report=eggLogic.definitions
+    local index={report=report,byCategory={},summary={ready=false,categories=0,skipped=0,issues={},
+        reason="Read game data first",metric="game Rarity.Rank",tieBreak="distance ascending",at=os.time()}}
+    eggLogic.rarityIndex=index
+    if not report or report.status~="finished" then return index.summary end
+    local directory,rarities
+    for _,module in ipairs(report.modules or {}) do
+        if module.status=="loaded" and module.path=="ReplicatedStorage.Data.Assets" then directory=module.directory end
+        if module.status=="loaded" and module.path=="ReplicatedStorage.Data.Rarity" and module.snapshot and module.snapshot.complete then
+            rarities=type(module.snapshot.data)=="table" and module.snapshot.data.Rarities
+        end
+    end
+    index.summary.reason="Complete Directory and Rarity observations required; use Read game data"
+    if not directory or not directory.traversalComplete or directory.status~="captured" or type(directory.entries)~="table"
+        or directory.exported~=#directory.entries or directory.scanned~=directory.exported
+        or directory.totalEntries~=directory.exported or type(rarities)~="table" then return index.summary end
+    local counts,ids={},{}
+    for _,row in ipairs(directory.entries) do
+        if type(row.categoryKey)=="string" then counts[row.categoryKey]=(counts[row.categoryKey] or 0)+1 end
+        if type(row._id)=="string" then ids[row._id]=(ids[row._id] or 0)+1 end
+    end
+    for _,row in ipairs(directory.entries) do
+        local key,r=row.categoryKey,row.Rarity
+        local canonical=type(r)=="table" and type(r._id)=="string" and rarities[r._id]
+        local reason,rarityTextLimited
+        for _,issue in ipairs(row.issues or {}) do
+            if issue:find("Rarity._id:",1,true)==1 then rarityTextLimited=true end
+        end
+        if row.keyType~="string" or type(key)~="string" or key=="" or #key>160 or row._id~=key
+            or counts[key]~=1 or ids[row._id]~=1 or row.keyTruncated or row.keyIdMismatch or row.duplicateDefinitionId then
+            reason="Ambiguous category identity"
+        elseif type(r)~="table" or rarityTextLimited or not eggLogic.validRank(r.Rank) then reason="Missing or invalid Rank/rarity identity"
+        elseif type(canonical)~="table" or canonical._id~=r._id or not eggLogic.validRank(canonical.Rank)
+            or canonical.Rank~=r.Rank then reason="Rarity table missing or Rank conflict"
+        else
+            -- Ignore unrelated missing income/media fields; never infer actual income from EarningRate.
+            index.byCategory[key]={category=key,definitionId=row._id,rarityId=r._id,rank=r.Rank,
+                rarityName=canonical.DisplayName or r.DisplayName or r._id,definitionRarityName=r.DisplayName,
+                eggName=row.Egg and row.Egg.DisplayName,displayName=row.DisplayName,
+                source="ReplicatedStorage.Data.Assets.Directory["..key.."].Rarity.Rank",
+                verifiedAgainst="ReplicatedStorage.Data.Rarity.Rarities["..r._id.."].Rank"}
+            index.summary.categories=index.summary.categories+1
+        end
+        if reason then
+            index.summary.skipped=index.summary.skipped+1
+            if #index.summary.issues<16 then index.summary.issues[#index.summary.issues+1]={category=key,reason=reason} end
+        end
+    end
+    index.summary.ready=index.summary.categories>0
+    index.summary.reason=index.summary.ready and "UID-linked categories; unknown ranks skipped" or "No unambiguous category has a verified Rank"
+    index.summary.sourceAt=report.finishedAt
+    return index.summary
+end
+function eggLogic.rarityStatus()
+    if not eggLogic.rarityIndex or eggLogic.rarityIndex.report~=eggLogic.definitions then eggLogic.rebuildRarityIndex() end
+    return eggLogic.rarityIndex.summary
+end
+function eggLogic.bindRarity(data)
+    local status=eggLogic.rarityStatus()
+    local binding=data.fieldBinding or {}
+    local reason
+    if not status.ready then reason=status.reason
+    elseif data.conflicts.uid or data.conflicts.assetCategory or not data.uid or binding.uid~=data.uid
+        or (binding.method~="explicit_uid" and binding.method~="unique_position") then reason="Fresh unique field UID binding required"
+    elseif not data.assetCategory then reason="Field AssetCategory missing"
+    else
+        local definition=eggLogic.rarityIndex.byCategory[data.assetCategory]
+        if not definition then reason="Unknown or conflicting Directory category"
+        elseif data.conflicts.rarity or data.rarity and data.rarity~=definition.rarityId
+            and data.rarity~=definition.rarityName and data.rarity~=definition.definitionRarityName then
+            data.conflicts.rarity=true;reason="Explicit rarity conflicts with Directory"
+        else
+            data.catalogDefinition=definition
+            data.rarityRank=definition.rank
+            data.sources.rarityRank=definition.source
+            data.rarityBinding={status="verified",uid=data.uid,category=data.assetCategory,method=binding.method,
+                verifiedAgainst=definition.verifiedAgainst}
+            return
+        end
+    end
+    data.rarityBinding={status="unavailable",reason=reason}
 end
 local recordingContext
 local collectTween
@@ -1355,7 +1445,7 @@ function eggLogic.metadata(subject)
         return value
     end
     local groups={UID="uid",Uid="uid",EggUID="uid",EggUid="uid",FieldEggUid="uid",
-        EggName="name",DisplayName="name",Rarity="rarity",RarityName="rarity",
+        EggName="name",DisplayName="name",Rarity="rarity",RarityName="rarity",AssetCategory="assetCategory",
         IncomePerSecond="incomePerSecond",CashPerSecond="incomePerSecond",MoneyPerSecond="incomePerSecond",CoinsPerSecond="incomePerSecond"}
     local function observe(group,value,source)
         if group=="incomePerSecond" then
@@ -1443,10 +1533,11 @@ function eggLogic.metadata(subject)
             if record.fields[key]~=nil then observe(group,record.fields[key],source.."."..key) end
             if record.statsRates and record.statsRates[key]~=nil then observe(group,record.statsRates[key],source..".Stats."..key) end
         end
-        data.assetCategory=record.fields.AssetCategory;data.areaId=record.fields.AreaId
+        data.areaId=record.fields.AreaId
         if #data.raw<6 then data.raw[#data.raw+1]={path=source,values=record.fields,keys=record.keys} end
     end
     for group in pairs(data.conflicts) do data[group]=nil;data.sources[group]=nil end
+    eggLogic.bindRarity(data)
     return data
 end
 function eggLogic.preference(name)
@@ -1455,7 +1546,9 @@ function eggLogic.preference(name)
 end
 function eggLogic.less(a,b)
     if a.accepted~=b.accepted then return a.accepted end
-    if eggSelect.mode=="Income" and a.meta.incomePerSecond~=b.meta.incomePerSecond then
+    if eggSelect.mode=="Rarity" and a.meta.rarityRank~=b.meta.rarityRank then
+        return (a.meta.rarityRank or -1)>(b.meta.rarityRank or -1)
+    elseif eggSelect.mode=="Income" and a.meta.incomePerSecond~=b.meta.incomePerSecond then
         return (a.meta.incomePerSecond or -1)>(b.meta.incomePerSecond or -1)
     elseif eggSelect.mode=="Preferred" and a.priority~=b.priority then
         return (a.priority or math.huge)<(b.priority or math.huge)
@@ -1465,6 +1558,9 @@ function eggLogic.less(a,b)
 end
 function eggLogic.accepts(meta)
     if eggSelect.mode~="Nearest" and meta.conflicts.uid then return false end
+    if eggSelect.mode=="Rarity" then
+        return meta.rarityBinding and meta.rarityBinding.status=="verified" and eggLogic.validRank(meta.rarityRank) and not meta.conflicts.rarity
+    end
     if eggSelect.mode=="Income" then return meta.incomePerSecond~=nil end
     if eggSelect.mode=="Preferred" then return eggLogic.preference(meta.name)~=nil end
     return true
@@ -1635,7 +1731,8 @@ function eggLogic.refresh()
     local root=character and character:FindFirstChild("HumanoidRootPart")
     local humanoid=character and character:FindFirstChildOfClass("Humanoid")
     local choices=eggLogic.choices(root,humanoid,false)
-    local catalog={at=os.time(),mode=eggSelect.mode,entries={},inventory={},total=#choices,knownIncome=0,fieldLinked=0,accepted=0,
+    local catalog={at=os.time(),mode=eggSelect.mode,entries={},inventory={},total=#choices,knownIncome=0,knownRarity=0,fieldLinked=0,accepted=0,
+        rarityRanking=eggLogic.rarityStatus(),rarityRankingApplied=false,
         fieldData={stored=eggLogic.field.count,lastEvent=eggLogic.field.lastEvent,lastAt=eggLogic.field.lastAt,
             missingUid=eggLogic.field.missingUid,evicted=eggLogic.field.evicted}}
     catalog.fieldData.fresh=0
@@ -1644,6 +1741,7 @@ function eggLogic.refresh()
     end
     for i,choice in ipairs(choices) do
         if choice.meta.incomePerSecond~=nil then catalog.knownIncome=catalog.knownIncome+1 end
+        if choice.meta.rarityRank~=nil then catalog.knownRarity=catalog.knownRarity+1 end
         if choice.meta.fieldBinding and choice.meta.fieldBinding.uid and choice.meta.fieldBinding.method~="ambiguous_prompts" then catalog.fieldLinked=catalog.fieldLinked+1 end
         if choice.accepted then catalog.accepted=catalog.accepted+1 end
         if i<=12 then catalog.entries[i]={path=choice.prompt:GetFullName(),distance=choice.distance,
@@ -1651,6 +1749,7 @@ function eggLogic.refresh()
             enabled=choice.prompt.Enabled,eligibleForMode=choice.accepted,priority=choice.priority,metadata=choice.meta} end
     end
     catalog.truncated=#choices>12
+    catalog.rarityRankingApplied=eggSelect.mode=="Rarity" and catalog.knownRarity>0
     local inventory=eggInventory()
     local items={};for _,item in pairs(inventory.items) do items[#items+1]=item end
     table.sort(items,function(a,b) return a.uid<b.uid end)
@@ -1672,7 +1771,7 @@ function eggLogic.refresh()
 end
 function eggLogic.export()
     eggLogic.refresh()
-    return {version="1.49",kind="egg_data",placeId=game.PlaceId,
+    return {version="1.50",kind="egg_data",placeId=game.PlaceId,
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
             selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents,
             runtimeErrors={ui=eggLogic.lastUIError},definitionDiscovery=eggLogic.definitions}}
@@ -2387,6 +2486,13 @@ local function collectStep()
     if not selected or not active or not collectEgg.enabled or busy or carryVisible() or player.Character~=character then return end
     best=selected.prompt;bestDistance=collectCandidate(best,root,humanoid)
     local latest=eggLogic.metadata(best)
+    if eggSelect.mode=="Rarity" then
+        local current=eggLogic.choices(root,humanoid,false)[1]
+        if not current or not current.accepted or current.prompt~=best or current.meta.uid~=selected.meta.uid
+            or latest.assetCategory~=selected.meta.assetCategory or latest.rarityRank~=selected.meta.rarityRank then
+            collectEgg.last="Rarity target changed; reselecting next cycle";return
+        end
+    end
     local priorAttempt=collectAttempts[best]
     if priorAttempt and (priorAttempt.count>=3 or os.clock()-priorAttempt.time<4) then return end
     if not bestDistance or not eggLogic.accepts(latest) or selected.meta.uid and latest.uid~=selected.meta.uid then
@@ -3306,15 +3412,21 @@ end
 function eggUI.render()
     eggUI.modeButton.Text="Mode: "..string.upper(eggSelect.mode)
     local catalog=eggSelect.catalog
-    eggUI.countLabel.Text=string.format("%d eggs / %d linked / %d income",catalog.total or 0,catalog.fieldLinked or 0,catalog.knownIncome or 0)
+    eggUI.countLabel.Text=string.format("%d eggs / %d linked / %d %s",catalog.total or 0,catalog.fieldLinked or 0,
+        eggSelect.mode=="Rarity" and (catalog.knownRarity or 0) or (catalog.knownIncome or 0),eggSelect.mode=="Rarity" and "ranked" or "income")
     local lines={"Nearby eggs (sorted for "..eggSelect.mode..")"}
+    if eggSelect.mode=="Rarity" then
+        local r=catalog.rarityRanking or eggLogic.rarityStatus()
+        lines[#lines+1]="Highest game Rank; ties choose nearest; unknown ranks skipped."
+        lines[#lines+1]=string.format("Rank data: %d categories | %s",r.categories,r.reason)
+    end
     local directoryStatus=eggLogic.directoryStatus()
     if directoryStatus then lines[#lines+1]=directoryStatus end
     for i,entry in ipairs(catalog.entries or {}) do
         local m=entry.metadata
-        lines[#lines+1]=string.format("%d. %s | /s: %s | %s | %.1f studs%s",i,m.name or (m.assetCategory and ("Category: "..tostring(m.assetCategory))) or "Unknown egg",
-            m.incomePerSecond~=nil and tostring(m.incomePerSecond) or "?",m.rarity or "rarity ?",entry.distance,
-            entry.eligibleForMode and "" or " | skipped")
+        lines[#lines+1]=string.format("%d. %s | /s: %s | %s | Rank: %s | %.1f studs%s",i,m.name or (m.catalogDefinition and m.catalogDefinition.eggName) or (m.assetCategory and ("Category: "..tostring(m.assetCategory))) or "Unknown egg",
+            m.incomePerSecond~=nil and tostring(m.incomePerSecond) or "?",m.rarity or (m.catalogDefinition and m.catalogDefinition.rarityName) or "rarity ?",tostring(m.rarityRank or "?"),entry.distance,
+            entry.eligibleForMode and "" or (" | skipped"..(eggSelect.mode=="Rarity" and m.rarityBinding and (": "..tostring(m.rarityBinding.reason)) or "")))
     end
     if #(catalog.entries or {})==0 then lines[#lines+1]="No eligible nearby field prompts found." end
     lines[#lines+1]="";lines[#lines+1]="Inventory egg tools"
@@ -3339,7 +3451,9 @@ function eggUI.scan()
     if not ok then status.Text="Egg scan error: "..tostring(err):sub(1,140);return end
     if not eggUI.safeRender() then return end
     local catalog=eggSelect.catalog
-    status.Text=catalog.fieldData.fresh==0 and "Waiting for fresh field updates from the game. Keep hub open, then Scan / Copy short."
+    status.Text=eggSelect.mode=="Rarity" and (not catalog.rarityRanking.ready and catalog.rarityRanking.reason
+        or string.format("Rarity: %d UID-linked eggs ranked; highest Rank first, ties nearest. Unknown ranks skipped.",catalog.knownRarity))
+        or catalog.fieldData.fresh==0 and "Waiting for fresh field updates from the game. Keep hub open, then Scan / Copy short."
         or catalog.fieldLinked==0 and "Field records received; no unambiguous prompt binding. Copy short includes UID / positions."
         or catalog.knownIncome==0 and "Egg records linked; income is still unknown. Copy short includes prioritized field data."
         or "Egg data refreshed. Copy short includes sources and missing/conflicting fields."
@@ -3366,6 +3480,8 @@ eggUI.dataButton.Activated:Connect(function()
         eggUI.dataButton.Text="Read game data"
         if not active then return end
         if type(result)=="string" then status.Text=result;return end
+        local refreshed,refreshError=pcall(eggLogic.refresh)
+        if not refreshed then status.Text="Game data read; egg refresh failed: "..tostring(refreshError):sub(1,140);return end
         status.Text=ok and string.format("Game data: %d loaded / %d unavailable or failed. Use Copy eggs.",result.loaded,result.unavailableOrFailed)
             or "Game data read incomplete. Copy eggs includes status/errors."
         local directoryStatus=eggLogic.directoryStatus()
@@ -3397,7 +3513,7 @@ eggUI.modeButton.Activated:Connect(function()
     if collectEgg.enabled or collectRunning or placeState.manualPreparing or placementRecord.enabled then
         status.Text="Stop Collect / Record placement before changing egg selection";return
     end
-    eggSelect.mode=({Nearest="Income",Income="Preferred",Preferred="Nearest"})[eggSelect.mode] or "Nearest"
+    eggSelect.mode=({Nearest="Rarity",Rarity="Income",Income="Preferred",Preferred="Nearest"})[eggSelect.mode] or "Nearest"
     eggUI.scan()
 end)
 eggUI.applyButton.Activated:Connect(function()
@@ -3745,7 +3861,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.49", placeId = game.PlaceId,
+        local report = {version = "1.50", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -3917,7 +4033,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.49", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.50", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -3947,7 +4063,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.49 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.50 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then

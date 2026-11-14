@@ -98,7 +98,7 @@ end)
 check('all tabs and egg scan work before a character humanoid is available',function()
     local f=fixture();f:run()
     for _,name in ipairs({'Eggs','Placement','Diagnostics','Settings','Automation'}) do f:button(name).Activated:Fire() end
-    f:button('Scan eggs').Activated:Fire();f:button('Mode: NEAREST').Activated:Fire();f:button('Mode: INCOME')
+    f:button('Scan eggs').Activated:Fire();f:button('Mode: NEAREST').Activated:Fire();f:button('Mode: RARITY')
 end)
 check('Alt hides and restores the window and leaves restore control accessible',function()
     local f=fixture();f:run();local frames={};for _,obj in ipairs(f.objects) do if obj.ClassName=='Frame' and obj.Parent==f.pg:FindFirstChild('EggDiagnostics') then frames[#frames+1]=obj end end
@@ -187,5 +187,49 @@ check('game data UI shows Directory coverage and exports compact records',functi
     f:button('Copy eggs').Activated:Fire()
     local directory=f.http.lastPayload.eggSelection.definitionDiscovery.modules[1].directory
     assert(directory.complete and directory.entries[1].EarningRate==45 and not directory.entries[1].Icon)
+end)
+check('selection cycles all four modes without loading game modules',function()
+    local f=fixture();local loads=0;f.env.require=function() loads=loads+1;return {} end
+    f:run()
+    for _,mode in ipairs({'NEAREST','RARITY','INCOME','PREFERRED'}) do f:button('Mode: '..mode).Activated:Fire() end
+    f:button('Mode: NEAREST');assert(loads==0)
+end)
+check('Rarity mode before reading game data visibly explains the missing source',function()
+    local f=fixture();f:run();f:button('Mode: NEAREST').Activated:Fire()
+    local found=false
+    for _,obj in ipairs(f.objects) do
+        if obj.ClassName=='TextLabel' and obj.Text:find('Read game data first',1,true) then found=true end
+    end
+    assert(found)
+    f:button('Copy eggs').Activated:Fire()
+    local c=f.http.lastPayload.eggSelection.catalog
+    assert(c.mode=='Rarity' and c.knownRarity==0 and not c.rarityRanking.ready and not c.rarityRankingApplied)
+end)
+check('mode changes remain blocked during collection',function()
+    local f=fixture();f:run();f:button('Collect: OFF').Activated:Fire()
+    f:button('Mode: NEAREST').Activated:Fire();f:button('Mode: NEAREST')
+    f:button('Collect: ON').Activated:Fire();f:button('Mode: NEAREST').Activated:Fire();f:button('Mode: RARITY')
+end)
+check('reading actual rank tables refreshes Rarity readiness and exports provenance',function()
+    local f=fixture();local loads=0
+    f.env.require=function(module)
+        loads=loads+1
+        if module.Name=='Assets' then return {Directory={Raccoon={_id='Raccoon',DisplayName='Raccoon',EarningRate=45,
+            Egg={DisplayName='Raccoon Egg'},Rarity={_id='Rare',DisplayName='Rare',Rank=3}}}} end
+        if module.Name=='Rarity' then return {Rarities={Rare={_id='Rare',DisplayName='Rare',Rank=3}}} end
+        return {LiveRatePerSecond=function() error('must not be called') end}
+    end
+    local storage=f.env.game:GetService('ReplicatedStorage')
+    local function make(class,name,parent) local obj=f.env.Instance.new(class);obj.Name=name;obj.Parent=parent;return obj end
+    local data=make('Folder','Data',storage);make('ModuleScript','Assets',data);make('ModuleScript','Rarity',data)
+    make('ModuleScript','AssetEarnings',make('Folder','Util',make('Folder','Shared',storage)))
+    f:run();f.env.task.spawn=function(fn,...) fn(...) end
+    f:button('Mode: NEAREST').Activated:Fire();f:button('Read game data').Activated:Fire()
+    local found=false
+    for _,obj in ipairs(f.objects) do if obj.ClassName=='TextLabel' and obj.Text:find('Rank data: 1 categories',1,true) then found=true end end
+    assert(found and loads==3)
+    f:button('Copy eggs').Activated:Fire()
+    local c=f.http.lastPayload.eggSelection.catalog
+    assert(c.rarityRanking.ready and c.rarityRanking.categories==1 and c.knownRarity==0 and not c.rarityRankingApplied)
 end)
 print(string.format('%d runtime startup tests passed',tests))
