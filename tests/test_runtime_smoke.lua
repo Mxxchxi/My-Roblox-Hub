@@ -232,4 +232,12 @@ check('reading actual rank tables refreshes Rarity readiness and exports provena
     local c=f.http.lastPayload.eggSelection.catalog
     assert(c.rarityRanking.ready and c.rarityRanking.categories==1 and c.knownRarity==0 and not c.rarityRankingApplied)
 end)
+check('Copy eggs includes live collection state to diagnose arrival without pickup',function()
+    local f=fixture();f:run();f:button('Collect: OFF').Activated:Fire()
+    f:button('Copy eggs').Activated:Fire()
+    local c=f.http.lastPayload.collection
+    assert(c.enabled and c.phase=='SEEKING' and c.attempts==0 and c.last=='Waiting for nearby egg')
+    f:button('Collect: ON').Activated:Fire();f:button('Copy eggs').Activated:Fire()
+    assert(not f.http.lastPayload.collection.enabled and f.http.lastPayload.collection.phase=='IDLE')
+end)
 print(string.format('%d runtime startup tests passed',tests))

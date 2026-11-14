@@ -1,4 +1,4 @@
-# Steal An Egg — v1.50
+# Steal An Egg — v1.51
 
 PlaceId: 107778070777162. Load through the existing universal Loader.
 All automation and placement recording start OFF. Evidence below separates user-reported game results from offline checks.
@@ -11,7 +11,7 @@ All automation and placement recording start OFF. Evidence below separates user-
 | Base / treadmill upgrades | Implemented using mapped soft-currency UI callbacks, affordability checks and level-change confirmation. Offline tested only. |
 | Speed training | User reports confirm walking onto the treadmill, speed increasing and the OFF control working on v1.39. |
 | Record Placement | User's v1.42 report confirms one Bear Egg UID left inventory and exactly one visible matching owned render appeared at the click; worldEggAppearanceVerified=true. This is client evidence only. |
-| Egg data / selection | v1.49 user report confirms all 300 Directory categories captured, and v1.48 confirms six UID-linked field prompts. v1.50 adds actual game Rank selection; live Rarity collection is pending. |
+| Egg data / selection | v1.49 user report confirms all 300 Directory categories captured, and v1.48 confirms six UID-linked field prompts. v1.50 adds actual game Rank selection; the user reports arrival without pickup. v1.51 fixes two reproduced arrival stalls; live retest is pending. |
 | Auto Place | Disabled in release after user-reported BAC kicks. No UI toggle can enable it. |
 | Money collection | Removed: the game collects money automatically. |
 
@@ -266,3 +266,18 @@ The collector checks the current highest-ranked candidate again after travel and
 Live test: run the usual main Loader and confirm v1.50. Leave automation OFF, open Eggs, press Read game data and wait for the result. Change Mode from NEAREST to RARITY, then Scan eggs after fresh field updates arrive. Inspect knownRarity, rank provenance and eligibility with Copy eggs. Enable Collect to verify the selected highest Rank in the reachable set and nearest choice among tied ranks. Stop Collect before changing modes. Share Copy eggs or Copy short if ranks remain unknown or the chosen target differs. This release has not yet been validated in live Potassium.
 
 Validation: 311 simulated engine cases (30 new), 20 full-file startup/control-flow cases (four new), four Python Loader contracts, and full Lua 5.4 source compilation. New cases exercise real-rank sorting and travel/pickup, ties independent of catalog income, exact category IDs despite shared display names, UID/rank provenance, unknown/invalid/conflicting/stale/carried/removed targets, canonical aliases, partial coverage and identity conflicts, missing income independence, rescan invalidation, post-travel reselection, truncated identities, all four mode controls, no implicit module loading, visible readiness/export and active-Collect mode locking. Tests are simulations, not live game success.
+
+
+## Rarity arrival without pickup (v1.51)
+
+The user reports that v1.50 walks to the egg but does not collect it. Without a new runtime export, the exact live blocker is not confirmed. Two relevant v1.50 failures were reproduced before editing: when a disabled prompt enables shortly after arrival the collector returns before waiting for that enable, and when an equal-Rank egg becomes closer during travel the post-travel check cancels an otherwise valid pickup. The old repeated selection can remain at a permanently disabled highest-ranked egg.
+
+Rarity now waits up to two seconds in activation range for the game to enable the selected prompt, checking Collect/active/scan/character/health/carry state, prompt presence/range, UID, category and Rank on each wait. It still requires the normal enabled/action/hold/range activation checks before input. If the game keeps that prompt disabled, its UID is temporarily excluded from Rarity selection for eight seconds so another eligible egg can be tried. The exclusion follows replacement prompt proxies, is bounded to 64 UIDs, and clears when its retry expires or the same UID changes category/Rank. Starting Collect clears temporary exclusions. Waiting does not increment input-attempt counts and never changes Prompt.Enabled or invokes game Remotes.
+
+The selected target stays committed through travel when another equal-Rank egg becomes closer. Initial selection still breaks equal Rank by distance. A strictly higher-ranked accepted target, changed identity/category/Rank, expired field binding, or failed activation check still prevents stale input. If a previously deferred UID's retry expires while traveling to a lower-ranked egg, that known disabled prompt does not preempt the committed trip until it enables; this prevents timer expiry from repeatedly starving valid pickup.
+
+Copy eggs now includes a focused collection block with enabled/phase/last/attempts, promptWait, lastMovement and lastInput. Copy short also exposes promptWait. Catalog entries expose blockedReason and catalog.deferred counts, and the visible list explains temporary skips/retry time. If all eligible prompts are temporarily blocked, Collect says it is waiting to retry instead of claiming rarity data is missing.
+
+Validation: both new reproduction cases fail against v1.50 and pass with the fix. The final suite passes 327 engine cases (16 new), 21 full-file startup/control-flow cases (one new), four Python Loader contracts and full Lua 5.4 compilation. Cases cover delayed enable with Walk/Tween, permanent disable and next-target selection, an already-near disabled prompt, bounded wait/retry, stop/removal/UID changes during wait, higher-Rank arrival, tied-Rank stability, proxy replacement, changed identity, mode isolation, bounded exclusion memory, timer expiry during a trip and collection diagnostics through the actual Copy eggs callback. These are simulations. The user's live Potassium retest remains required; this change does not establish that a particular disabled game prompt should be usable.
+
+Retest with the usual Loader, confirm v1.51, leave automation OFF, Eggs -> Read game data -> Mode: RARITY -> Scan eggs, then enable Collect. A prompt that remains disabled should receive a temporary skip and another eligible egg should be tried. If arrival still produces no pickup, use Copy eggs while the symptom is visible and provide the collection block plus eggSelection.catalog; these include wait/input status without needing to resend all 300 Directory rows.

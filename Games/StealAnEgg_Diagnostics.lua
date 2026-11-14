@@ -1,4 +1,4 @@
--- Steal An Egg: structure diagnostics v1.50
+-- Steal An Egg: structure diagnostics v1.51
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -55,7 +55,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.50", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.51", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -121,7 +121,7 @@ local selectText = control(diagnostics,"Select ALL",422,0,146)
 local previous = control(diagnostics,"< Page",0,42,88)
 local following = control(diagnostics,"Page >",98,42,88)
 local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.50 | Waiting for scan",316,42,252,34,11,colors.muted)
+local pageLabel = label(diagnostics,"v1.51 | Waiting for scan",316,42,252,34,11,colors.muted)
 local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
     BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
     AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
@@ -167,7 +167,7 @@ local active = true
 local pages, pageIndex = {}, 1
 local function showPage()
     box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.50 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
+    pageLabel.Text = string.format("v1.51 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
 end
 local function splitPages(text)
     pages, pageIndex = {}, 1
@@ -212,7 +212,7 @@ local function nativeSelect(text)
         box.CursorPosition = #box.Text + 1
         box.SelectionStart = 1
     end)
-    pageLabel.Text = "v1.50 | ALL selected | " .. #text .. " bytes"
+    pageLabel.Text = "v1.51 | ALL selected | " .. #text .. " bytes"
     return true
 end
 local function selectAll()
@@ -1365,6 +1365,41 @@ local function inCollectRange(prompt, root)
     local position = prompt.Parent and promptPosition(prompt)
     return position and root and (root.Position-position).Magnitude <= math.min(prompt.MaxActivationDistance,8)
 end
+function eggLogic.waitForRarityPrompt(choice,root,humanoid,character)
+    local prompt=choice.prompt
+    local record={uid=choice.meta.uid,at=os.time(),timeoutSeconds=2,status="Waiting for game prompt"}
+    collectEgg.promptWait=record
+    local deadline=os.clock()+2
+    while true do
+        if not active or not collectEgg.enabled or busy or player.Character~=character or not root.Parent
+            or humanoid.Health<=0 or carryVisible() then
+            record.status="Interrupted";collectEgg.last="Rarity prompt wait interrupted";return false
+        end
+        if not prompt.Parent or not prompt:IsDescendantOf(workspace) or not inCollectRange(prompt,root) then
+            record.status="Target removed or out of range";collectEgg.last=record.status;return false
+        end
+        local latest=eggLogic.metadata(prompt)
+        if not eggLogic.accepts(latest) or latest.uid~=choice.meta.uid or latest.assetCategory~=choice.meta.assetCategory
+            or latest.rarityRank~=choice.meta.rarityRank then
+            record.status="Target identity or Rank changed";collectEgg.last=record.status;return false
+        end
+        if collectCandidate(prompt,root,humanoid) then record.status="Game prompt ready";return true end
+        if prompt.Enabled then
+            record.status="Activation checks failed";collectEgg.last=record.status;return false
+        end
+        if os.clock()>=deadline then
+            record.status="Game prompt stayed disabled";record.retryAfterSeconds=8
+            eggLogic.deferRarity(choice,record.status)
+            collectEgg.phase="SEEKING"
+            collectEgg.last="Rarity: prompt stayed disabled; trying another egg (retry in 8s)"
+            return false
+        end
+        collectEgg.phase="WAITING_PROMPT"
+        collectEgg.last="Rarity: waiting up to 2s for the game to enable prompt"
+        collectLabel.Text=collectEgg.last
+        task.wait(0.1)
+    end
+end
 local function pathMove(root, humanoid, character, destination, requireCarry, target)
     local record={at=os.time(),status="Computing path",waypoints=0,completed=0}
     collectEgg.lastNavigation=record
@@ -1565,6 +1600,31 @@ function eggLogic.accepts(meta)
     if eggSelect.mode=="Preferred" then return eggLogic.preference(meta.name)~=nil end
     return true
 end
+function eggLogic.rarityDeferred(meta)
+    local deferrals=eggLogic.rarityDeferrals
+    local entry=deferrals and meta.uid and deferrals[meta.uid]
+    if not entry then return nil end
+    if os.clock()>=entry.untilClock or meta.assetCategory~=entry.category or meta.rarityRank~=entry.rank then
+        deferrals[meta.uid]=nil;return nil
+    end
+    return entry.reason..string.format("; retry in %.1fs",entry.untilClock-os.clock())
+end
+function eggLogic.deferRarity(choice,reason)
+    local meta=choice.meta
+    if not meta.uid then return end
+    local deferrals=eggLogic.rarityDeferrals or {}
+    eggLogic.rarityDeferrals=deferrals
+    local count,oldest,oldestTime=0,nil,math.huge
+    for uid,entry in pairs(deferrals) do
+        if entry.untilClock<=os.clock() then deferrals[uid]=nil
+        else
+            count=count+1
+            if entry.untilClock<oldestTime then oldest,oldestTime=uid,entry.untilClock end
+        end
+    end
+    if not deferrals[meta.uid] and count>=64 then deferrals[oldest]=nil end
+    deferrals[meta.uid]={category=meta.assetCategory,rank=meta.rarityRank,reason=reason,untilClock=os.clock()+8}
+end
 function eggLogic.choices(root,humanoid,readyOnly)
     local choices={}
     for prompt in pairs(promptCache) do
@@ -1576,8 +1636,9 @@ function eggLogic.choices(root,humanoid,readyOnly)
         else distance,position=approachCandidate(prompt,root,humanoid) end
         if distance then
             local meta=eggLogic.metadata(prompt)
+            local blocked=eggSelect.mode=="Rarity" and eggLogic.rarityDeferred(meta) or nil
             choices[#choices+1]={prompt=prompt,distance=distance,position=position,meta=meta,
-                priority=eggLogic.preference(meta.name),accepted=eggLogic.accepts(meta)}
+                priority=eggLogic.preference(meta.name),accepted=not blocked and eggLogic.accepts(meta),blockedReason=blocked}
         end
     end
     table.sort(choices,eggLogic.less)
@@ -1731,7 +1792,7 @@ function eggLogic.refresh()
     local root=character and character:FindFirstChild("HumanoidRootPart")
     local humanoid=character and character:FindFirstChildOfClass("Humanoid")
     local choices=eggLogic.choices(root,humanoid,false)
-    local catalog={at=os.time(),mode=eggSelect.mode,entries={},inventory={},total=#choices,knownIncome=0,knownRarity=0,fieldLinked=0,accepted=0,
+    local catalog={at=os.time(),mode=eggSelect.mode,entries={},inventory={},total=#choices,knownIncome=0,knownRarity=0,fieldLinked=0,accepted=0,deferred=0,
         rarityRanking=eggLogic.rarityStatus(),rarityRankingApplied=false,
         fieldData={stored=eggLogic.field.count,lastEvent=eggLogic.field.lastEvent,lastAt=eggLogic.field.lastAt,
             missingUid=eggLogic.field.missingUid,evicted=eggLogic.field.evicted}}
@@ -1744,9 +1805,10 @@ function eggLogic.refresh()
         if choice.meta.rarityRank~=nil then catalog.knownRarity=catalog.knownRarity+1 end
         if choice.meta.fieldBinding and choice.meta.fieldBinding.uid and choice.meta.fieldBinding.method~="ambiguous_prompts" then catalog.fieldLinked=catalog.fieldLinked+1 end
         if choice.accepted then catalog.accepted=catalog.accepted+1 end
+        if choice.blockedReason then catalog.deferred=catalog.deferred+1 end
         if i<=12 then catalog.entries[i]={path=choice.prompt:GetFullName(),distance=choice.distance,
             position={x=choice.position.X,y=choice.position.Y,z=choice.position.Z},
-            enabled=choice.prompt.Enabled,eligibleForMode=choice.accepted,priority=choice.priority,metadata=choice.meta} end
+            enabled=choice.prompt.Enabled,eligibleForMode=choice.accepted,priority=choice.priority,blockedReason=choice.blockedReason,metadata=choice.meta} end
     end
     catalog.truncated=#choices>12
     catalog.rarityRankingApplied=eggSelect.mode=="Rarity" and catalog.knownRarity>0
@@ -1771,7 +1833,9 @@ function eggLogic.refresh()
 end
 function eggLogic.export()
     eggLogic.refresh()
-    return {version="1.50",kind="egg_data",placeId=game.PlaceId,
+    return {version="1.51",kind="egg_data",placeId=game.PlaceId,
+        collection={enabled=collectEgg.enabled,phase=collectEgg.phase,last=collectEgg.last,attempts=collectEgg.attempts,
+            promptWait=collectEgg.promptWait,lastMovement=collectEgg.lastMovement,lastInput=collectEgg.lastInput},
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
             selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents,
             runtimeErrors={ui=eggLogic.lastUIError},definitionDiscovery=eggLogic.definitions}}
@@ -2402,7 +2466,7 @@ end
 local function collectSnapshot(includeEvidence)
     if includeEvidence then eggLogic.refresh() end
     local snapshot = {enabled = collectEgg.enabled, attempts = collectEgg.attempts,
-        last = collectEgg.last, lastInput = collectEgg.lastInput, scanning = busy,
+        last = collectEgg.last, lastInput = collectEgg.lastInput, promptWait=collectEgg.promptWait, scanning = busy,
         unconfirmed = collectEgg.unconfirmed or 0, pausedReason = collectEgg.pausedReason,
         inventoryAdditionsObserved = collectEgg.inventoryAdditionsObserved or 0,
         phase = collectEgg.phase or "IDLE", deliveriesObserved = collectEgg.deliveriesObserved or 0,
@@ -2467,6 +2531,7 @@ local function collectStep()
     collectEgg.phase="SEEKING"
     local all=eggLogic.refresh()
     local best,bestDistance,selected
+    local deferredAtSelection={}
     if eggSelect.mode=="Nearest" then
         local ready=eggLogic.choices(root,humanoid,true)
         selected=ready[1]
@@ -2475,21 +2540,36 @@ local function collectStep()
         end
     else
         selected=all[1]
+        if eggSelect.mode=="Rarity" then
+            for _,choice in ipairs(all) do
+                if choice.blockedReason and choice.meta.uid then deferredAtSelection[choice.meta.uid]=true end
+            end
+        end
         if not selected or not selected.accepted then
-            collectEgg.last="No egg has readable data matching "..eggSelect.mode.."; inspect Eggs / Copy short"
+            collectEgg.last=eggSelect.mode=="Rarity" and (eggSelect.catalog.deferred or 0)>0
+                and "Rarity: game prompts temporarily unavailable; waiting to retry"
+                or "No egg has readable data matching "..eggSelect.mode.."; inspect Eggs / Copy short"
             return
         end
         if not collectCandidate(selected.prompt,root,humanoid) then
-            if not approachEgg(root,humanoid,selected.prompt) then return end
+            local reached=approachEgg(root,humanoid,selected.prompt)
+            if eggSelect.mode=="Rarity" and inCollectRange(selected.prompt,root) then
+                if not eggLogic.waitForRarityPrompt(selected,root,humanoid,character) then return end
+            elseif not reached then return end
         end
     end
     if not selected or not active or not collectEgg.enabled or busy or carryVisible() or player.Character~=character then return end
     best=selected.prompt;bestDistance=collectCandidate(best,root,humanoid)
     local latest=eggLogic.metadata(best)
     if eggSelect.mode=="Rarity" then
-        local current=eggLogic.choices(root,humanoid,false)[1]
-        if not current or not current.accepted or current.prompt~=best or current.meta.uid~=selected.meta.uid
-            or latest.assetCategory~=selected.meta.assetCategory or latest.rarityRank~=selected.meta.rarityRank then
+        local current
+        for _,choice in ipairs(eggLogic.choices(root,humanoid,false)) do
+            -- A retry timer expiring during travel must not revive a known disabled target and starve this trip.
+            if choice.accepted and (not deferredAtSelection[choice.meta.uid] or choice.prompt.Enabled) then current=choice;break end
+        end
+        if not current or not current.accepted or not eggLogic.accepts(latest) or latest.uid~=selected.meta.uid
+            or latest.assetCategory~=selected.meta.assetCategory or latest.rarityRank~=selected.meta.rarityRank
+            or current.meta.rarityRank>latest.rarityRank then
             collectEgg.last="Rarity target changed; reselecting next cycle";return
         end
     end
@@ -3426,7 +3506,8 @@ function eggUI.render()
         local m=entry.metadata
         lines[#lines+1]=string.format("%d. %s | /s: %s | %s | Rank: %s | %.1f studs%s",i,m.name or (m.catalogDefinition and m.catalogDefinition.eggName) or (m.assetCategory and ("Category: "..tostring(m.assetCategory))) or "Unknown egg",
             m.incomePerSecond~=nil and tostring(m.incomePerSecond) or "?",m.rarity or (m.catalogDefinition and m.catalogDefinition.rarityName) or "rarity ?",tostring(m.rarityRank or "?"),entry.distance,
-            entry.eligibleForMode and "" or (" | skipped"..(eggSelect.mode=="Rarity" and m.rarityBinding and (": "..tostring(m.rarityBinding.reason)) or "")))
+            entry.eligibleForMode and "" or (" | skipped"..(entry.blockedReason and (": "..entry.blockedReason)
+                or eggSelect.mode=="Rarity" and m.rarityBinding and m.rarityBinding.reason and (": "..m.rarityBinding.reason) or "")))
     end
     if #(catalog.entries or {})==0 then lines[#lines+1]="No eligible nearby field prompts found." end
     lines[#lines+1]="";lines[#lines+1]="Inventory egg tools"
@@ -3747,6 +3828,7 @@ end)
 collectButton.Activated:Connect(function()
     if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
     collectEgg.enabled = not collectEgg.enabled
+    if collectEgg.enabled then eggLogic.rarityDeferrals=nil;collectEgg.promptWait=nil end
     collectEgg.phase=collectEgg.enabled and "SEEKING" or "IDLE"
     collectAttempts = setmetatable({}, {__mode = "k"})
     collectEgg.unconfirmed, collectEgg.pausedReason = 0, nil
@@ -3861,7 +3943,7 @@ local function collect()
     busy = true
     scan.Text = "Scanning..."
     local ok, err = pcall(function()
-        local report = {version = "1.50", placeId = game.PlaceId,
+        local report = {version = "1.51", placeId = game.PlaceId,
             scanned = 0, truncated = false, roots = {},
             gui = {}, prompts = {}, remotes = {}, candidates = {}}
         local roots = {
@@ -4033,7 +4115,7 @@ local function collect()
         report.autoHatch = liveHatchSnapshot()
         report.autoCollect = collectSnapshot(true)
         reportText = Http:JSONEncode(report)
-        local summary = {version = "1.50", placeId = report.placeId, summaryOnly = true,
+        local summary = {version = "1.51", placeId = report.placeId, summaryOnly = true,
             scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
             gui = {}, prompts = {}, remotes = {}, candidates = {},
             omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
@@ -4063,7 +4145,7 @@ local function collect()
         shortReportText = Http:JSONEncode(summary)
         if not active then return end
         splitPages(reportText)
-        status.Text = string.format("v1.50 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
+        status.Text = string.format("v1.51 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
     end)
     busy = false
     if active then

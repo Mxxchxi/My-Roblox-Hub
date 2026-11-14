@@ -81,7 +81,7 @@ end
 env.eggSelect={mode="Nearest",preferred={},catalog={entries={}},fieldSamples={}};env.placementRecord={enabled=false,last="OFF",records={}};env.placeState={enabled=false,slots={},attempts=0,observed=0};env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply,resetField=eggLogic.resetField,fieldRecord=eggLogic.fieldRecord,fieldIndex=function() return eggLogic.field end,eggExport=eggLogic.export,toolRead=eggLogic.toolMetadata,toolCatalog=eggLogic.toolCatalog,definitions=eggLogic.inspectDefinitions,directory=eggLogic.assetDirectory,rarityBuild=eggLogic.rebuildRarityIndex,rarityStatus=eggLogic.rarityStatus,directoryCost=eggLogic.directoryByteCost,definitionSnapshot=eggLogic.definitionSnapshot,definitionTarget=eggLogic.definitionTarget,sourceScan=eggLogic.scanSources,sourceScalar=eggLogic.sourceScalar,sourceReset=function() eggLogic.sources=nil;eggLogic.sourceRunning=false;eggLogic.sourceEvents={};eggLogic.definitions=nil;eggLogic.definitionRunning=false;eggLogic.definitionPending=nil;eggLogic.rarityIndex=nil end}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply,resetField=eggLogic.resetField,fieldRecord=eggLogic.fieldRecord,fieldIndex=function() return eggLogic.field end,eggExport=eggLogic.export,toolRead=eggLogic.toolMetadata,toolCatalog=eggLogic.toolCatalog,definitions=eggLogic.inspectDefinitions,directory=eggLogic.assetDirectory,rarityDefer=eggLogic.deferRarity,rarityDeferred=eggLogic.rarityDeferred,rarityBuild=eggLogic.rebuildRarityIndex,rarityStatus=eggLogic.rarityStatus,directoryCost=eggLogic.directoryByteCost,definitionSnapshot=eggLogic.definitionSnapshot,definitionTarget=eggLogic.definitionTarget,sourceScan=eggLogic.scanSources,sourceScalar=eggLogic.sourceScalar,sourceReset=function() eggLogic.sources=nil;eggLogic.sourceRunning=false;eggLogic.sourceEvents={};eggLogic.definitions=nil;eggLogic.definitionRunning=false;eggLogic.definitionPending=nil;eggLogic.rarityIndex=nil;eggLogic.rarityDeferrals=nil end}", "collect-engine", "t", env))()
 local hatchSource=assert(source:match("(local function hatchStep.-)\nconnections%["))
 local runHatch=assert(load(hatchSource.."\nreturn hatchStep", "hatch-step", "t", env))()
 local function prompt(distance)
@@ -1480,7 +1480,7 @@ end)
 check("focused egg export includes prompt coordinates and prioritized field samples", function()
     qualityPrompt(3,nil,nil);funcs.record("RE/EggWorld/FieldEggShifted",fieldRecord("a",3,100))
     local result=funcs.eggExport()
-    assert(result.kind=="egg_data" and result.version=="1.50")
+    assert(result.kind=="egg_data" and result.version=="1.51")
     assert(result.eggSelection.catalog.entries[1].position.x==3 and result.eggSelection.catalog.fieldLinked==1)
     assert(result.eggSelection.fieldSamples[1].field.records[1].uid=="a")
 end)
@@ -2243,5 +2243,120 @@ check("truncated Directory rarity identity is never corroborated by its shortene
     local long=string.rep("r",161);local short=string.rep("r",160)
     rarityDefinitions({A=assetDefinition("A",1,long,3)},{[short]={_id=short,Rank=3}})
     assert(not funcs.rarityStatus().ready)
+end)
+check("a delayed prompt enable after arriving still permits the committed Rarity pickup",function()
+    rarityDefinitions({A=assetDefinition("A",1)})
+    local p=rarityPrompt(40,"a","A");p.Enabled=false;env.eggSelect.mode="Rarity"
+    local waits=0
+    onWait=function()
+        if (root.Position-p.position).Magnitude<=8 then waits=waits+1;if waits>=3 then p.Enabled=true end end
+    end
+    funcs.dispatch();assert(p.began==1 and waits>=3)
+end)
+check("a closer tied-rank egg appearing during travel does not cancel a valid pickup",function()
+    rarityDefinitions({A=assetDefinition("A",1)})
+    local p=rarityPrompt(40,"a","A");local nearby
+    env.eggSelect.mode="Rarity"
+    onWait=function() if not nearby then nearby=rarityPrompt(36,"b","A") end end
+    funcs.dispatch();assert(p.began==1 and nearby.began==0)
+end)
+check("disabled highest Rank is deferred and the next eligible egg can be collected",function()
+    rarityDefinitions({A=assetDefinition("A",1),B=assetDefinition("B",1,"Secret",8)})
+    local low=rarityPrompt(3,"a","A");local high=rarityPrompt(40,"b","B");high.Enabled=false
+    env.eggSelect.mode="Rarity";funcs.dispatch()
+    assert(high.began==0 and env.collectEgg.attempts==0 and env.collectEgg.promptWait.status=="Game prompt stayed disabled")
+    local c=funcs.eggExport().eggSelection.catalog
+    assert(c.deferred==1 and c.accepted==1 and c.entries[1].metadata.uid=="a" and c.entries[2].blockedReason)
+    funcs.dispatch();assert(low.began==1 and high.began==0 and not high.Enabled)
+end)
+check("disabled prompt readiness also works with native Walk approach",function()
+    rarityDefinitions({A=assetDefinition("A",1)})
+    local p=rarityPrompt(40,"a","A");p.Enabled=false;env.eggSelect.mode="Rarity";env.collectEgg.approachMode="Walk"
+    onWait=function() if (root.Position-p.position).Magnitude<=8 then p.Enabled=true end end
+    funcs.dispatch();assert(p.began==1 and env.collectEgg.promptWait.status=="Game prompt ready")
+end)
+check("a disabled egg already in range gets a bounded wait and no forced activation",function()
+    rarityDefinitions({A=assetDefinition("A",1)})
+    local p=rarityPrompt(3,"a","A");p.Enabled=false;env.eggSelect.mode="Rarity"
+    local before=clock;funcs.dispatch()
+    assert(clock-before>=2 and clock-before<2.3 and not p.Enabled and p.began==0)
+    assert(env.collectEgg.attempts==0 and env.collectEgg.promptWait.retryAfterSeconds==8)
+    local after=clock;funcs.dispatch();assert(clock==after and env.collectEgg.last:find("waiting to retry",1,true))
+end)
+check("temporary deferral expires and a now-enabled highest Rank is retried",function()
+    rarityDefinitions({A=assetDefinition("A",1)})
+    local p,r=rarityPrompt(3,"a","A");p.Enabled=false;env.eggSelect.mode="Rarity";funcs.dispatch()
+    p.Enabled=true;clock=clock+8.1;funcs.record("RE/EggWorld/FieldEggShifted",r)
+    funcs.dispatch();assert(p.began==1)
+end)
+check("readiness wait exits without input or deferral when Collect is stopped",function()
+    rarityDefinitions({A=assetDefinition("A",1)})
+    local p=rarityPrompt(3,"a","A");p.Enabled=false;env.eggSelect.mode="Rarity"
+    onWait=function() env.collectEgg.enabled=false end;funcs.dispatch()
+    assert(p.began==0 and env.collectEgg.promptWait.status=="Interrupted")
+    assert(not funcs.rarityDeferred(funcs.eggMeta(p)))
+end)
+check("readiness wait rechecks UID before accepting a late enable",function()
+    rarityDefinitions({A=assetDefinition("A",1)})
+    local p=rarityPrompt(3,"a","A",true);p.Enabled=false;env.eggSelect.mode="Rarity"
+    onWait=function() p.attrs.UID="new";p.Enabled=true end;funcs.dispatch()
+    assert(p.began==0 and env.collectEgg.promptWait.status=="Target identity or Rank changed")
+end)
+check("readiness wait rechecks activation rules and removed prompts",function()
+    rarityDefinitions({A=assetDefinition("A",1)})
+    local p=rarityPrompt(3,"a","A");p.Enabled=false;env.eggSelect.mode="Rarity"
+    onWait=function() p.Parent=nil end;funcs.dispatch()
+    assert(p.began==0 and env.collectEgg.promptWait.status=="Target removed or out of range")
+end)
+check("higher Rank appearing during the readiness wait still prevents old-target pickup",function()
+    rarityDefinitions({A=assetDefinition("A",1),B=assetDefinition("B",1,"Secret",8)})
+    local p=rarityPrompt(3,"a","A");p.Enabled=false;env.eggSelect.mode="Rarity";local high
+    onWait=function() if not high then high=rarityPrompt(20,"b","B");p.Enabled=true end end
+    funcs.dispatch();assert(p.began==0 and high.began==0 and env.collectEgg.last:find("reselecting",1,true))
+end)
+check("deferrals follow field UID across replacement prompt proxies",function()
+    rarityDefinitions({A=assetDefinition("A",1)})
+    local p=rarityPrompt(3,"a","A");p.Enabled=false;env.eggSelect.mode="Rarity";funcs.dispatch()
+    env.promptCache[p]=nil;p.Parent=nil
+    local replacement=qualityPrompt(3,nil,nil,"a")
+    local choices=funcs.eggRank(root,humanoid,false)
+    assert(choices[1].prompt==replacement and not choices[1].accepted and choices[1].blockedReason)
+end)
+check("a new UID or changed category is not held by a previous spawn deferral",function()
+    rarityDefinitions({A=assetDefinition("A",1),B=assetDefinition("B",1)})
+    local p,r=rarityPrompt(3,"a","A",true);p.Enabled=false;env.eggSelect.mode="Rarity";funcs.dispatch()
+    local replacement=fieldRecord("b",3);replacement.AssetCategory="A"
+    funcs.record("RE/EggWorld/FieldEggShifted",replacement);p.attrs.UID="b";p.Enabled=true
+    assert(funcs.eggRank(root,humanoid,false)[1].accepted)
+    p.attrs.UID="a";r.AssetCategory="B";funcs.record("RE/EggWorld/FieldEggShifted",r)
+    assert(funcs.eggRank(root,humanoid,false)[1].accepted)
+end)
+check("Rarity deferral does not alter Nearest or Income selection",function()
+    rarityDefinitions({A=assetDefinition("A",1)})
+    local p=rarityPrompt(3,"a","A");p.Enabled=false;env.eggSelect.mode="Rarity";funcs.dispatch()
+    p.Enabled=true;p.attrs.IncomePerSecond=10
+    env.eggSelect.mode="Nearest";assert(funcs.eggRank(root,humanoid,false)[1].accepted)
+    env.eggSelect.mode="Income";assert(funcs.eggRank(root,humanoid,false)[1].accepted)
+end)
+check("temporary deferral memory stays bounded",function()
+    for i=1,100 do funcs.rarityDefer({meta={uid="u"..i,assetCategory="A",rarityRank=3}},"disabled") end
+    local n=0;for i=1,100 do if funcs.rarityDeferred({uid="u"..i,assetCategory="A",rarityRank=3}) then n=n+1 end end
+    assert(n==64)
+end)
+check("focused egg export includes pickup status and wait diagnostics",function()
+    rarityDefinitions({A=assetDefinition("A",1)})
+    local p=rarityPrompt(3,"a","A");p.Enabled=false;env.eggSelect.mode="Rarity";funcs.dispatch()
+    local r=funcs.eggExport()
+    assert(r.collection.enabled and r.collection.attempts==0 and r.collection.promptWait.uid=="a")
+    assert(r.collection.last:find("prompt stayed disabled",1,true) and r.eggSelection.catalog.deferred==1)
+    assert(funcs.snapshot().promptWait.status=="Game prompt stayed disabled")
+end)
+check("retry expiry during a lower-ranked trip cannot revive a known disabled target and starve pickup",function()
+    rarityDefinitions({A=assetDefinition("A",1),B=assetDefinition("B",1,"Secret",8)})
+    local low=rarityPrompt(3,"a","A");local high=rarityPrompt(40,"b","B");high.Enabled=false
+    env.eggSelect.mode="Rarity";funcs.dispatch()
+    local advanced=false
+    onWait=function() if not advanced then clock=clock+9;advanced=true end end
+    funcs.dispatch();assert(low.began==1 and high.began==0 and advanced)
 end)
 print(string.format("%d Auto Collect tests passed", tests))
