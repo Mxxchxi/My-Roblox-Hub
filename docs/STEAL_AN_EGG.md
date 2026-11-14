@@ -1,4 +1,4 @@
-# Steal An Egg — v1.56
+# Steal An Egg — v1.57
 
 PlaceId: 107778070777162. Load through the existing universal Loader.
 All automation and placement recording start OFF. Evidence below separates user-reported game results from offline checks.
@@ -360,3 +360,18 @@ Log adds Field snapshot status, invocation count, imported/invalid/conflicting/s
 Validation: 381 engine cases (23 new), 35 full-file startup/control-flow cases (four new), four Python Loader contracts and full Lua 5.4 source compilation pass. A regression reproduces the user's initially empty cache and ready nearby prompt, then supplies validated snapshot data and verifies that UID/rank binding leads to input dispatch without any prior field event. Additional cases cover highest-Rank selection, warm-cache/Nearest no-request behavior, maps/nested envelopes/multiple return values, missing/ambiguous/wrong-class targets, errors/backoff, malformed/duplicate/conflicting identity, newer live updates/removals, cancellation/epochs/timeouts, bounded caches/traversal, cycle/metamethod handling, carried records and negative verdicts. Full-file cases exercise bootstrap-to-Log, OFF during reply, invocation error visibility and no RPC from Copy log. These simulations verify control flow, not the live custom RPC signature or actual acquisition.
 
 Retest with the usual Loader and confirm v1.56. Enable Collect and inspect Log -> Copy log. Expected progress is Field snapshot received/imported records, then UID-linked/ranked candidates and pickup input attempts. If no records are imported or acquisition still fails, send the updated Log; the snapshot status/detail now identifies the live response blocker directly.
+
+
+## Pickup input and live progress (v1.57)
+
+The supplied v1.56 report confirms 69 fresh field records, four UID-linked/ranked accepted prompts and pickup attempts. One completed attempt had no carry or new inventory UID evidence. The latest attempt was copied while input was still started; its eventual result is unknown. The snapshot's 70 superseded rows are now reported as `live_updates`, because newer live data already populated the cache.
+
+Settings -> Pickup input cycles AUTO -> PROMPT -> KEYBOARD while Collect is stopped. Auto initially uses native InputHoldBegin/End. If that attempt produces neither acquisition evidence nor a client Triggered signal, a later attempt tries the prompt's exact observed KeyboardKeyCode. It prefers UserInputService:CreateVirtualInput():SendKey and uses an available VirtualInputManager sender if unavailable or previously failed. No guessed E key, instant prompt invocation, or mutation RPC is introduced. If keyboard support is unavailable, Auto discloses a Prompt fallback; forced Keyboard waits with a block reason.
+
+Keyboard input is blocked with text focus, an already held key, unknown key state/key code, or another enabled prompt sharing the key within its activation range. During either hold, target identity, range, prompt readiness and cancellation are checked repeatedly. Keyboard holds also stop for changed keys, text focus or competing prompts. Temporary signal listeners are disconnected and owned input is released on completion, interruption, OFF and Close. Failed confirmed-key releases remain pending and prevent further input until release succeeds.
+
+Log reports the configured/preferred input method, backend/key, hold progress, release/interruption, client signal counts and current carry evidence. Client Triggered is not server pickup confirmation. Walk approach now says it reached the selected egg; prior return results are explicitly labelled Return history. Acquisition still requires existing carry/inventory observations, and Auto Place remains disabled.
+
+Validation: 395 engine tests, 36 full-file runtime tests and four Python Loader contracts, plus Lua 5.4 compilation. Keyboard tests cover the observed F key, focus/held-key/ambiguous-prompt blocks, cancellation/release and release recovery, backend failure fallback, signal cleanup, UID/range changes, delayed Auto strategy selection, and live-data/history Log labels. These are offline simulations; live pickup remains to be retested.
+
+Rerun the usual Loader, confirm v1.57 and leave Pickup input AUTO. Enable Collect, allow a completed attempt/retry, then use Log -> Copy log.

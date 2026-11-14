@@ -81,7 +81,7 @@ end
 env.eggSelect={mode="Nearest",preferred={},catalog={entries={}},fieldSamples={}};env.placementRecord={enabled=false,last="OFF",records={}};env.placeState={enabled=false,slots={},attempts=0,observed=0};env.upgrades={mode="Off",observed=0,lastAction=-math.huge};env.training={enabled=false,last="OFF",events=0};env.AUTO_PLACE_ENABLED=true;env.hatch={enabled=true,last=""};env.hatchLabel={};env.attemptState={}
 local eligibleSource=assert(source:match("(local function eligible.-)\nlocal function hatchStep"))
 env.eligible=assert(load(eligibleSource.."\nreturn eligible","hatch-eligible","t",env))()
-local funcs = assert(load(engine .. "\nreturn {candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply,resetField=eggLogic.resetField,fieldRecord=eggLogic.fieldRecord,fieldIndex=function() return eggLogic.field end,eggExport=eggLogic.export,toolRead=eggLogic.toolMetadata,toolCatalog=eggLogic.toolCatalog,epoch=function(value) eggLogic.collectEpoch=value end,log=eggLogic.log,logText=eggLogic.logText,logReport=eggLogic.logReport,logs=function() return eggLogic.logs end,bootstrap=eggLogic.bootstrapField,importSnapshot=eggLogic.importFieldSnapshot,snapshotTarget=eggLogic.snapshotTarget,autoData=eggLogic.ensureCollectData,autoStatus=eggLogic.discoveryStatus,definitions=eggLogic.inspectDefinitions,directory=eggLogic.assetDirectory,rarityDefer=eggLogic.deferRarity,rarityDeferred=eggLogic.rarityDeferred,rarityBuild=eggLogic.rebuildRarityIndex,rarityStatus=eggLogic.rarityStatus,directoryCost=eggLogic.directoryByteCost,definitionSnapshot=eggLogic.definitionSnapshot,definitionTarget=eggLogic.definitionTarget,sourceScan=eggLogic.scanSources,sourceScalar=eggLogic.sourceScalar,sourceReset=function() eggLogic.sources=nil;eggLogic.sourceRunning=false;eggLogic.sourceEvents={};eggLogic.definitions=nil;eggLogic.definitionRunning=false;eggLogic.definitionPending=nil;eggLogic.rarityIndex=nil;eggLogic.rarityDeferrals=nil;eggLogic.autoDiscovery=nil;eggLogic.collectEpoch=0;eggLogic.logs=nil;eggLogic.lastLoggedState=nil;eggLogic.fieldSnapshot=nil;eggLogic.fieldSnapshotPending=nil end}", "collect-engine", "t", env))()
+local funcs = assert(load(engine .. "\nreturn {pickupMethod=eggLogic.pickupMethod,performPickup=eggLogic.performPickup,releasePickupKey=eggLogic.releasePickupKey,candidate=collectCandidate,approach=approachCandidate,cancel=cancelCollectTween,step=collectStep,dispatch=dispatchCollect,snapshot=collectSnapshot,mark=setManualCarry,inventory=eggInventory,diff=newInventoryEggs,home=setDeliveryPoint,returnHome=returnHome,navigate=pathMove,record=recordGameEvent,updateCarry=updateServerCarry,resetServer=function() serverCarry=nil;lastRedeem=nil end,resolveHome=resolveAutoHome,inspectBase=inspectOwnedBase,hatchOwned=hatchOwned,hatchApproach=hatchApproach,recover=recoverWalking,bindPlace=addPlacementSlot,selectPlaceEgg=selectPlacementEgg,uidGone=placementUIDGone,place=placeStep,autoMark=autoMarkSlots,emptySlot=emptySlotEvidence,placeRay=placementRaycast,vacancies=areaVacancies,cost=parseSoftCost,cash=readCash,upgrade=upgradeStep,train=trainingStep,manualPlace=prepareManualPlacement,startRecord=beginPlacementRecording,stopRecord=stopPlacementRecording,captureRecord=capturePlacementClick,tickRecord=tickPlacementRecording,worldScan=scanPlacementWorld,worldCompare=comparePlacementWorld,eggMeta=eggLogic.metadata,eggRank=eggLogic.choices,eggCatalog=eggLogic.refresh,eggPrefs=eggLogic.apply,resetField=eggLogic.resetField,fieldRecord=eggLogic.fieldRecord,fieldIndex=function() return eggLogic.field end,eggExport=eggLogic.export,toolRead=eggLogic.toolMetadata,toolCatalog=eggLogic.toolCatalog,epoch=function(value) eggLogic.collectEpoch=value end,log=eggLogic.log,logText=eggLogic.logText,logReport=eggLogic.logReport,logs=function() return eggLogic.logs end,bootstrap=eggLogic.bootstrapField,importSnapshot=eggLogic.importFieldSnapshot,snapshotTarget=eggLogic.snapshotTarget,autoData=eggLogic.ensureCollectData,autoStatus=eggLogic.discoveryStatus,definitions=eggLogic.inspectDefinitions,directory=eggLogic.assetDirectory,rarityDefer=eggLogic.deferRarity,rarityDeferred=eggLogic.rarityDeferred,rarityBuild=eggLogic.rebuildRarityIndex,rarityStatus=eggLogic.rarityStatus,directoryCost=eggLogic.directoryByteCost,definitionSnapshot=eggLogic.definitionSnapshot,definitionTarget=eggLogic.definitionTarget,sourceScan=eggLogic.scanSources,sourceScalar=eggLogic.sourceScalar,sourceReset=function() eggLogic.pickupKey=nil;eggLogic.sources=nil;eggLogic.sourceRunning=false;eggLogic.sourceEvents={};eggLogic.definitions=nil;eggLogic.definitionRunning=false;eggLogic.definitionPending=nil;eggLogic.rarityIndex=nil;eggLogic.rarityDeferrals=nil;eggLogic.autoDiscovery=nil;eggLogic.collectEpoch=0;eggLogic.logs=nil;eggLogic.lastLoggedState=nil;eggLogic.fieldSnapshot=nil;eggLogic.fieldSnapshotPending=nil end}", "collect-engine", "t", env))()
 local hatchSource=assert(source:match("(local function hatchStep.-)\nconnections%["))
 local runHatch=assert(load(hatchSource.."\nreturn hatchStep", "hatch-step", "t", env))()
 local function prompt(distance)
@@ -94,7 +94,7 @@ local function prompt(distance)
     return p
 end
 local function reset()
-    funcs.resetField();funcs.sourceReset();env.gui=nil;env.game={PlaceId=107778070777162};env.require=nil;env.task.spawn=function(fn) fn() end
+    funcs.resetField();funcs.sourceReset();env.UIS=nil;env.gui=nil;env.game={PlaceId=107778070777162};env.require=nil;env.task.spawn=function(fn) fn() end
     env.eggSelect={mode="Nearest",preferred={},catalog={entries={}},fieldSamples={}}
     funcs.stopRecord("reset");env.placementRecord={enabled=false,last="OFF",records={}}
     env.hatch.enabled=true;env.hatch.attempts=0;env.hatch.lastAttempt=nil;env.attemptState={}
@@ -137,7 +137,7 @@ check("choose closest egg and preserve input record", function()
     local a,b = prompt(6),prompt(2); env.promptCache[a],env.promptCache[b] = true,true
     funcs.dispatch(); assert(a.began == 0 and b.began == 1 and b.ended == 1)
     assert(env.collectEgg.attempts == 1 and env.collectEgg.lastInput.distance == 2)
-    assert(env.collectEgg.lastInput.status == "Input sent; pickup unverified")
+    assert(env.collectEgg.lastInput.status == "Pickup unconfirmed")
 end)
 check("pause when carrying, scanning, OFF or hatch busy", function()
     local p=prompt(2); env.promptCache[p] = true
@@ -1479,7 +1479,7 @@ end)
 check("focused egg export includes prompt coordinates and prioritized field samples", function()
     qualityPrompt(3,nil,nil);funcs.record("RE/EggWorld/FieldEggShifted",fieldRecord("a",3,100))
     local result=funcs.eggExport()
-    assert(result.kind=="egg_data" and result.version=="1.56")
+    assert(result.kind=="egg_data" and result.version=="1.57")
     assert(result.eggSelection.catalog.entries[1].position.x==3 and result.eggSelection.catalog.fieldLinked==1)
     assert(result.eggSelection.fieldSamples[1].field.records[1].uid=="a")
 end)
@@ -2537,7 +2537,7 @@ end)
 check("log report explains missing UID bindings even when Rank data is loaded",function()
     automaticFixture();assert(funcs.autoData());qualityPrompt(3,nil,nil)
     local text=funcs.logReport()
-    assert(text:find("v1.56",1,true) and text:find("UID linked 0",1,true) and text:find("fresh 0",1,true))
+    assert(text:find("v1.57",1,true) and text:find("UID linked 0",1,true) and text:find("fresh 0",1,true))
     assert(text:find("Fresh unique field UID binding required",1,true))
 end)
 check("log report includes candidate UID category and game Rank without Directory dumps",function()
@@ -2719,5 +2719,110 @@ check("an over-budget live removal batch prevents any stale snapshot merge",func
         return {Records={snapshotRecord("u129",3)}}
     end)
     assert(not funcs.bootstrap() and funcs.fieldIndex().count==0)
+end)
+local function keyboardFixture()
+    local key={__type="EnumItem",Name="F"};env.Enum.KeyCode={Unknown={}};key.EnumType=env.Enum.KeyCode
+    local calls={};local box=nil;local down=false
+    env.UIS={GetFocusedTextBox=function() return box end,IsKeyDown=function() return down end,
+        CreateVirtualInput=function() return {SendKey=function(_,pressed,actual,repeated)
+            assert(actual==key and repeated==false);calls[#calls+1]=pressed
+        end} end}
+    local p=prompt(2);p.KeyboardKeyCode=key;env.promptCache[p]=true
+    env.collectEgg.inputMode="Keyboard"
+    return p,calls,function(v) box=v end,function(v) down=v end
+end
+check("keyboard uses the observed F key and releases once",function()
+    local p,calls=keyboardFixture();local method=assert(funcs.pickupMethod(p,root));local record={}
+    assert(method.name=="Keyboard" and method.keyName=="F")
+    assert(funcs.performPickup(p,root,humanoid,character,{},record,method))
+    assert(#calls==2 and calls[1] and calls[2]==false and record.keyReleaseOK and record.keyDownOK)
+    assert(p.began==0 and record.holdSeconds>=0.15 and record.promptEvents.observed==0)
+end)
+check("keyboard blocks focus, user-held keys, missing keys and overlapping prompts",function()
+    local p,_,focus,held=keyboardFixture();focus({});assert(not funcs.pickupMethod(p,root))
+    focus(nil);held(true);assert(not funcs.pickupMethod(p,root));held(false)
+    local other=prompt(3);other.KeyboardKeyCode=p.KeyboardKeyCode;env.promptCache[other]=true
+    assert(not funcs.pickupMethod(p,root));other.Enabled=false;assert(funcs.pickupMethod(p,root))
+    p.KeyboardKeyCode=nil;assert(not funcs.pickupMethod(p,root))
+    p.KeyboardKeyCode=env.Enum.KeyCode.Unknown;assert(not funcs.pickupMethod(p,root))
+end)
+check("Auto preserves Prompt initially and discloses keyboard fallback",function()
+    local p,_,focus=keyboardFixture();env.collectEgg.inputMode="Auto"
+    assert(funcs.pickupMethod(p,root).name=="Prompt")
+    env.collectEgg.preferKeyboard=true;assert(funcs.pickupMethod(p,root).name=="Keyboard")
+    focus({});local m=funcs.pickupMethod(p,root);assert(m.name=="Prompt" and m.fallbackReason)
+end)
+check("keyboard releases on Collect OFF during a hold",function()
+    local p,calls=keyboardFixture();p.HoldDuration=1.2
+    onWait=function() env.collectEgg.enabled=false end
+    local r={};local ok=funcs.performPickup(p,root,humanoid,character,{},r,assert(funcs.pickupMethod(p,root)))
+    assert(not ok and r.interrupted and #calls==2 and calls[2]==false and r.keyReleaseOK)
+end)
+check("keyboard releases when text focus opens during a hold",function()
+    local p,calls,focus=keyboardFixture();p.HoldDuration=1.2;onWait=function() focus({}) end
+    local r={};assert(not funcs.performPickup(p,root,humanoid,character,{},r,assert(funcs.pickupMethod(p,root))))
+    assert(r.interrupted=="Text input focused during hold" and #calls==2 and calls[2]==false)
+end)
+check("keyboard releases when a competing prompt enters range",function()
+    local p,calls=keyboardFixture();p.HoldDuration=1.2
+    onWait=function() local other=prompt(2);other.KeyboardKeyCode=p.KeyboardKeyCode;env.promptCache[other]=true end
+    local r={};assert(not funcs.performPickup(p,root,humanoid,character,{},r,assert(funcs.pickupMethod(p,root))))
+    assert(r.interrupted=="Another prompt entered keyboard range" and #calls==2)
+end)
+check("native hold aborts and releases if range changes",function()
+    local p=prompt(2);p.HoldDuration=1.2;onWait=function() p.position=position(99) end
+    local r={};assert(not funcs.performPickup(p,root,humanoid,character,{},r,{name="Prompt"}))
+    assert(p.began==1 and p.ended==1 and r.interrupted)
+end)
+check("keyboard release failure is retained until retry succeeds",function()
+    local p,calls=keyboardFixture();local method=assert(funcs.pickupMethod(p,root));local sender=method.send;local fail=true
+    method.send=function(pressed) if not pressed and fail then error("release denied") end;return sender(pressed) end
+    local r={};assert(not funcs.performPickup(p,root,humanoid,character,{},r,method))
+    assert(r.releaseError and not funcs.releasePickupKey());fail=false
+    assert(funcs.releasePickupKey() and r.keyReleaseOK and #calls==2)
+    assert(funcs.releasePickupKey() and #calls==2)
+end)
+check("failed keyboard backend is skipped on a later selection",function()
+    local p=keyboardFixture();local m=assert(funcs.pickupMethod(p,root));m.send=function() error("unavailable") end
+    local r={};assert(not funcs.performPickup(p,root,humanoid,character,{},r,m))
+    local calls=0;env.game.GetService=function(_,name) assert(name=="VirtualInputManager");return {SendKeyEvent=function() calls=calls+1 end} end
+    local later=assert(funcs.pickupMethod(p,root));assert(later.backend=="VirtualInputManager" and calls==0)
+end)
+check("prompt client signals are observed and disconnected without claiming pickup",function()
+    local p=prompt(2);p.HoldDuration=1.2;local disconnected=0;local callbacks={}
+    for _,name in ipairs({"PromptButtonHoldBegan","PromptButtonHoldEnded","Triggered","TriggerEnded"}) do
+        p[name]={Connect=function(_,fn) callbacks[name]=fn;return {Disconnect=function() disconnected=disconnected+1 end} end}
+    end
+    onWait=function() callbacks.Triggered(env.player) end
+    local r={};assert(funcs.performPickup(p,root,humanoid,character,{},r,{name="Prompt"}))
+    assert(r.promptEvents.observed==4 and r.promptEvents.triggered==1 and disconnected==4)
+    assert(not funcs.snapshot(false).carryState.fieldCarrying)
+end)
+check("unconfirmed Prompt input selects keyboard only on a later cycle",function()
+    local p=prompt(2);env.promptCache[p]=true;funcs.dispatch()
+    assert(env.collectEgg.preferKeyboard and env.collectEgg.lastInput.method=="Prompt" and p.began==1)
+    local text=funcs.logReport();assert(text:find("Pickup input: Auto | preferred Keyboard",1,true))
+    assert(text:find("Prompt signals:",1,true) and text:find("Carry:",1,true))
+end)
+check("native hold aborts on UID change and always ends its hold",function()
+    local p=qualityPrompt(2,10,"Common","first");p.HoldDuration=1.2
+    local original=p.GetAttribute
+    onWait=function() p.GetAttribute=function(self,key) if key=="UID" then return "second" end;return original(self,key) end end
+    local m=funcs.eggMeta(p);local r={}
+    assert(not funcs.performPickup(p,root,humanoid,character,m,r,{name="Prompt"}))
+    assert(r.interrupted=="Target UID, category or Rank changed during hold" and p.ended==1)
+end)
+check("return history is explicitly separate from the current input phase",function()
+    env.collectEgg.phase="PICKUP";env.collectEgg.lastReturn={status="No ground return path"}
+    local text=funcs.logReport()
+    assert(text:find("Return history: No ground return path | current phase PICKUP",1,true))
+end)
+check("newer live updates are labelled as usable live data rather than empty snapshot",function()
+    bootstrapFixture(function()
+        funcs.record("RE/EggWorld/FieldEggShifted",snapshotRecord("fresh",3))
+        return {Records={snapshotRecord("fresh",3)}}
+    end)
+    assert(not funcs.bootstrap());assert(funcs.fieldIndex().count==1)
+    assert(funcs.logReport():find("Field snapshot: live_updates",1,true))
 end)
 print(string.format("%d Auto Collect tests passed", tests))

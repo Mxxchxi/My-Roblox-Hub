@@ -1,4 +1,4 @@
--- Steal An Egg: automation v1.56
+-- Steal An Egg: automation v1.57
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -54,7 +54,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.56", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.57", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -145,6 +145,7 @@ local testHatch = control(automation,"Test Hatch once",0,358,150,24)
 local hatchLabel = label(automation,"Auto approaches ready eggs in your base.",160,354,408,28,11,colors.muted)
 hatchLabel.TextWrapped = true
 local carryMarker = control(settings,"Mark: I am carrying an egg",0,268,270,34)
+local pickupButton=control(settings,"Pickup input: AUTO",280,268,250,34)
 local approachButton=control(settings,"Approach: WALK",0,310,270,30)
 local priorityButton=control(settings,"Priority: RARITY",280,310,250,30)
 local setHomeButton = control(settings,"Set delivery point here",0,346,260,30)
@@ -1130,7 +1131,7 @@ function eggLogic.observeField(name,payload)
     field.lastEvent=name;field.lastAt=os.time()
     local result={records={},processed=0,removed=0}
     local function storeRecord(value,key)
-        local record=eggLogic.fieldRecord(value,name,key)
+    local record=eggLogic.fieldRecord(value,name,key)
         if not record then return end
         result.processed=result.processed+1
         if #result.records<4 then result.records[#result.records+1]=record end
@@ -1269,8 +1270,10 @@ function eggLogic.bootstrapField()
     else
         local ok,result=pcall(eggLogic.importFieldSnapshot,pending.values,pending)
         if ok then
-            state.result=result;state.status=result.cancelled and "cancelled" or result.imported>0 and "received" or "empty"
-            state.reason=result.imported==0 and "No usable new field records in snapshot" or nil
+            state.result=result;state.status=result.cancelled and "cancelled" or result.imported>0 and "received"
+                or result.superseded>0 and eggLogic.field.count>0 and "live_updates" or "empty"
+            state.reason=state.status=="live_updates" and "Newer live events used instead of snapshot rows"
+                or result.imported==0 and "No usable new field records in snapshot" or nil
         else state.status="invalid";state.reason=tostring(result):sub(1,180) end
     end
     pending.values=nil
@@ -1442,6 +1445,130 @@ end
 local function inCollectRange(prompt, root)
     local position = prompt.Parent and promptPosition(prompt)
     return position and root and (root.Position-position).Magnitude <= math.min(prompt.MaxActivationDistance,8)
+end
+function eggLogic.releasePickupKey()
+    local context=eggLogic.pickupKey
+    if not context then return true end
+    local ok,result=pcall(context.send,false)
+    context.record.keyReleaseOK=ok and result~=false
+    if ok and result~=false then eggLogic.pickupKey=nil;return true end
+    context.record.releaseError=tostring(result):sub(1,140)
+    if not context.downConfirmed then eggLogic.pickupKey=nil end
+    return false
+end
+function eggLogic.pickupMethod(prompt,root)
+    local wanted=collectEgg.inputMode or "Auto"
+    if wanted=="Prompt" or wanted=="Auto" and not collectEgg.preferKeyboard then return {name="Prompt"} end
+    local function unavailable(reason)
+        if wanted=="Keyboard" then return nil,reason end
+        return {name="Prompt",fallbackReason=reason}
+    end
+    local ok,key=pcall(function() return prompt.KeyboardKeyCode end)
+    if not ok or typeof(key)~="EnumItem" or key.EnumType~=Enum.KeyCode or key==Enum.KeyCode.Unknown then
+        return unavailable("Prompt keyboard key unavailable")
+    end
+    local focused,box=pcall(function() return UIS:GetFocusedTextBox() end)
+    if not focused or box then return unavailable("Text input focused or focus state unavailable") end
+    local checked,down=pcall(function() return UIS:IsKeyDown(key) end)
+    if not checked or down then return unavailable("Prompt key is already held or key state unavailable") end
+    for other in pairs(promptCache) do
+        if other~=prompt and other.Parent and other.Enabled then
+            local read,conflict=pcall(function()
+                local position=promptPosition(other)
+                return other.KeyboardKeyCode==key and position and (root.Position-position).Magnitude<=other.MaxActivationDistance
+            end)
+            if not read or conflict then return unavailable("Another prompt may receive the same key") end
+        end
+    end
+    local failed=collectEgg.keyboardFailed or {}
+    if not failed.VirtualInput then
+        local loaded,sender=pcall(function()
+            local api=UIS:CreateVirtualInput()
+            assert(type(api.SendKey)=="function")
+            return function(pressed) return api:SendKey(pressed,key,false) end
+        end)
+        if loaded then return {name="Keyboard",backend="VirtualInput",key=key,keyName=key.Name,send=sender} end
+    end
+    if not failed.VirtualInputManager then
+        local loaded,sender=pcall(function()
+            local api=game:GetService("VirtualInputManager")
+            assert(type(api.SendKeyEvent)=="function")
+            return function(pressed) return api:SendKeyEvent(pressed,key,false,game) end
+        end)
+        if loaded then return {name="Keyboard",backend="VirtualInputManager",key=key,keyName=key.Name,send=sender} end
+    end
+    return unavailable("Keyboard input backend unavailable")
+end
+function eggLogic.performPickup(prompt,root,humanoid,character,metadata,record,method)
+    record.method=method.name;record.backend=method.backend;record.key=method.keyName;record.fallbackReason=method.fallbackReason
+    record.holdDuration=prompt.HoldDuration;record.startedClock=os.clock()
+    record.promptEvents={holdBegan=0,holdEnded=0,triggered=0,triggerEnded=0,observed=0}
+    local listeners={}
+    for key,name in pairs({holdBegan="PromptButtonHoldBegan",holdEnded="PromptButtonHoldEnded",triggered="Triggered",triggerEnded="TriggerEnded"}) do
+        pcall(function()
+            local connection=prompt[name]:Connect(function(who)
+                if who==nil or who==player then record.promptEvents[key]=record.promptEvents[key]+1 end
+            end)
+            listeners[#listeners+1]=connection;record.promptEvents.observed=record.promptEvents.observed+1
+        end)
+    end
+    collectEgg.last="Holding pickup input: "..method.name.." "..tostring(method.keyName or "")
+    record.status="Holding input"
+    local ok,err=pcall(function()
+        if method.name=="Keyboard" then
+            eggLogic.pickupKey={send=method.send,record=record,downConfirmed=false}
+            local result=method.send(true)
+            if result==false then error("Keyboard key-down rejected") end
+            eggLogic.pickupKey.downConfirmed=true;record.keyDownOK=true
+        else holding=prompt;prompt:InputHoldBegin() end
+        local deadline=record.startedClock+record.holdDuration+0.15
+        while os.clock()<deadline do
+            if not active or not collectEgg.enabled or busy or player.Character~=character or not root.Parent or humanoid.Health<=0 then
+                record.interrupted="Collect stopped or character changed";break
+            end
+            if carryVisible() or record.promptEvents.triggered>0 then break end
+            if not collectCandidate(prompt,root,humanoid) then record.interrupted="Prompt removed, disabled or out of range";break end
+            if metadata.uid then
+                local latest=eggLogic.metadata(prompt)
+                if latest.uid~=metadata.uid or latest.assetCategory~=metadata.assetCategory or latest.rarityRank~=metadata.rarityRank then
+                    record.interrupted="Target UID, category or Rank changed during hold";break
+                end
+            end
+            if method.key then
+                if prompt.KeyboardKeyCode~=method.key then record.interrupted="Prompt key changed during hold";break end
+                local focusOK,box=pcall(function() return UIS:GetFocusedTextBox() end)
+                if not focusOK or box then record.interrupted="Text input focused during hold";break end
+                for other in pairs(promptCache) do
+                    if other~=prompt and other.Parent and other.Enabled and other.KeyboardKeyCode==method.key then
+                        local point=promptPosition(other)
+                        if point and (root.Position-point).Magnitude<=other.MaxActivationDistance then
+                            record.interrupted="Another prompt entered keyboard range";break
+                        end
+                    end
+                end
+                if record.interrupted then break end
+            end
+            task.wait(math.min(0.05,math.max(0.01,deadline-os.clock())))
+        end
+    end)
+    local released=true
+    if method.name=="Keyboard" then
+        released=eggLogic.releasePickupKey()
+        if not ok then
+            collectEgg.keyboardFailed=collectEgg.keyboardFailed or {};collectEgg.keyboardFailed[method.backend]=true
+        end
+    elseif holding==prompt then
+        local ended,releaseError=pcall(function() prompt:InputHoldEnd() end);holding=nil
+        released=ended;if not ended then record.releaseError=tostring(releaseError):sub(1,140) end
+    end
+    for _,connection in ipairs(listeners) do pcall(function() connection:Disconnect() end) end
+    record.holdSeconds=math.max(0,os.clock()-record.startedClock);record.completedClock=os.clock()
+    local position=prompt.Parent and promptPosition(prompt)
+    if position then record.endDistance=(root.Position-position).Magnitude end
+    if not ok then return false,tostring(err) end
+    if not released then return false,"Input release failed: "..tostring(record.releaseError) end
+    if record.interrupted then return false,record.interrupted end
+    return true
 end
 function eggLogic.waitForRarityPrompt(choice,root,humanoid,character)
     local prompt=choice.prompt
@@ -1910,7 +2037,7 @@ function eggLogic.refresh()
 end
 function eggLogic.export()
     eggLogic.refresh()
-    return {version="1.56",kind="egg_data",placeId=game.PlaceId,
+    return {version="1.57",kind="egg_data",placeId=game.PlaceId,
         collection={enabled=collectEgg.enabled,phase=collectEgg.phase,last=collectEgg.last,attempts=collectEgg.attempts,
             retry=eggLogic.retryStatus(),promptWait=collectEgg.promptWait,lastMovement=collectEgg.lastMovement,lastInput=collectEgg.lastInput},
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
@@ -1962,9 +2089,10 @@ local function approachEgg(root, humanoid,preferred)
                     local record={at=os.time(),path=prompt:GetFullName(),mode="Walk",distance=choice.distance,status="Walking to egg"}
                     collectEgg.lastMovement=record
                     local reached,reason=walkReturn(root,humanoid,character,root.Position+offset,false,prompt)
-                    record.status,record.stopReason=reason,reason
+                    record.status=reached and "Walk approach reached selected egg" or reason
+                    record.stopReason=record.status
                     record.endDistance=(root.Position-position).Magnitude
-                    collectEgg.last=reason
+                    collectEgg.last=record.status
                     return reached and inCollectRange(prompt,root) and prompt.Enabled
                 end
                 local obstacle = workspace:Raycast(root.Position, offset, params)
@@ -2609,11 +2737,14 @@ function eggLogic.logReport()
     local catalog=eggSelect.catalog or {}
     local discovery=eggLogic.discoveryStatus()
     local field=catalog.fieldData or {}
-    local lines={"MY ROBLOX HUB | Steal An Egg v1.56 | place "..tostring(game.PlaceId)}
+    local lines={"MY ROBLOX HUB | Steal An Egg v1.57 | place "..tostring(game.PlaceId)}
     local function add(name,value) lines[#lines+1]=name..": "..eggLogic.logText(value,320) end
     add("Collect",string.format("%s | %s | mode %s | approach %s | attempts %d",collectEgg.enabled and "ON" or "OFF",
         collectEgg.phase or "IDLE",eggSelect.mode,collectEgg.approachMode or "Walk",collectEgg.attempts or 0))
     add("Last",collectEgg.last)
+    add("Pickup input",(collectEgg.inputMode or "Auto").." | preferred "..(collectEgg.preferKeyboard and "Keyboard" or "Prompt").." | "..tostring(collectEgg.inputBlock or ""))
+    local carry=carryState()
+    add("Carry",carry.source.." | field "..tostring(carry.fieldCarrying).." | event "..tostring(carry.serverCarrying).." | UI "..tostring(carry.fieldCarryUI).." | equipped "..tostring(carry.equippedEgg))
     add("Discovery",discovery.status.." | reads "..discovery.attempts.." | "..tostring(discovery.reason or discovery.lastResult or ""))
     for _,module in ipairs(eggLogic.definitions and eggLogic.definitions.modules or {}) do
         add("Module",module.path.." | "..module.status.." | snapshot complete "..tostring(module.snapshot and module.snapshot.complete).." | "..tostring(module.error or ""))
@@ -2660,9 +2791,13 @@ function eggLogic.logReport()
     if collectEgg.lastInput then
         local input=collectEgg.lastInput
         add("Input",tostring(input.status).." | "..tostring(input.outcome or "").." | "..tostring(input.error or ""))
+        add("Input method",tostring(input.method).." | "..tostring(input.backend or "native hold").." | key "..tostring(input.key or "n/a").." | "..tostring(input.fallbackReason or ""))
+        add("Input hold",tostring(input.holdSeconds or input.startedClock and math.max(0,os.clock()-input.startedClock) or 0).."s / "..tostring(input.holdDuration or "?").."s | released "..tostring(input.keyReleaseOK).." | "..tostring(input.interrupted or input.releaseError or ""))
+        local e=input.promptEvents or {}
+        add("Prompt signals","observed "..tostring(e.observed or 0).." | began "..tostring(e.holdBegan or 0).." | ended "..tostring(e.holdEnded or 0).." | Triggered "..tostring(e.triggered or 0).." | client signals only")
     end
     if collectEgg.lastMovement then add("Movement",tostring(collectEgg.lastMovement.status).." | "..tostring(collectEgg.lastMovement.stopReason or "")) end
-    if collectEgg.lastReturn then add("Return",collectEgg.lastReturn.status) end
+    if collectEgg.lastReturn then add("Return history",collectEgg.lastReturn.status.." | current phase "..tostring(collectEgg.phase)) end
     add("Other automation","Hatch "..tostring(hatch.enabled).." | "..tostring(hatch.last).." | Upgrade "..upgrades.mode.." | Train "..tostring(training.enabled))
     if not refreshed then add("Snapshot error",refreshError) end
     local state=eggLogic.logs or {entries={},dropped=0}
@@ -2681,6 +2816,7 @@ function eggLogic.logReport()
 end
 local function collectStep()
     if not active or not collectEgg.enabled or busy or hatchRunning or placeRunning or systemRunning then return end
+    if not eggLogic.releasePickupKey() then retryCollect("Previous pickup key release failed; retrying release");return end
     local retry=collectEgg.retry
     if retry then
         local lateAdded=retry.kind=="pickup" and retry.inventoryBefore and retry.character==player.Character
@@ -2767,6 +2903,12 @@ local function collectStep()
     if not bestDistance or not eggLogic.accepts(latest) or selected.meta.uid and latest.uid~=selected.meta.uid then
         collectEgg.last="Selected egg changed or no longer matches; rechecking next cycle";return
     end
+    local method,blocked=eggLogic.pickupMethod(best,root)
+    if not method then
+        collectEgg.inputBlock=blocked;collectEgg.last="Pickup input blocked: "..tostring(blocked)
+        eggLogic.log("collect.input.blocked",blocked);return
+    end
+    collectEgg.inputBlock=nil
     collectEgg.selectedEgg={at=os.time(),mode=eggSelect.mode,path=best:GetFullName(),distance=bestDistance,metadata=latest}
     eggLogic.log("collect.target","UID "..tostring(latest.uid or "?").." | "..tostring(latest.assetCategory or latest.name or "?").." | Rank "..tostring(latest.rarityRank or "?"))
     collectEgg.phase="PICKUP"
@@ -2779,18 +2921,12 @@ local function collectStep()
     local record = {path = best:GetFullName(), distance = bestDistance, at = os.time(), status = "Started",eggSelection=collectEgg.selectedEgg}
     collectEgg.lastInput = record
     recordGameEvent("collect.input.begin",best:GetFullName())
-    local ok, err = pcall(function()
-        holding = best
-        best:InputHoldBegin()
-        task.wait(best.HoldDuration + 0.1)
-        best:InputHoldEnd()
-        holding = nil
-    end)
-    if holding then pcall(function() holding:InputHoldEnd() end); holding = nil end
+    local ok,err=eggLogic.performPickup(best,root,humanoid,character,latest,record,method)
     record.status = ok and "Input sent; pickup unverified" or "Input failed"
     if not ok then record.error = tostring(err):sub(1,120) end
     if ok and active and collectEgg.enabled then
         collectEgg.last = "Waiting for pickup result"
+        record.status="Confirming pickup"
         local deadline = os.clock() + 3
         while active and collectEgg.enabled and player.Character == character and humanoid.Health > 0
             and not carryVisible() and os.clock() < deadline do
@@ -2809,21 +2945,28 @@ local function collectStep()
         record.outcome = "New egg UID observed after input; acquisition source not verified"
         collectEgg.inventoryAdditionsObserved = (collectEgg.inventoryAdditionsObserved or 0) + #record.inventoryAdded
         collectEgg.unconfirmed = 0
+        if (collectEgg.inputMode or "Auto")=="Auto" then collectEgg.preferKeyboard=record.method=="Keyboard" end
     elseif record.carryVisibleAfter then
         record.outcome = record.carryStateAfter.fieldCarrying and (record.carryStateAfter.serverCarrying and "Game reported field egg carrying" or "Field carry UI detected; pickup inferred from UI")
             or record.carryStateAfter.equippedEgg and "Egg tool equipped; field pickup not verified"
             or "User marked carrying; game pickup not verified"
         collectEgg.unconfirmed = 0
+        if record.carryStateAfter.fieldCarrying and (collectEgg.inputMode or "Auto")=="Auto" then collectEgg.preferKeyboard=record.method=="Keyboard" end
     elseif not active or not collectEgg.enabled then
         record.outcome = "Cancelled before pickup confirmation"
     else
         record.outcome = "No carry state or new egg UID detected after input"
         collectEgg.unconfirmed = (collectEgg.unconfirmed or 0) + 1
+        if (collectEgg.inputMode or "Auto")=="Auto" and record.method=="Prompt" and record.promptEvents.triggered==0 then
+            collectEgg.preferKeyboard=true
+            eggLogic.log("collect.input.strategy","Prompt hold unconfirmed; try observed keyboard key next cycle when unambiguous")
+        end
         if eggSelect.mode=="Rarity" then eggLogic.deferRarity(selected,"Pickup not confirmed") end
         retryCollect(ok and "Pickup not confirmed; checking carry state before retry"
             or ("Pickup input failed: "..tostring(record.error)),"pickup",5)
         if collectEgg.retry then collectEgg.retry.inventoryBefore=inventoryBefore;collectEgg.retry.character=character end
     end
+    record.status=not ok and "Input failed" or record.carryVisibleAfter and "Carry observed" or #record.inventoryAdded>0 and "Inventory change observed" or "Pickup unconfirmed"
     recordGameEvent("collect.input.outcome",record.outcome)
     if active and not collectEgg.retry then collectEgg.last = record.outcome end
     -- Continue the pickup/return cycle in this same dispatch, without waiting
@@ -2841,6 +2984,7 @@ local function dispatchCollect()
     collectRunning = false
     if not ok then cancelCollectTween("Movement error") end
     if not ok and active then
+        eggLogic.releasePickupKey()
         if holding then pcall(function() holding:InputHoldEnd() end);holding=nil end
         retryCollect("Collect error: " .. tostring(err):sub(1,100))
     end
@@ -3676,7 +3820,7 @@ end
 function logUI.prepare()
     eggLogic.observeLogState()
     local ok,text=pcall(eggLogic.logReport)
-    if not ok then text="MY ROBLOX HUB v1.56\nLog snapshot error: "..tostring(text) end
+    if not ok then text="MY ROBLOX HUB v1.57\nLog snapshot error: "..tostring(text) end
     logUI.frozen=true;logUI.copyText=text;showTab("Log")
     local wrote,writeError=pcall(function() logUI.box.Text=text end)
     if not wrote then logUI.hint.Text="Text display failed: "..tostring(writeError):sub(1,100) end
@@ -3737,7 +3881,7 @@ logUI.clear.Activated:Connect(function()
     logUI.hint.Text="History cleared. Collection and current status are unchanged."
     logUI.refresh()
 end)
-eggLogic.log("hub.ready","v1.56 | automatic discovery | all automation OFF")
+eggLogic.log("hub.ready","v1.57 | automatic discovery | all automation OFF")
 priorityButton.Activated:Connect(function()
     if collectEgg.enabled or collectRunning or busy or placeState.manualPreparing or placementRecord.enabled then
         status.Text="Stop Collect before changing priority";return
@@ -3746,6 +3890,13 @@ priorityButton.Activated:Connect(function()
     priorityButton.Text="Priority: "..string.upper(eggSelect.mode)
     eggLogic.log("settings.priority",eggSelect.mode)
     status.Text="Collect ON scans eggs automatically ("..eggSelect.mode..")"
+end)
+pickupButton.Activated:Connect(function()
+    if collectEgg.enabled or collectRunning then status.Text="Stop Collect before changing pickup input";return end
+    collectEgg.inputMode=({Auto="Prompt",Prompt="Keyboard",Keyboard="Auto"})[collectEgg.inputMode or "Auto"]
+    collectEgg.keyboardFailed={};collectEgg.preferKeyboard=false
+    pickupButton.Text="Pickup input: "..string.upper(collectEgg.inputMode)
+    eggLogic.log("settings.pickup",collectEgg.inputMode)
 end)
 upgradeToggle.Activated:Connect(function()
     if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
@@ -3860,6 +4011,7 @@ collectButton.Activated:Connect(function()
     collectLabel.Text = collectEgg.last
     status.Text=collectEgg.enabled and "Collect ON: detecting eggs automatically" or "Collect OFF"
     if not collectEgg.enabled then cancelCollectTween("Collect OFF") end
+    if not collectEgg.enabled then eggLogic.releasePickupKey() end
     if not collectEgg.enabled and collectRunning and holding then
         pcall(function() holding:InputHoldEnd() end); holding = nil
     end
@@ -3881,6 +4033,7 @@ task.spawn(function()
 end)
 local function stopHatch()
     active = false
+    eggLogic.releasePickupKey()
     stopPlacementRecording("UI closed")
     hatch.enabled = false
     placeState.enabled=false;placeState.binding=false
