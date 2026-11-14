@@ -1,4 +1,4 @@
-# Steal An Egg — v1.53
+# Steal An Egg — v1.54
 
 PlaceId: 107778070777162. Load through the existing universal Loader.
 All automation and placement recording start OFF. Evidence below separates user-reported game results from offline checks.
@@ -10,7 +10,7 @@ All automation and placement recording start OFF. Evidence below separates user-
 | Auto Hatch | User reports confirm the one-shot hatch test and continuous hatching of all ready eggs on v1.39. The script still does not independently verify pet creation. |
 | Base / treadmill upgrades | Implemented using mapped soft-currency UI callbacks, affordability checks and level-change confirmation. Offline tested only. |
 | Speed training | User reports confirm walking onto the treadmill, speed increasing and the OFF control working on v1.39. |
-| Record Placement | User's v1.42 report confirms one Bear Egg UID left inventory and exactly one visible matching owned render appeared at the click; worldEggAppearanceVerified=true. This is client evidence only. |
+| Record Placement | User removed the Placement page in v1.54; no placement controls or recorder input listeners are exposed. Prior v1.42 evidence remains historical. |
 | Egg data / selection | v1.49 user report confirms all 300 Directory categories captured, and v1.48 confirms six UID-linked field prompts. v1.50 adds actual game Rank selection; the user reports arrival without pickup. v1.51 fixes two reproduced arrival stalls; live retest is pending. |
 | Auto Place | Disabled in release after user-reported BAC kicks. No UI toggle can enable it. |
 | Money collection | Removed: the game collects money automatically. |
@@ -313,3 +313,16 @@ Diagnostics -> Copy short now creates a current focused collect_status report wi
 Validation: 348 simulated engine cases (12 new), 20 current full-file startup/control-flow cases (obsolete Eggs-UI cases replaced), four Python Loader contracts and full Lua 5.4 source compilation. New engine cases cover ON-to-discovery-to-highest-Rank pickup without manual scan, no initialization while OFF, cache reuse, failure/backoff, OFF cancellation, rapid OFF/ON generations, non-duplication of pending timeouts, cancellation during Directory capture, new field updates using cached definitions, Nearest without module loads, carrying-before-initialization and diagnostic state. Full-file cases verify all remaining tabs and removed controls, default Rarity, automatic loading through the actual Collect scheduler, cached OFF/ON, priority locking, failed-read backoff, OFF during module initialization, immediate Copy short without a prior diagnostic scan, Loader startup, lifecycle cleanup and existing controls. These simulations do not establish live pickup success in Potassium.
 
 Retest: run the usual Loader, confirm v1.53, and press Collect ON. No Eggs-page scan/read action is needed. Priority defaults to Rarity; Settings -> Priority: NEAREST selects the nearest-prompt behavior when Collect is OFF. If collection does not proceed, Diagnostics -> Copy short includes the live discovery and pickup status.
+
+
+## Simplified Automation / Settings UI (v1.54)
+
+The user reported copy not working, then explicitly requested removal of unused Placement and Diagnostics pages/buttons. This request supersedes adding another copy fallback: both pages and their actions are now removed, leaving only Automation and Settings. Removed controls include Auto Place, slot marking/clearing, manual placement handoff/recording, Scan / Refresh, Copy all/short, Save file, Select ALL and report paging. The earlier Eggs page remains removed. No alternative report page or clipboard flow is added.
+
+The generic startup diagnostic scan, clipboard helpers, report text/paging/serialization code and removed-page callbacks are deleted. The recorder polling task and placement mouse-input listeners are removed, and the scheduler no longer dispatches placement work. Existing internal placement/observation helpers remain dormant for compatibility with prior engine tests; Auto Place is still compile-time disabled. Collect's independent prompt seeding and passive game events remain active for automatic detection. The internal ScreenGui identity remains compatible with the universal Loader.
+
+Automation retains Collect, Auto Hatch, Upgrade, Train and the one-shot Hatch test. Settings retains Rarity/Nearest priority, Walk/Tween approach, automatic/manual home and the user carry marker. Collect status is now wrapped across a larger space below the automation rows and shows the actual last operation reason plus priority, nearby/linked/ranked counts and input attempts. The shared footer shows the same current Collect reason even when Settings is open, and OFF updates that status immediately. It no longer substitutes a generic nearest-prompt reason for an automatic discovery/retry blocker.
+
+Validation: 348 engine cases, 20 full-file startup/control-flow cases and four Python Loader contracts pass, with full Lua 5.4 source compilation. Runtime cases were updated to inspect the full-file service model through a test-only appended return rather than a removed Copy short control. They verify both remaining tabs, absence of all removed controls, no startup report encoding, automatic Rank preparation and cache reuse, OFF cancellation, priority locking, visible home/retry reasons, rerun cleanup, close listener cleanup, Loader startup/error handling and existing automation controls. No test-only probe is added to the released script. These tests do not verify rendered Roblox UI or live pickup success.
+
+Run the usual Loader and confirm v1.54. The sidebar should contain Automation and Settings only. Enable Collect for automatic detection; if it still cannot acquire eggs, provide the visible Collect status text or an image of that status instead of trying to copy a removed diagnostic report.

@@ -79,7 +79,10 @@ local function fixture(options)
         print=function() end,warn=function() end},{__index=_G})
     env._G=env;env.getgenv=function() return env end;env.loadstring=function(s,n) return load(s,n,'t',env) end
     local f={env=env,pg=pg,ui=ui,tasks=tasks,objects=objects,player=player,http=http}
-    function f:run(s) assert(load(s or source,'@Games/StealAnEgg_Diagnostics.lua','t',env))() end
+    function f:run(s)
+        if s then assert(load(s,'@Loader.lua','t',env))()
+        else self.probe=assert(load(source..'\nreturn {snapshot=collectSnapshot}', '@Games/StealAnEgg_Diagnostics.lua','t',env))() end
+    end
     function f:button(text) for _,obj in ipairs(pg:GetDescendants()) do if obj.ClassName=='TextButton' and obj.Text==text then return obj end end;error('Button missing: '..text) end
     function f:liveConnections() local n=0;for _,s in ipairs(signals) do for _,c in ipairs(s.handlers) do if c.Connected then n=n+1 end end end;return n end
     function f:loaderStatus() local g=assert(pg:FindFirstChild('MyRobloxHub_LoaderStatus'));return g:FindFirstChildOfClass('TextLabel').Text end
@@ -97,10 +100,8 @@ local function fixture(options)
         env.task.wait,env.task.spawn=oldWait,oldSpawn
         assert(not ok and tostring(err):find('end simulated tick',1,true),tostring(err))
     end
-    function f:short()
-        local oldSpawn=env.task.spawn;env.task.spawn=function(fn,...) fn(...) end
-        self:button('Copy short').Activated:Fire();env.task.spawn=oldSpawn
-        return assert(http.lastPayload)
+    function f:state()
+        return {autoCollect=self.probe.snapshot(true)}
     end
     return f
 end
@@ -108,7 +109,7 @@ local function check(name,fn) fn();tests=tests+1;print('PASS '..name) end
 check('full egg script constructs every tab and starts all automation OFF',function()
     local f=fixture();f:run();local gui=assert(f.pg:FindFirstChild('EggDiagnostics'))
     assert(gui.Enabled and gui.DisplayOrder==1000)
-    for _,name in ipairs({'Automation','Placement','Diagnostics','Settings','Auto Hatch: OFF','Collect: OFF','Upgrade: OFF','Train: OFF','Auto Place: DISABLED','Priority: RARITY','Copy short'}) do f:button(name) end
+    for _,name in ipairs({'Automation','Settings','Auto Hatch: OFF','Collect: OFF','Upgrade: OFF','Train: OFF','Priority: RARITY'}) do f:button(name) end
 end)
 check('UI stays positively scaled while camera viewport is not ready',function()
     local f=fixture({width=1,height=1});f:run()
@@ -116,7 +117,7 @@ check('UI stays positively scaled while camera viewport is not ready',function()
 end)
 check('remaining tabs and priority work before a character humanoid is available',function()
     local f=fixture();f:run()
-    for _,name in ipairs({'Placement','Diagnostics','Settings','Automation'}) do f:button(name).Activated:Fire() end
+    for _,name in ipairs({'Settings','Automation'}) do f:button(name).Activated:Fire() end
     f:button('Priority: RARITY').Activated:Fire();f:button('Priority: NEAREST')
 end)
 check('Alt hides and restores the window and leaves restore control accessible',function()
@@ -125,8 +126,11 @@ check('Alt hides and restores the window and leaves restore control accessible',
     assert(not frames[1].Visible and f:button('YUU HUB').Visible)
     f:button('YUU HUB').Activated:Fire();assert(frames[1].Visible)
 end)
-check('Auto Place control remains disabled when clicked',function()
-    local f=fixture();f:run();local b=f:button('Auto Place: DISABLED');b.Activated:Fire();assert(b.Text=='Auto Place: DISABLED')
+check('removed pages and placement diagnostic actions have no controls',function()
+    local f=fixture();f:run()
+    for _,name in ipairs({'Placement','Diagnostics','Auto Place: DISABLED','Mark empty slot','Clear slots',
+        'Auto mark empty slots','Manual placement','Record placement: OFF','Scan / Refresh','Copy all','Copy short',
+        'Save file','Select ALL','< Page','Page >'}) do assert(not pcall(function() f:button(name) end)) end
 end)
 check('rerunning egg UI cleans old connections and close stops all tracked listeners',function()
     local f=fixture();f:run();local first=f.pg:FindFirstChild('EggDiagnostics');local connections=f:liveConnections()
@@ -178,15 +182,17 @@ check('Eggs tab and all manual egg controls are removed',function()
         assert(not pcall(function() f:button(name) end))
     end
 end)
-check('Copy short shows current Collect state without first scanning diagnostics',function()
-    local f=fixture();local calls=autoModules(f);f:run();local r=f:short()
-    assert(r.version=='1.53' and r.kind=='collect_status' and not r.autoCollect.enabled and calls()==0)
+check('two-tab startup remains OFF without automatic module or report work',function()
+    local f=fixture();local calls=autoModules(f)
+    f.http.JSONEncode=function() error('removed report encoder must not run') end
+    f:run();local r=f:state()
+    assert(not r.autoCollect.enabled and calls()==0)
     assert(r.autoCollect.eggSelection.mode=='Rarity' and r.autoCollect.eggSelection.automaticDiscovery.status=='idle')
 end)
-check('Collect ON automatically loads rank modules and exports complete data through Copy short',function()
+check('Collect ON automatically loads rank modules with only Automation and Settings',function()
     local f=fixture();local calls=autoModules(f);f:run();assert(calls()==0)
     f:button('Collect: OFF').Activated:Fire();f:tick();f:button('Collect: ON')
-    local r=f:short();local e=r.autoCollect.eggSelection
+    local r=f:state();local e=r.autoCollect.eggSelection
     assert(calls()==3 and e.automaticDiscovery.status=='ready' and e.definitionDiscovery.trigger=='collect_on')
     assert(e.catalog.rarityRanking.ready and e.definitionDiscovery.modules[1].directory.exported==1)
 end)
@@ -194,7 +200,7 @@ check('automatic discovery reuses cached definitions after OFF ON',function()
     local f=fixture();local calls=autoModules(f);f:run()
     f:button('Collect: OFF').Activated:Fire();f:tick()
     f:button('Collect: ON').Activated:Fire();f:button('Collect: OFF').Activated:Fire();f:tick()
-    assert(calls()==3 and f:short().autoCollect.enabled)
+    assert(calls()==3 and f:state().autoCollect.enabled)
 end)
 check('priority toggle switches Rarity Nearest without loading modules and is locked while Collect runs',function()
     local f=fixture();local calls=autoModules(f);f:run()
@@ -207,20 +213,24 @@ check('automatic read failure leaves Collect ON and avoids repeated immediate lo
     local f=fixture();autoModules(f);local calls=0;f.env.require=function() calls=calls+1;error('temporary load failure') end
     f:run();f:button('Collect: OFF').Activated:Fire();f:tick();assert(calls==3)
     f:tick();f:button('Collect: ON');assert(calls==3)
-    local e=f:short().autoCollect.eggSelection
+    local e=f:state().autoCollect.eggSelection
     assert(e.automaticDiscovery.status=='waiting_retry' and e.automaticDiscovery.retryInSeconds>0)
 end)
 check('OFF during module initialization cancels discovery and prevents later collection',function()
     local f=fixture();autoModules(f);local calls=0
     f.env.require=function() calls=calls+1;f:button('Collect: ON').Activated:Fire();return {} end
     f:run();f:button('Collect: OFF').Activated:Fire();f:tick();f:button('Collect: OFF')
-    local r=f:short();assert(calls==1 and not r.autoCollect.enabled and r.autoCollect.eggSelection.automaticDiscovery.status=='cancelled')
+    local r=f:state();assert(calls==1 and not r.autoCollect.enabled and r.autoCollect.eggSelection.automaticDiscovery.status=='cancelled')
 end)
 check('scheduler keeps Collect ON and displays retry reason when home is unavailable',function()
     local f=fixture();f:run();f:button('Priority: RARITY').Activated:Fire()
     f:button('Collect: OFF').Activated:Fire();f:tick();f:button('Collect: ON')
-    local r=f:short();assert(r.autoCollect.enabled and r.autoCollect.phase=='WAITING_RETRY')
+    local r=f:state();assert(r.autoCollect.enabled and r.autoCollect.phase=='WAITING_RETRY')
+    local visible=false
+    for _,obj in ipairs(f.objects) do if obj.ClassName=='TextLabel' and obj.Text:find('Auto home not ready',1,true) then visible=true end end
+    assert(visible)
     assert(r.autoCollect.retry.reason:find('Auto home not ready',1,true))
-    f:button('Collect: ON').Activated:Fire();local stopped=f:short();assert(not stopped.autoCollect.enabled and not stopped.autoCollect.retry)
+    f:button('Collect: ON').Activated:Fire();local stopped=f:state();assert(not stopped.autoCollect.enabled and not stopped.autoCollect.retry)
 end)
 print(string.format('%d runtime startup tests passed',tests))
+

@@ -1,8 +1,7 @@
--- Steal An Egg: structure diagnostics v1.53
+-- Steal An Egg: automation v1.54
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
-local Http = game:GetService("HttpService")
 local player = Players.LocalPlayer
 assert(player, "Run on the game client")
 assert(game.PlaceId == 107778070777162, "Wrong map: " .. tostring(game.PlaceId))
@@ -55,27 +54,23 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.53", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.54", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
 round(sidebar)
 label(sidebar, "WORKSPACE",12,10,125,22,10,colors.muted)
 local automation = create("Frame", frame, {Position = UDim2.fromOffset(176,76), Size = UDim2.fromOffset(568,382), BackgroundTransparency = 1})
-local diagnostics = create("Frame", frame, {Position = automation.Position, Size = automation.Size, BackgroundTransparency = 1, Visible = false})
 local settings = create("Frame", frame, {Position = automation.Position, Size = automation.Size, BackgroundTransparency = 1, Visible = false})
-local placement = create("Frame", frame, {Position=automation.Position,Size=automation.Size,BackgroundTransparency=1,Visible=false})
 local tabs = {}
 local function showTab(name)
     automation.Visible = name == "Automation"
-    diagnostics.Visible = name == "Diagnostics"
     settings.Visible = name == "Settings"
-    placement.Visible = name == "Placement"
     for key, b in pairs(tabs) do
         b.BackgroundColor3 = key == name and colors.purple or colors.panel
     end
 end
-for i, name in ipairs({"Automation", "Placement", "Diagnostics", "Settings"}) do
+for i, name in ipairs({"Automation", "Settings"}) do
     local b = control(sidebar,name,8,42+(i-1)*44,132,36)
     tabs[name] = b
     b.Activated:Connect(function() showTab(name) end)
@@ -92,24 +87,9 @@ for i, name in ipairs({"Auto Hatch", "Collect Eggs", "Upgrade Base / Treadmill",
     if i > 2 then label(row,"SETUP / TEST",316,0,100,50,10,colors.muted) end
     rows[i] = row
 end
-local scan = control(diagnostics,"Scan / Refresh",0,0,136)
-local copy = control(diagnostics,"Copy all",146,0,128)
-local save = control(diagnostics,"Save file",284,0,128)
-local selectText = control(diagnostics,"Select ALL",422,0,146)
-local previous = control(diagnostics,"< Page",0,42,88)
-local following = control(diagnostics,"Page >",98,42,88)
-local shortCopy = control(diagnostics,"Copy short",196,42,110)
-local pageLabel = label(diagnostics,"v1.53 | Waiting for scan",316,42,252,34,11,colors.muted)
-local reportScroll = create("ScrollingFrame",diagnostics,{Position = UDim2.fromOffset(0,86), Size = UDim2.fromOffset(568,296),
-    BackgroundColor3 = colors.panel, BorderSizePixel = 0, ScrollBarThickness = 5,
-    AutomaticCanvasSize = Enum.AutomaticSize.XY, CanvasSize = UDim2.new()})
-round(reportScroll,8)
-local box = create("TextBox",reportScroll,{Position = UDim2.fromOffset(10,8), Size = UDim2.fromOffset(546,278),
-    AutomaticSize = Enum.AutomaticSize.XY, BackgroundTransparency = 1, MultiLine = true, ClearTextOnFocus = false,
-    TextEditable = true, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
-    Font = Enum.Font.Code, TextSize = 12, TextColor3 = colors.text, TextWrapped = false, Text = "Loading..."})
-local collectLabel = label(automation,"Collect OFF • Tween to nearest egg",0,340,568,18,11,colors.muted)
-local status = label(frame,"Preparing diagnostics...",176,472,568,52,12,colors.muted)
+local collectLabel = label(automation,"Collect OFF",0,282,568,68,12,colors.muted)
+collectLabel.TextWrapped=true;collectLabel.TextYAlignment=Enum.TextYAlignment.Top
+local status = label(frame,"Ready. Turn Collect ON to detect eggs automatically.",176,472,568,52,12,colors.muted)
 status.TextWrapped = true
 label(settings,"Settings",0,0,400,30,22)
 label(settings,"Interface",0,50,400,24,14,colors.cyan)
@@ -118,18 +98,6 @@ label(settings,"Close stops all automation. Minimize keeps it running.",0,118,56
 label(settings,"All automation starts OFF. Upgrades use game currency only.",0,148,568,24,12,colors.muted)
 label(settings,"Collect: WALK default, optional Tween; range 250 studs.",0,190,568,24,12,colors.cyan)
 label(settings,"Set a delivery point below to enable automatic return.",0,220,568,24,12,colors.muted)
-label(placement,"Auto Place paused after kick reports",0,0,560,30,20)
-label(placement,"Place eggs manually. Auto Place will not send input.",0,40,560,24,12,colors.muted)
-local placeToggle=control(placement,"Auto Place: DISABLED",0,80,170,36)
-local bindSlot=control(placement,"Mark empty slot",180,80,180,36)
-local clearSlots=control(placement,"Clear slots",370,80,170,36)
-local autoMarkButton=control(placement,"Auto mark empty slots",0,130,260,36)
-local manualPlaceButton=control(placement,"Manual placement",270,130,270,36)
-local recordPlaceButton=control(placement,"Record placement: OFF",0,180,260,36)
-local recordPlaceLabel=label(placement,"Records one manual placement; sends no placement input.",270,180,290,36,11,colors.muted)
-recordPlaceLabel.TextWrapped=true
-local placeLabel=label(placement,"Manual placement stops automation and hides this window. Equip an egg and click an empty slot yourself.",0,230,560,140,13,colors.muted)
-placeLabel.TextWrapped=true;placeLabel.TextYAlignment=Enum.TextYAlignment.Top
 local restore = control(gui,"YUU HUB",16,120,108,36)
 restore.Visible = false
 local function setShown(shown)
@@ -139,34 +107,9 @@ end
 minimize.Activated:Connect(function() setShown(false) end)
 restore.Activated:Connect(function() setShown(true) end)
 showTab("Automation")
-local reportText = ""
-local shortReportText = ""
 local active = true
-local pages, pageIndex = {}, 1
-local function showPage()
-    box.Text = pages[pageIndex] or "No report yet"
-    pageLabel.Text = string.format("v1.53 | Page %d/%d | %d bytes", pageIndex, #pages, #reportText)
-end
-local function splitPages(text)
-    pages, pageIndex = {}, 1
-    local start = 1
-    while start <= #text do
-        local finish = math.min(start + 5999, #text)
-        -- Do not split a UTF-8 codepoint between pages.
-        while finish < #text do
-            local byte = text:byte(finish + 1)
-            if byte < 128 or byte >= 192 then break end
-            finish = finish - 1
-        end
-        table.insert(pages, text:sub(start, finish))
-        start = finish + 1
-    end
-    showPage()
-end
 local function capability(name)
-    local direct = ({firesignal=firesignal,getconnections=getconnections,setclipboard = setclipboard, toclipboard = toclipboard,
-        set_clipboard = set_clipboard, getclipboard = getclipboard,
-        readclipboard = readclipboard, writefile = writefile, readfile = readfile})[name]
+    local direct = ({firesignal=firesignal,getconnections=getconnections})[name]
     if type(direct) == "function" then return direct end
     for _, getter in pairs({getgenv = getgenv, getrenv = getrenv}) do
         if type(getter) == "function" then
@@ -175,81 +118,6 @@ local function capability(name)
         end
     end
     if type(_G) == "table" and type(_G[name]) == "function" then return _G[name] end
-end
-local function nativeSelect(text)
-    showTab("Diagnostics")
-    -- Full report, never just the currently displayed page.
-    box:CaptureFocus()
-    box.Text = text
-    if box.Text ~= text then
-        status.Text = "TextBox could not hold full report. Try Copy short."
-        return false
-    end
-    task.defer(function()
-        if not active then return end
-        box.CursorPosition = #box.Text + 1
-        box.SelectionStart = 1
-    end)
-    pageLabel.Text = "v1.53 | ALL selected | " .. #text .. " bytes"
-    return true
-end
-local function selectAll()
-    if reportText == "" then status.Text = "Wait for scan to finish."; return end
-    if nativeSelect(reportText) then
-        status.Text = "ALL selected. Press Ctrl+C on TEST PC, then paste. Remote clipboard sync must be enabled."
-    end
-end
-local function copyPayload(text, label)
-    local errors = {}
-    local reader = capability("getclipboard") or capability("readclipboard")
-    local unverified = false
-    local writers = {}
-    local seen = {}
-    local function add(name, fn)
-        if type(fn) == "function" and not seen[fn] then
-            seen[fn] = true
-            table.insert(writers, {name = name, fn = fn})
-        end
-    end
-    for _, name in ipairs({"setclipboard", "toclipboard", "set_clipboard"}) do add(name, capability(name)) end
-    if type(clipboard) == "table" then
-        add("clipboard.set", clipboard.set)
-        add("clipboard.setclipboard", clipboard.setclipboard)
-    end
-    if type(syn) == "table" then add("syn.write_clipboard", syn.write_clipboard) end
-    for _, writer in ipairs(writers) do
-        local ok, result = pcall(writer.fn, text)
-        if ok and result ~= false then
-            local readable, matched = false, false
-            if reader then
-                for attempt = 1, 3 do
-                    task.wait(0.08)
-                    if not active then return end
-                    local readOK, value = pcall(reader)
-                    if readOK and type(value) == "string" then
-                        readable = true
-                        if value == text then matched = true; break end
-                    end
-                end
-            end
-            if matched then
-                status.Text = label .. " VERIFIED on TEST PC (" .. #text .. " bytes). Remote clipboard sync is separate."
-                return
-            end
-            if not readable then unverified = true end
-            table.insert(errors, writer.name .. (readable and ": readback mismatch" or ": cannot verify"))
-        else
-            table.insert(errors, writer.name .. ": failed")
-        end
-    end
-    -- Even a no-op executor API now leaves a real, full selection for native Ctrl+C.
-    if not active then return end
-    local selected = nativeSelect(text)
-    if selected then
-        local reason = #writers == 0 and "No clipboard API" or (unverified and "Copy API unverified" or "Clipboard write failed")
-        status.Text = reason .. ". ALL selected: press Ctrl+C on TEST PC. " .. label .. " (" .. #text .. " bytes)."
-    end
-    warn("[Egg Diagnostics] " .. table.concat(errors, "; "))
 end
 local busy = false
 -- AUTO_HATCH_BEGIN
@@ -1857,7 +1725,7 @@ function eggLogic.refresh()
 end
 function eggLogic.export()
     eggLogic.refresh()
-    return {version="1.53",kind="egg_data",placeId=game.PlaceId,
+    return {version="1.54",kind="egg_data",placeId=game.PlaceId,
         collection={enabled=collectEgg.enabled,phase=collectEgg.phase,last=collectEgg.last,attempts=collectEgg.attempts,
             retry=eggLogic.retryStatus(),promptWait=collectEgg.promptWait,lastMovement=collectEgg.lastMovement,lastInput=collectEgg.lastInput},
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
@@ -1971,7 +1839,7 @@ local function approachEgg(root, humanoid,preferred)
         end
     end
     collectEgg.last = routeAttempts>0 and ("No reachable route: "..(collectEgg.lastNavigation and collectEgg.lastNavigation.status or "unknown"))
-        or #choices==0 and eggSelect.mode~="Nearest" and "No egg has readable data matching the selected mode; use Diagnostics / Copy short"
+        or #choices==0 and eggSelect.mode~="Nearest" and "No egg has readable data matching the selected mode; see Collect status"
         or "No reachable egg within 250 studs on this level"
     return false
 end
@@ -2507,7 +2375,7 @@ local function collectSnapshot(includeEvidence)
         phase = collectEgg.phase or "IDLE", deliveriesObserved = collectEgg.deliveriesObserved or 0,
         gameEvents = gameEvents, eventObserver = eventObserver,
         upgrades=upgrades,training=training,placementRecording=placementRecord,
-        selectionBlocked=eggSelect.mode~="Nearest" and eggSelect.catalog.accepted==0 and ("No readable egg matches "..eggSelect.mode.."; use Diagnostics / Copy short") or nil,
+        selectionBlocked=eggSelect.mode~="Nearest" and eggSelect.catalog.accepted==0 and ("No readable egg matches "..eggSelect.mode.."; see Collect status") or nil,
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,selected=collectEgg.selectedEgg,fieldSamples=eggSelect.fieldSamples,sourceDiscovery=eggLogic.sources,sourceEvents=eggLogic.sourceEvents,automaticDiscovery=eggLogic.discoveryStatus(),definitionDiscovery=eggLogic.definitions},
         autoPlace={available=AUTO_PLACE_ENABLED,manualMode=placeState and placeState.manualMode,manualPreparing=placeState and placeState.manualPreparing,binding=placeState and placeState.binding,preparingBind=placeState and placeState.preparingBind,enabled=placeState and placeState.enabled,attempts=placeState and placeState.attempts,observed=placeState and placeState.observed,last=placeState and placeState.last,lastAttempt=placeState and placeState.lastAttempt,autoMark=placeState and placeState.autoMark,lastSlotPick=placeState and placeState.lastSlotPick},
         autoHome={enabled=autoHome.enabled,ready=autoHome.ready,reason=autoHome.reason,report=includeEvidence and autoHome.report or nil},
@@ -2604,7 +2472,7 @@ local function collectStep()
                 and "Rarity: game prompts temporarily unavailable; waiting to retry"
                 or eggSelect.mode=="Rarity" and eggSelect.catalog.fieldData.fresh==0
                 and "Rank data ready; waiting for live egg updates automatically"
-                or "No egg has readable data matching "..eggSelect.mode.."; use Diagnostics / Copy short"
+                or "No egg has readable data matching "..eggSelect.mode.."; see Collect status"
             return
         end
         if not collectCandidate(selected.prompt,root,humanoid) then
@@ -2885,7 +2753,7 @@ local function autoMarkSlots(insidePlacement)
     end
     report.reason=report.added>0 and ("Auto marked "..report.added.." placement candidates")
         or report.confirmed>0 and "Confirmed slots already marked or slot limit reached"
-        or "No clear PetArea candidates or explicit empty slots; send Copy short"
+        or "No clear PetArea candidates or explicit empty slots"
     return report.added>0,report.reason
 end
 local function selectPlacementEgg()
@@ -3371,20 +3239,10 @@ local function tickPlacementRecording()
     record.finishedAt=os.time()
     record.status=record.worldEggAppearanceVerified and "world_egg_appearance_observed"
         or record.inventoryUIDRemoved and "uid_removal_observed" or "placement_unconfirmed"
-    placementRecord.last=record.worldEggAppearanceVerified and "Matching egg UID observed in base. Copy short includes world evidence."
-        or record.inventoryUIDRemoved and "UID left inventory; world egg not matched. Copy short includes candidates."
-        or "Placement unconfirmed by inventory; Copy short includes recording."
+    placementRecord.last=record.worldEggAppearanceVerified and "Matching egg UID observed in base. World evidence recorded."
+        or record.inventoryUIDRemoved and "UID left inventory; world egg not matched. World candidates recorded."
+        or "Placement unconfirmed by inventory; Recording retained internally."
     placementRecord.enabled=false;recordingContext=nil
-end
-local function dispatchPlace()
-    if placeState.binding or placeState.preparingBind then return end
-    if placeRunning or hatchRunning or collectRunning then return end
-    placeRunning=true
-    local ok,err=pcall(placeStep)
-    placeRunning=false
-    if not ok then cancelCollectTween("Placement error");placeState.enabled=false;placeState.last="Place error: "..tostring(err):sub(1,140) end
-    placeToggle.Text=not AUTO_PLACE_ENABLED and "Auto Place: DISABLED" or placeState.enabled and "Auto Place: ON" or "Auto Place: OFF"
-    placeLabel.Text=placeState.last.."\nMarked slots: "..#placeState.slots.." | Attempts: "..placeState.attempts.." | UID removals: "..placeState.observed
 end
 local function parseSoftCost(text)
     local amount,suffix=string.upper(text:gsub("<[^>]*>",""):gsub(",","")):match("^%s*%$%s*([%d%.]+)%s*([KMBT]?)%s*$")
@@ -3567,133 +3425,6 @@ trainToggle.Activated:Connect(function()
     trainToggle.Text=training.enabled and "Train: ON" or "Train: OFF"
     if not training.enabled and systemRunning then cancelCollectTween("Training OFF") end
 end)
-autoMarkButton.Activated:Connect(function()
-    if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
-    local _,message=autoMarkSlots(false)
-    placeLabel.Text=message
-end)
-recordPlaceButton.Activated:Connect(function()
-    if placementRecord.enabled then stopPlacementRecording("Stopped by user");return end
-    if placeState.manualPreparing or placeState.preparingBind then return end
-    placeState.manualPreparing=true
-    recordPlaceButton.Text="Preparing recorder..."
-    task.spawn(function()
-        local ran,ready,message=pcall(beginPlacementRecording)
-        placeState.manualPreparing=false
-        if not active then return end
-        collectButton.Text="Collect: OFF";hatchButton.Text="Auto Hatch: OFF"
-        upgradeToggle.Text="Upgrade: OFF";trainToggle.Text="Train: OFF"
-        recordPlaceButton.Text=placementRecord.enabled and "Record placement: ON" or "Record placement: OFF"
-        recordPlaceLabel.Text=ran and message or "Recorder failed to start"
-        status.Text=recordPlaceLabel.Text
-        if not ran then stopPlacementRecording("Recorder failed to start") end
-        if ran and ready then restore.Text="Recording: open hub";setShown(false) end
-    end)
-end)
-manualPlaceButton.Activated:Connect(function()
-    if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
-    if placeState.preparingBind then placeLabel.Text="Finish slot selection preparation first";return end
-    placeState.manualPreparing=true
-    manualPlaceButton.Text="Stopping automation..."
-    task.spawn(function()
-        local ran,ready,message=pcall(prepareManualPlacement)
-        placeState.manualPreparing=false
-        if not active then return end
-        manualPlaceButton.Text="Manual placement"
-        collectButton.Text="Collect: OFF";hatchButton.Text="Auto Hatch: OFF"
-        upgradeToggle.Text="Upgrade: OFF";trainToggle.Text="Train: OFF"
-        placeState.last=ran and message or "Manual handoff failed; close the hub before placement"
-        placeLabel.Text=placeState.last;status.Text=placeState.last
-        if ran and ready then restore.Text="Return to hub";setShown(false) end
-    end)
-end)
-placeToggle.Activated:Connect(function()
-    if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
-    if not AUTO_PLACE_ENABLED then
-        placeState.enabled=false;placeState.last="Auto Place disabled after kick reports. Place eggs manually."
-        placeToggle.Text="Auto Place: DISABLED";placeLabel.Text=placeState.last;return
-    end
-    placeState.enabled=not placeState.enabled
-    placeToggle.Text=not AUTO_PLACE_ENABLED and "Auto Place: DISABLED" or placeState.enabled and "Auto Place: ON" or "Auto Place: OFF"
-    if not placeState.enabled and placeRunning then cancelCollectTween("Auto Place OFF") end
-end)
-bindSlot.Activated:Connect(function()
-    if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
-    if placeState.preparingBind then return end
-    if fieldCarryActive() or manualCarry then placeLabel.Text="Deliver the field egg or clear the carrying marker before marking";return end
-    placeState.preparingBind=true;placeState.binding=false
-    placeState.enabled=false;collectEgg.enabled=false;hatch.enabled=false
-    placeToggle.Text=not AUTO_PLACE_ENABLED and "Auto Place: DISABLED" or "Auto Place: OFF";collectButton.Text="Collect: OFF";hatchButton.Text="Auto Hatch: OFF"
-    cancelCollectTween("Preparing slot selection")
-    if hatchWalking then
-        local character=player.Character;local root=character and character:FindFirstChild("HumanoidRootPart")
-        if root then pcall(function() hatchWalking:MoveTo(root.Position) end) end
-        hatchWalking=nil
-    end
-    if holding then pcall(function() holding:InputHoldEnd() end);holding=nil end
-    placeState.last="Preparing slot selection";placeLabel.Text=placeState.last
-    task.spawn(function()
-        local ok,err=pcall(function()
-            local deadline=os.clock()+7
-            while active and (placeRunning or collectRunning or hatchRunning) and os.clock()<deadline do task.wait(0.1) end
-            if not active then return end
-            if placeRunning or collectRunning or hatchRunning then error("Automation is still stopping; press Mark again") end
-            local character=player.Character
-            local humanoid=character and character:FindFirstChildOfClass("Humanoid")
-            if not humanoid then error("Character unavailable") end
-            humanoid:UnequipTools()
-            task.wait(0.1)
-            if carryVisible() then error("An egg is still equipped or carried") end
-            placeState.binding=true
-            placeState.last="Waiting for your empty-slot click"
-            placeLabel.Text=placeState.last
-            restore.Text="Pick slot"
-            setShown(false)
-        end)
-        placeState.preparingBind=false
-        if not ok and active then placeState.last=tostring(err):sub(1,140);placeLabel.Text=placeState.last;setShown(true) end
-    end)
-end)
-clearSlots.Activated:Connect(function()
-    if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
-    if placeRunning then return end
-    placeState.slots={};placeState.binding=false;placeState.enabled=false
-    placeToggle.Text=not AUTO_PLACE_ENABLED and "Auto Place: DISABLED" or "Auto Place: OFF";placeLabel.Text="Slots cleared; mark empty slots again"
-end)
-connections[#connections+1]=UIS.InputBegan:Connect(function(input,processed)
-    if not placementRecord.enabled or processed or UIS:GetFocusedTextBox()
-        or input.UserInputType~=Enum.UserInputType.MouseButton1 then return end
-    for _,obj in ipairs(pg:GetGuiObjectsAtPosition(input.Position.X,input.Position.Y)) do
-        if obj:IsDescendantOf(gui) then return end
-    end
-    local ok,err=pcall(function()
-        local mouse=player:GetMouse()
-        capturePlacementClick(mouse.Target,mouse.Hit.Position,input.Position,processed)
-    end)
-    if not ok then stopPlacementRecording("Recorder error: "..tostring(err):sub(1,100)) end
-end)
-connections[#connections+1]=UIS.InputBegan:Connect(function(input,processed)
-    if not placeState.binding or input.UserInputType~=Enum.UserInputType.MouseButton1 then return end
-    for _,obj in ipairs(pg:GetGuiObjectsAtPosition(input.Position.X,input.Position.Y)) do
-        if obj:IsDescendantOf(gui) then return end
-    end
-    if carryVisible() then placeState.binding=false;placeState.last="Unequip the egg before marking";placeLabel.Text=placeState.last;setShown(true);restore.Text="YUU HUB";return end
-    local mouse=player:GetMouse()
-    local ray=mouse.UnitRay
-    local character=player.Character
-    local hit,skipped=placementRaycast(ray.Origin,ray.Direction*1000,character and {character} or {})
-    local ok,message=addPlacementSlot(hit and hit.Instance or nil,hit and hit.Position or mouse.Hit.Position)
-    if placeState.lastSlotPick then
-        placeState.lastSlotPick.skippedSensors=skipped
-        placeState.lastSlotPick.originalMouseTarget=mouse.Target and mouse.Target:GetFullName() or nil
-    end
-    placeState.last=message
-    if placeState.lastSlotPick then placeState.lastSlotPick.gameProcessed=processed;placeState.lastSlotPick.message=message end
-    placeLabel.Text=message
-    placeState.binding=false
-    restore.Text="YUU HUB"
-    setShown(true);showTab("Placement")
-end)
 approachButton.Activated:Connect(function()
     if collectRunning then status.Text="Stop Collect before changing movement mode";return end
     collectEgg.approachMode=collectEgg.approachMode=="Tween" and "Walk" or "Tween"
@@ -3785,12 +3516,13 @@ collectButton.Activated:Connect(function()
     collectButton.BackgroundColor3 = collectEgg.enabled and colors.purple or colors.panel
     collectEgg.last = collectEgg.enabled and "Waiting for nearby egg" or "OFF"
     collectLabel.Text = collectEgg.last
+    status.Text=collectEgg.enabled and "Collect ON: detecting eggs automatically" or "Collect OFF"
     if not collectEgg.enabled then cancelCollectTween("Collect OFF") end
     if not collectEgg.enabled and collectRunning and holding then
         pcall(function() holding:InputHoldEnd() end); holding = nil
     end
 end)
--- Seed existing prompts independently of the capped diagnostic scan. Subsequent
+-- Seed existing prompts for automatic collection. Subsequent
 -- changes use the existing DescendantAdded/Removing listeners; no per-tick scan.
 task.spawn(function()
     local queue, head = {workspace}, 1
@@ -3805,20 +3537,6 @@ task.spawn(function()
         if head % 250 == 0 then task.wait() end
     end
 end)
-local function refreshExportState()
-    if reportText == "" then return end
-    local snapshot = liveHatchSnapshot()
-    -- Replace the old scan-time snapshot at copy/save time, without rescanning.
-    local full = Http:JSONDecode(reportText)
-    full.autoHatch = snapshot
-    full.autoCollect = collectSnapshot(true)
-    reportText = Http:JSONEncode(full)
-    local short = Http:JSONDecode(shortReportText)
-    short.autoHatch = snapshot
-    short.autoCollect = full.autoCollect
-    shortReportText = Http:JSONEncode(short)
-    splitPages(reportText)
-end
 local function stopHatch()
     active = false
     stopPlacementRecording("UI closed")
@@ -3836,19 +3554,6 @@ local function stopHatch()
     if holding then pcall(function() holding:InputHoldEnd() end); holding = nil end
     for _, connection in ipairs(connections) do connection:Disconnect() end
 end
-task.spawn(function()
-    while active do
-        task.wait(0.1)
-        if placementRecord.enabled then
-            local ok,err=pcall(tickPlacementRecording)
-            if not ok then stopPlacementRecording("Recorder error: "..tostring(err):sub(1,100)) end
-        end
-        if active and not placeState.manualPreparing then
-            recordPlaceButton.Text=placementRecord.enabled and "Record placement: ON" or "Record placement: OFF"
-            recordPlaceLabel.Text=placementRecord.last
-        end
-    end
-end)
 local lifetime = gui.AncestryChanged:Connect(function(_, parent)
     if parent == nil then stopHatch() end
 end)
@@ -3859,19 +3564,16 @@ task.spawn(function()
             local ok,err=pcall(refreshAutoHome,false)
             if not ok then autoHome.ready=false;autoHome.reason="Auto home error: "..tostring(err):sub(1,100);deliveryPoint=nil end
         end
-        dispatchPlace()
         dispatchCollect()
         dispatchHatch(false)
         dispatchSystems()
         if active and collectEgg.enabled then
             local ok, snapshot = pcall(collectSnapshot)
             if ok then
-                local n = snapshot.nearest
-                collectLabel.Text = "Collect: " .. (snapshot.retry and snapshot.retry.remainingSeconds>0 and collectEgg.last
-                    or snapshot.phase=="DISCOVERING" and collectEgg.last
-                    or snapshot.carrying and "Egg held/equipped; checking delivery"
-                    or snapshot.selectionBlocked or n and (n.reason .. (n.distance and string.format(" | %.1f/%.1f studs",n.distance,n.allowedDistance) or ""))
-                    or snapshot.blocked or collectEgg.last) .. " | Attempts " .. collectEgg.attempts
+                local catalog=snapshot.eggSelection.catalog
+                collectLabel.Text=collectEgg.last..string.format("\n%s | eggs %d / linked %d / ranked %d | input attempts %d",
+                    eggSelect.mode,catalog.total or 0,catalog.fieldLinked or 0,catalog.knownRarity or 0,collectEgg.attempts)
+                status.Text="Collect ON ("..eggSelect.mode.."): "..collectEgg.last
             end
         end
         if active and hatch.enabled and not hatchRunning then
@@ -3885,283 +3587,4 @@ task.spawn(function()
     end
 end)
 -- AUTO_HATCH_END
-local function path(obj)
-    return obj:GetFullName()
-end
-local function collect()
-    if busy or not active then return end
-    busy = true
-    scan.Text = "Scanning..."
-    local ok, err = pcall(function()
-        local report = {version = "1.53", placeId = game.PlaceId,
-            scanned = 0, truncated = false, roots = {},
-            gui = {}, prompts = {}, remotes = {}, candidates = {}}
-        local roots = {
-            {object = pg, label = "PlayerGui", budget = 6000},
-            {object = workspace, label = "Workspace", budget = 12000},
-            {object = game:GetService("ReplicatedStorage"), label = "ReplicatedStorage", budget = 6000},
-        }
-        local keywords = {"egg", "hatch", "collect", "cash", "money", "upgrade", "tread", "train", "speed", "base", "plot"}
-        local function relevant(name)
-            name = string.lower(name)
-            for _, word in ipairs(keywords) do
-                if string.find(name, word, 1, true) then return true end
-            end
-            return false
-        end
-        local function visible(obj)
-            local node = obj
-            while node and node ~= pg do
-                if node:IsA("GuiObject") and not node.Visible then return false end
-                if node:IsA("LayerCollector") and not node.Enabled then return false end
-                node = node.Parent
-            end
-            return node == pg
-        end
-        for _, root in ipairs(roots) do
-            if not active then return end
-            local info = {name = root.label, scanned = 0, dropped = {},
-                topLevel = {}, skipped = {}, truncated = false}
-            table.insert(report.roots, info)
-            local counts = {}
-            local function add(kind, item)
-                counts[kind] = counts[kind] or 0
-                if counts[kind] < 300 then
-                    counts[kind] = counts[kind] + 1
-                    table.insert(report[kind], item)
-                else
-                    info.dropped[kind] = (info.dropped[kind] or 0) + 1
-                    info.truncated = true
-                end
-            end
-            -- FIFO plus separate budgets prevent large asset trees starving live UI/world.
-            local queue, head = {root.object}, 1
-            local deadline = os.clock() + 5
-            while head <= #queue and info.scanned < root.budget and active do
-                if os.clock() > deadline then info.timeLimit = true; break end
-                local obj = queue[head]
-                head = head + 1
-                info.scanned = info.scanned + 1
-                local excluded = obj == gui or obj:IsDescendantOf(gui)
-                local asset = root.label == "ReplicatedStorage"
-                    and obj.Parent == root.object and obj.Name == "Assets"
-                if asset then table.insert(info.skipped, path(obj)) end
-                if not excluded and not asset then
-                    local item = {path = path(obj), class = obj.ClassName}
-                    if obj.Parent == root.object and #info.topLevel < 100 then
-                        table.insert(info.topLevel, item)
-                    end
-                    if root.label == "PlayerGui" and
-                        (obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox")) then
-                        item.text = string.sub(obj.Text, 1, 180)
-                        item.visible = visible(obj)
-                        add("gui", item)
-                    elseif root.label == "Workspace" and obj:IsA("ProximityPrompt") then
-                        trackPrompt(obj)
-                        item.action = obj.ActionText
-                        item.object = obj.ObjectText
-                        item.enabled = obj.Enabled
-                        item.distance = obj.MaxActivationDistance
-                        item.holdDuration = obj.HoldDuration
-                        local parent = obj.Parent
-                        local location
-                        if parent and parent:IsA("Attachment") then location = parent.WorldPosition
-                        elseif parent and parent:IsA("BasePart") then location = parent.Position
-                        elseif parent and parent:IsA("Model") then location = parent:GetPivot().Position end
-                        if location then item.position = {x = location.X, y = location.Y, z = location.Z} end
-                        add("prompts", item)
-                    elseif obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("UnreliableRemoteEvent") then
-                        add("remotes", item)
-                    elseif (obj:IsA("Model") or obj:IsA("Folder") or obj:IsA("BasePart")
-                        or obj:IsA("ValueBase") or obj:IsA("ModuleScript"))
-                        and relevant(obj.Name) then
-                        if obj:IsA("BasePart") then
-                            local pos = obj.Position
-                            item.position = {x = pos.X, y = pos.Y, z = pos.Z}
-                        end
-                        if obj:IsA("ValueBase") then
-                            local value = obj.Value
-                            if type(value) == "number" or type(value) == "boolean" or type(value) == "string" then
-                                item.value = value
-                            end
-                        end
-                        local attrs = {}
-                        for key, value in pairs(obj:GetAttributes()) do
-                            local lower = string.lower(key)
-                            if (lower:find("owner", 1, true) or lower:find("plot", 1, true))
-                                and (type(value) == "number" or type(value) == "string" or type(value) == "boolean") then
-                                attrs[key] = value
-                            end
-                        end
-                        item.ownership = attrs
-                        add("candidates", item)
-                    end
-                    for _, child in ipairs(obj:GetChildren()) do
-                        if #queue < 30000 then table.insert(queue, child)
-                        else info.queueLimit = true; info.truncated = true end
-                    end
-                end
-                if info.scanned % 150 == 0 then task.wait() end
-            end
-            if head <= #queue then info.truncated = true end
-            report.scanned = report.scanned + info.scanned
-            report.truncated = report.truncated or info.truncated
-        end
-        -- Inventory the observed networking folder directly, bypassing the generic
-        -- result cap. This only reads Instances; no Remote is invoked.
-        local storage = game:GetService("ReplicatedStorage")
-        local packages = storage:FindFirstChild("Packages")
-        local networking = packages and packages:FindFirstChild("Networking")
-        report.networking = {found = networking ~= nil, scanned = 0, truncated = false}
-        if networking then
-            local known = {}
-            for _, item in ipairs(report.remotes) do known[item.path] = true end
-            local queue, head = {networking}, 1
-            while head <= #queue and report.networking.scanned < 4000 and active do
-                local obj = queue[head]
-                head = head + 1
-                report.networking.scanned = report.networking.scanned + 1
-                if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("UnreliableRemoteEvent") then
-                    local fullPath = path(obj)
-                    if not known[fullPath] then
-                        table.insert(report.remotes, {path = fullPath, name = obj.Name, class = obj.ClassName})
-                        known[fullPath] = true
-                    end
-                end
-                for _, child in ipairs(obj:GetChildren()) do
-                    if #queue < 8000 then table.insert(queue, child)
-                    else report.networking.truncated = true end
-                end
-                if report.networking.scanned % 150 == 0 then task.wait() end
-            end
-            if head <= #queue then report.networking.truncated = true end
-        end
-        -- Rank gameplay systems ahead of unrelated live events and cosmetics.
-        local function rank(item, kind)
-            local name = string.lower((item.path or "") .. " " .. (item.text or "") .. " " .. (item.action or ""))
-            local score = 0
-            for _, word in ipairs({"hatch", "treadmill", "upgrade", "egg", "plot", "base", "cash", "money", "coin", "speed", "penroster"}) do
-                if name:find(word, 1, true) then score = score + 10 end
-            end
-            if name:find("trainevent", 1, true) or name:find("liveevents", 1, true)
-                or name:find("sammy", 1, true) or name:find("lightvsdarkness", 1, true)
-                or name:find("beanstalk", 1, true) or name:find("observability", 1, true)
-                or name:find("adgrowth", 1, true) or name:find("adegg", 1, true)
-                or name:find("cmdr", 1, true) or name:find("ghostboss", 1, true) then score = score - 100 end
-            if kind == "gui" and item.visible then score = score + 3 end
-            if kind == "prompts" and item.enabled then score = score + 5 end
-            return score
-        end
-        local function sorted(kind)
-            local items = {}
-            for _, item in ipairs(report[kind]) do table.insert(items, item) end
-            table.sort(items, function(a, b)
-                local ar, br = rank(a, kind), rank(b, kind)
-                if ar ~= br then return ar > br end
-                return a.path < b.path
-            end)
-            return items
-        end
-        report.autoHatch = liveHatchSnapshot()
-        report.autoCollect = collectSnapshot(true)
-        reportText = Http:JSONEncode(report)
-        local summary = {version = "1.53", placeId = report.placeId, summaryOnly = true,
-            scanned = report.scanned, truncated = report.truncated, networking = report.networking, autoHatch = report.autoHatch, autoCollect = report.autoCollect,
-            gui = {}, prompts = {}, remotes = {}, candidates = {},
-            omitted = {gui = 0, prompts = 0, remotes = 0, candidates = 0}}
-        -- Each category owns its own space: remote spam cannot erase GUI/prompts.
-        local limits = {remotes = 6000, gui = 3000, prompts = 2000, candidates = 3000}
-        for _, kind in ipairs({"remotes", "gui", "prompts", "candidates"}) do
-            local seen, used = {}, 0
-            for _, item in ipairs(sorted(kind)) do
-                local useful = rank(item, kind) > 0 or kind == "prompts" and item.enabled
-                local small = {}
-                for key, value in pairs(item) do small[key] = value end
-                -- Ownership/position retained on candidates; duplicates retain count.
-                local key = Http:JSONEncode(item)
-                if useful and seen[key] then
-                    seen[key].count = (seen[key].count or 1) + 1
-                    summary.omitted[kind] = summary.omitted[kind] + 1
-                elseif useful then
-                    local bytes = #Http:JSONEncode(small) + 24
-                    if used + bytes <= limits[kind] then
-                        table.insert(summary[kind], small)
-                        seen[key] = small
-                        used = used + bytes
-                    else summary.omitted[kind] = summary.omitted[kind] + 1 end
-                else summary.omitted[kind] = summary.omitted[kind] + 1 end
-            end
-        end
-        shortReportText = Http:JSONEncode(summary)
-        if not active then return end
-        splitPages(reportText)
-        status.Text = string.format("v1.53 | Scanned %d | GUI %d | Prompts %d | Remotes %d | Limited: %s", report.scanned, #report.gui, #report.prompts, #report.remotes, tostring(report.truncated))
-    end)
-    busy = false
-    if active then
-        scan.Text = "Scan / Refresh"
-        if not ok then status.Text = "Scan failed: " .. tostring(err) end
-    end
-end
-scan.Activated:Connect(function() task.spawn(collect) end)
-local copying = false
-local function exportCopy(short)
-    if busy or copying then status.Text = "Please wait for scan/copy to finish."; return end
-    if not short and reportText == "" then status.Text = "No report. Press Scan first."; return end
-    copying = true
-    status.Text = "Copying on TEST PC..."
-    task.spawn(function()
-        local ok, err = pcall(function()
-            if short then
-                shortReportText=Http:JSONEncode({version="1.53",placeId=game.PlaceId,kind="collect_status",summaryOnly=true,
-                    autoCollect=collectSnapshot(true),autoHatch=liveHatchSnapshot()})
-            else refreshExportState() end
-            copyPayload(short and shortReportText or reportText, short and "SHORT report" or "FULL report")
-        end)
-        copying = false
-        if not ok and active then
-            status.Text = "Copy error: " .. tostring(err):sub(1, 120) .. ". Try Select ALL, then Ctrl+C."
-        end
-    end)
-end
-copy.Activated:Connect(function() exportCopy(false) end)
-shortCopy.Activated:Connect(function() exportCopy(true) end)
-save.Activated:Connect(function()
-    if busy then status.Text = "Scanning. Wait for completion."; return end
-    if reportText == "" then status.Text = "No report. Press Scan first."; return end
-    local refreshed, refreshError = pcall(refreshExportState)
-    if not refreshed then status.Text = "Export refresh failed: " .. tostring(refreshError):sub(1, 100); return end
-    local writer = capability("writefile")
-    if not writer then
-        selectAll()
-        status.Text = "File saving unavailable. Use Select ALL, then Ctrl+C for the full report."
-        return
-    end
-    local filename = "StealAnEgg_Report_" .. tostring(os.time()) .. ".json"
-    local ok, result = pcall(writer, filename, reportText)
-    if not ok or result == false then
-        status.Text = "File save failed. Use Select ALL and Ctrl+C."
-        return
-    end
-    local reader = capability("readfile")
-    if reader then
-        local readOK, saved = pcall(reader, filename)
-        if not readOK or saved ~= reportText then
-            status.Text = "Could not verify saved file. Use Select ALL as fallback."
-            return
-        end
-    end
-    status.Text = "Saved " .. filename .. " in your executor workspace. Upload that file to chat."
-end)
-selectText.Activated:Connect(selectAll)
-previous.Activated:Connect(function() pageIndex = math.max(1, pageIndex - 1); showPage() end)
-following.Activated:Connect(function() pageIndex = math.max(1, math.min(#pages, pageIndex + 1)); showPage() end)
-close.Activated:Connect(function() stopHatch(); lifetime:Disconnect(); gui:Destroy() end)
-task.spawn(collect)
-
-
-
-
-
-
-
+close.Activated:Connect(function() stopHatch();lifetime:Disconnect();gui:Destroy() end)
