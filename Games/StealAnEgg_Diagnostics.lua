@@ -1,4 +1,4 @@
--- Steal An Egg: automation v1.54
+-- Steal An Egg: automation v1.55
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -54,7 +54,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.54", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.55", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -62,15 +62,33 @@ round(sidebar)
 label(sidebar, "WORKSPACE",12,10,125,22,10,colors.muted)
 local automation = create("Frame", frame, {Position = UDim2.fromOffset(176,76), Size = UDim2.fromOffset(568,382), BackgroundTransparency = 1})
 local settings = create("Frame", frame, {Position = automation.Position, Size = automation.Size, BackgroundTransparency = 1, Visible = false})
+local logUI={frozen=false}
+logUI.page=create("Frame",frame,{Position=automation.Position,Size=automation.Size,BackgroundTransparency=1,Visible=false})
+label(logUI.page,"Log",0,0,400,30,22)
+logUI.copy=control(logUI.page,"Copy log",0,42,150,32)
+logUI.select=control(logUI.page,"Select all",160,42,150,32)
+logUI.clear=control(logUI.page,"Clear log",320,42,150,32)
+logUI.hint=label(logUI.page,"Recent events and current status. Copy log captures a fixed snapshot.",0,80,568,40,12,colors.muted)
+logUI.hint.Name="LogHint"
+logUI.hint.TextWrapped=true
+logUI.scroll=create("ScrollingFrame",logUI.page,{Position=UDim2.fromOffset(0,126),Size=UDim2.fromOffset(568,256),
+    BackgroundColor3=colors.panel,BorderSizePixel=0,ScrollBarThickness=5,AutomaticCanvasSize=Enum.AutomaticSize.XY,CanvasSize=UDim2.new()})
+logUI.box=create("TextBox",logUI.scroll,{Position=UDim2.fromOffset(8,6),Size=UDim2.fromOffset(548,240),AutomaticSize=Enum.AutomaticSize.XY,
+    Name="LogText",
+    BackgroundTransparency=1,MultiLine=true,ClearTextOnFocus=false,TextEditable=true,TextWrapped=false,
+    TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,Font=Enum.Font.Code,TextSize=12,TextColor3=colors.text,Text=""})
 local tabs = {}
 local function showTab(name)
     automation.Visible = name == "Automation"
     settings.Visible = name == "Settings"
+    logUI.page.Visible=name=="Log"
+    if name~="Log" then logUI.frozen=false end
+    if name=="Log" and logUI.refresh then logUI.refresh() end
     for key, b in pairs(tabs) do
         b.BackgroundColor3 = key == name and colors.purple or colors.panel
     end
 end
-for i, name in ipairs({"Automation", "Settings"}) do
+for i, name in ipairs({"Automation", "Settings", "Log"}) do
     local b = control(sidebar,name,8,42+(i-1)*44,132,36)
     tabs[name] = b
     b.Activated:Connect(function() showTab(name) end)
@@ -109,7 +127,8 @@ restore.Activated:Connect(function() setShown(true) end)
 showTab("Automation")
 local active = true
 local function capability(name)
-    local direct = ({firesignal=firesignal,getconnections=getconnections})[name]
+    local direct = ({firesignal=firesignal,getconnections=getconnections,setclipboard=setclipboard,toclipboard=toclipboard,
+        set_clipboard=set_clipboard,getclipboard=getclipboard,readclipboard=readclipboard})[name]
     if type(direct) == "function" then return direct end
     for _, getter in pairs({getgenv = getgenv, getrenv = getrenv}) do
         if type(getter) == "function" then
@@ -357,6 +376,38 @@ local function liveHatchSnapshot()
 end
 -- AUTO_COLLECT_ENGINE_BEGIN
 local eggLogic={}
+function eggLogic.logText(value,limit)
+    local text=tostring(value or ""):gsub("[%c]"," ")
+    local finish=math.min(#text,limit or 240)
+    while finish<#text do
+        local byte=text:byte(finish+1)
+        if byte<128 or byte>=192 then break end
+        finish=finish-1
+    end
+    return text:sub(1,finish)
+end
+function eggLogic.log(event,message)
+    local state=eggLogic.logs or {entries={},sequence=0,dropped=0,started=os.clock()}
+    eggLogic.logs=state
+    event=eggLogic.logText(event,48);message=eggLogic.logText(message,240)
+    local previous=state.entries[#state.entries]
+    if previous and previous.event==event and previous.message==message then
+        previous.repeats=previous.repeats+1;return
+    end
+    state.sequence=state.sequence+1
+    state.entries[#state.entries+1]={sequence=state.sequence,seconds=math.max(0,os.clock()-state.started),event=event,message=message,repeats=1}
+    if #state.entries>60 then table.remove(state.entries,1);state.dropped=state.dropped+1 end
+end
+function eggLogic.observeLogState()
+    local catalog=eggSelect.catalog or {}
+    local reason=eggLogic.logText(collectEgg.last):gsub("retry in [%d%.]+s","retry scheduled"):gsub("retries in [%d%.]+s","retry scheduled")
+    local key=table.concat({tostring(collectEgg.enabled),eggSelect.mode,collectEgg.phase or "IDLE",reason,
+        tostring(catalog.total or 0),tostring(catalog.fieldLinked or 0),tostring(catalog.knownRarity or 0),tostring(collectEgg.attempts)},"|")
+    if key~=eggLogic.lastLoggedState then
+        eggLogic.lastLoggedState=key
+        eggLogic.log("collect.status",(collectEgg.phase or "IDLE").." | "..tostring(collectEgg.last))
+    end
+end
 eggLogic.sourceEvents={}
 eggLogic.sourceFields={"IncomePerSecond","CashPerSecond","MoneyPerSecond","CoinsPerSecond","ValuePerSecond",
     "Rarity","RarityName","RarityId","Tier","Income","BaseIncome","BaseValue","Value","Price","SellPrice","Rate",
@@ -845,6 +896,7 @@ function eggLogic.ensureCollectData()
     if busy or state.running or hatchRunning or systemRunning or placeRunning then return false end
     local epoch=eggLogic.collectEpoch or 0
     state.running=true;state.status="loading";state.attempts=state.attempts+1;state.startedAt=os.time()
+    eggLogic.log("discovery.start","Automatic Rank scan #"..state.attempts)
     collectEgg.phase="DISCOVERING";collectEgg.last="Automatically reading game Rank data"
     collectLabel.Text=collectEgg.last
     local worked,ok,result=pcall(eggLogic.inspectDefinitions,function()
@@ -853,12 +905,14 @@ function eggLogic.ensureCollectData()
     if not worked then result=ok;ok=false;eggLogic.definitionRunning=false;busy=false end
     state.running=false;state.finishedAt=os.time()
     state.lastResult=type(result)=="table" and result.status or tostring(result)
-    if not active or not collectEgg.enabled or (eggLogic.collectEpoch or 0)~=epoch then state.status="cancelled";return false end
+    if not active or not collectEgg.enabled or (eggLogic.collectEpoch or 0)~=epoch then state.status="cancelled";eggLogic.log("discovery.cancelled","Collect stopped or session changed");return false end
     if ok and eggLogic.rarityStatus().ready then
-        state.status="ready";state.reason=nil;state.nextReadClock=0;collectEgg.last="Automatic Rank scan ready";return true
+        state.status="ready";state.reason=nil;state.nextReadClock=0;collectEgg.last="Automatic Rank scan ready"
+        eggLogic.log("discovery.ready",tostring(eggLogic.rarityStatus().categories).." categories indexed");return true
     end
     state.status="waiting_retry";state.nextReadClock=os.clock()+15
     state.reason=worked and eggLogic.rarityStatus().reason or tostring(result):sub(1,180)
+    eggLogic.log("discovery.retry",state.lastResult.." | "..tostring(state.reason))
     collectEgg.last="Rarity data unavailable; automatic scan retries in 15s"
     return false
 end
@@ -1140,6 +1194,9 @@ function eggLogic.resolveField(subject,metadata)
         positionSource=match.key,ageSeconds=os.clock()-match.record.clock}
 end
 local function recordGameEvent(name, ...)
+    if name:match("^collect%.") or name:match("^return%.") or name=="navigation.stop" or name=="walking.unstick.jump" then
+        eggLogic.log(name,select(1,...) or "")
+    end
     eggLogic.observeSource(name,...)
     if name=="RE/Treadmill/SpeedGained" then
         training.events=training.events+1;training.lastEventAt=os.time()
@@ -1725,7 +1782,7 @@ function eggLogic.refresh()
 end
 function eggLogic.export()
     eggLogic.refresh()
-    return {version="1.54",kind="egg_data",placeId=game.PlaceId,
+    return {version="1.55",kind="egg_data",placeId=game.PlaceId,
         collection={enabled=collectEgg.enabled,phase=collectEgg.phase,last=collectEgg.last,attempts=collectEgg.attempts,
             retry=eggLogic.retryStatus(),promptWait=collectEgg.promptWait,lastMovement=collectEgg.lastMovement,lastInput=collectEgg.lastInput},
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
@@ -1905,6 +1962,7 @@ local function retryCollect(reason,kind,seconds)
     collectEgg.pausedReason=nil
     collectEgg.last=reason..string.format("; retry in %ds",seconds)
     collectEgg.phase="WAITING_RETRY"
+    eggLogic.log("collect.retry",reason)
     if collectButton then collectButton.Text="Collect: ON";collectButton.BackgroundColor3=colors.purple end
     collectLabel.Text=collectEgg.last
 end
@@ -2418,6 +2476,70 @@ local function collectSnapshot(includeEvidence)
     if snapshot.matchingPrompts == 0 then snapshot.blocked = "No CarryAreaEgg / Steal prompt in cache" end
     return snapshot
 end
+function eggLogic.logReport()
+    local refreshed,refreshError=pcall(eggLogic.refresh)
+    local catalog=eggSelect.catalog or {}
+    local discovery=eggLogic.discoveryStatus()
+    local field=catalog.fieldData or {}
+    local lines={"MY ROBLOX HUB | Steal An Egg v1.55 | place "..tostring(game.PlaceId)}
+    local function add(name,value) lines[#lines+1]=name..": "..eggLogic.logText(value,320) end
+    add("Collect",string.format("%s | %s | mode %s | approach %s | attempts %d",collectEgg.enabled and "ON" or "OFF",
+        collectEgg.phase or "IDLE",eggSelect.mode,collectEgg.approachMode or "Walk",collectEgg.attempts or 0))
+    add("Last",collectEgg.last)
+    add("Discovery",discovery.status.." | reads "..discovery.attempts.." | "..tostring(discovery.reason or discovery.lastResult or ""))
+    for _,module in ipairs(eggLogic.definitions and eggLogic.definitions.modules or {}) do
+        add("Module",module.path.." | "..module.status.." | snapshot complete "..tostring(module.snapshot and module.snapshot.complete).." | "..tostring(module.error or ""))
+        if module.directory then
+            local d=module.directory
+            add("Directory",tostring(d.status).." | exported "..tostring(d.exported).." / "..tostring(d.totalEntries).." | traversal "..tostring(d.traversalComplete)
+                .." | field errors "..tostring(d.fieldErrors).." | identity conflicts "..tostring(d.identityConflicts))
+        end
+    end
+    local rank=catalog.rarityRanking or eggLogic.rarityStatus()
+    add("Rank data",tostring(rank.ready).." | categories "..rank.categories.." | "..rank.reason)
+    add("Eggs",string.format("nearby %d | UID linked %d | ranked %d | accepted %d | deferred %d",catalog.total or 0,
+        catalog.fieldLinked or 0,catalog.knownRarity or 0,catalog.accepted or 0,catalog.deferred or 0))
+    add("Field cache",string.format("stored %d | fresh %d | last %s | age %ss",field.stored or 0,field.fresh or 0,
+        tostring(field.lastEvent or "none"),type(field.lastAt)=="number" and tostring(math.max(0,os.time()-field.lastAt)) or "?"))
+    add("Home",tostring(autoHome.ready).." | point "..tostring(deliveryPoint~=nil).." | "..autoHome.reason)
+    local snapshotOK,snapshot=pcall(collectSnapshot,false)
+    if snapshotOK and snapshot.nearest then
+        local n=snapshot.nearest
+        add("Nearest","enabled "..tostring(n.enabled).." | distance "..tostring(n.distance).." / "..tostring(n.allowedDistance).." | "..tostring(n.reason))
+    end
+    for i=1,math.min(3,#(catalog.entries or {})) do
+        local e=catalog.entries[i];local m=e.metadata
+        add("Candidate "..i,"UID "..tostring(m.uid or "?").." | "..tostring(m.assetCategory or "?").." | Rank "..tostring(m.rarityRank or "?")
+            .." | enabled "..tostring(e.enabled).." | accepted "..tostring(e.eligibleForMode).." | "..tostring(e.blockedReason or m.rarityBinding and m.rarityBinding.reason or m.fieldBinding and m.fieldBinding.method or ""))
+    end
+    if collectEgg.retry then add("Retry",collectEgg.retry.reason.." | remaining "..tostring(eggLogic.retryStatus().remainingSeconds).."s") end
+    if collectEgg.promptWait then add("Prompt wait",collectEgg.promptWait.status.." | UID "..tostring(collectEgg.promptWait.uid)) end
+    if collectEgg.selectedEgg then
+        local m=collectEgg.selectedEgg.metadata or {}
+        add("Selected","UID "..tostring(m.uid or "?").." | category "..tostring(m.assetCategory or "?").." | Rank "..tostring(m.rarityRank or "?"))
+    end
+    if collectEgg.lastInput then
+        local input=collectEgg.lastInput
+        add("Input",tostring(input.status).." | "..tostring(input.outcome or "").." | "..tostring(input.error or ""))
+    end
+    if collectEgg.lastMovement then add("Movement",tostring(collectEgg.lastMovement.status).." | "..tostring(collectEgg.lastMovement.stopReason or "")) end
+    if collectEgg.lastReturn then add("Return",collectEgg.lastReturn.status) end
+    add("Other automation","Hatch "..tostring(hatch.enabled).." | "..tostring(hatch.last).." | Upgrade "..upgrades.mode.." | Train "..tostring(training.enabled))
+    if not refreshed then add("Snapshot error",refreshError) end
+    local state=eggLogic.logs or {entries={},dropped=0}
+    add("Recent events","buffer "..#state.entries.." / 60 | older dropped "..state.dropped.." | newest fitting 18KB shown")
+    local header=table.concat(lines,"\n").."\n"
+    local selected,bytes={},#header
+    for i=#state.entries,1,-1 do
+        local entry=state.entries[i]
+        local line=string.format("[%04d +%.1fs] %s | %s%s\n",entry.sequence,entry.seconds,entry.event,entry.message,
+            entry.repeats>1 and (" (x"..entry.repeats..")") or "")
+        if bytes+#line>18000 then break end
+        selected[#selected+1]=line;bytes=bytes+#line
+    end
+    for i=#selected,1,-1 do header=header..selected[i] end
+    return header
+end
 local function collectStep()
     if not active or not collectEgg.enabled or busy or hatchRunning or placeRunning or systemRunning then return end
     local retry=collectEgg.retry
@@ -2502,6 +2624,7 @@ local function collectStep()
         collectEgg.last="Selected egg changed or no longer matches; rechecking next cycle";return
     end
     collectEgg.selectedEgg={at=os.time(),mode=eggSelect.mode,path=best:GetFullName(),distance=bestDistance,metadata=latest}
+    eggLogic.log("collect.target","UID "..tostring(latest.uid or "?").." | "..tostring(latest.assetCategory or latest.name or "?").." | Rank "..tostring(latest.rarityRank or "?"))
     collectEgg.phase="PICKUP"
     collectEgg.tripStartedClock=os.clock()
     local inventoryBefore = eggInventory()
@@ -2577,6 +2700,7 @@ local function dispatchCollect()
         if holding then pcall(function() holding:InputHoldEnd() end);holding=nil end
         retryCollect("Collect error: " .. tostring(err):sub(1,100))
     end
+    eggLogic.observeLogState()
 end
 local function setManualCarry(value)
     manualCarry = value == true
@@ -3400,12 +3524,83 @@ local function dispatchSystems()
     if upgrades.mode~="Off" or training.enabled then status.Text=(upgrades.mode~="Off" and upgrades.last or "").." | "..(training.enabled and training.last or "") end
 end
 -- AUTO_COLLECT_ENGINE_END
+function logUI.refresh()
+    if logUI.frozen then return end
+    local ok,text=pcall(eggLogic.logReport)
+    logUI.box.Text=ok and text or ("Log snapshot error: "..tostring(text))
+end
+function logUI.prepare()
+    eggLogic.observeLogState()
+    local ok,text=pcall(eggLogic.logReport)
+    if not ok then text="MY ROBLOX HUB v1.55\nLog snapshot error: "..tostring(text) end
+    logUI.frozen=true;logUI.copyText=text;showTab("Log")
+    local wrote,writeError=pcall(function() logUI.box.Text=text end)
+    if not wrote then logUI.hint.Text="Text display failed: "..tostring(writeError):sub(1,100) end
+    return text
+end
+function logUI.selectText()
+    if not logUI.frozen or not logUI.copyText then logUI.prepare() end
+    pcall(function() logUI.box:CaptureFocus() end)
+    task.defer(function()
+        if not active or not logUI.box.Parent then return end
+        pcall(function() logUI.box.CursorPosition=#logUI.box.Text+1;logUI.box.SelectionStart=1 end)
+    end)
+    logUI.hint.Text="Snapshot fixed. Press Ctrl+C, or click the text then Ctrl+A / Ctrl+C."
+end
+function logUI.copyReport()
+    if logUI.copying then return end
+    logUI.copyToken=(logUI.copyToken or 0)+1
+    local token=logUI.copyToken
+    local text=logUI.prepare()
+    logUI.selectText()
+    logUI.copying=true
+    task.spawn(function()
+        local ok,result=pcall(function()
+            local reader=capability("getclipboard") or capability("readclipboard")
+            local writers,seen={},{}
+            local function add(fn) if type(fn)=="function" and not seen[fn] then seen[fn]=true;writers[#writers+1]=fn end end
+            for _,name in ipairs({"setclipboard","toclipboard","set_clipboard"}) do add(capability(name)) end
+            if type(clipboard)=="table" then add(clipboard.set);add(clipboard.setclipboard) end
+            if type(syn)=="table" then add(syn.write_clipboard) end
+            for _,writer in ipairs(writers) do
+                if not active or logUI.copyToken~=token then return false end
+                local wrote,value=pcall(writer,text)
+                if wrote and value~=false and reader then
+                    for attempt=1,2 do
+                        local readOK,copied=pcall(reader)
+                        if readOK and copied==text then return true end
+                        if attempt<2 then task.wait(0.05) end
+                        if not active or logUI.copyToken~=token then return false end
+                    end
+                end
+            end
+            return false
+        end)
+        if logUI.copyToken~=token then return end
+        logUI.copying=false
+        if not active then return end
+        if ok and result then logUI.hint.Text="Copied and verified on this PC. Paste the log into chat."
+        else logUI.hint.Text="Copy not verified. Text is selected: Ctrl+C, or click text then Ctrl+A / Ctrl+C." end
+    end)
+end
+logUI.copy.Activated:Connect(logUI.copyReport)
+logUI.select.Activated:Connect(logUI.selectText)
+logUI.box.Focused:Connect(function() logUI.frozen=true end)
+logUI.clear.Activated:Connect(function()
+    logUI.copyToken=(logUI.copyToken or 0)+1;logUI.copying=false
+    eggLogic.logs=nil;eggLogic.lastLoggedState=nil
+    logUI.frozen=false;logUI.copyText=nil
+    logUI.hint.Text="History cleared. Collection and current status are unchanged."
+    logUI.refresh()
+end)
+eggLogic.log("hub.ready","v1.55 | automatic discovery | all automation OFF")
 priorityButton.Activated:Connect(function()
     if collectEgg.enabled or collectRunning or busy or placeState.manualPreparing or placementRecord.enabled then
         status.Text="Stop Collect before changing priority";return
     end
     eggSelect.mode=eggSelect.mode=="Rarity" and "Nearest" or "Rarity"
     priorityButton.Text="Priority: "..string.upper(eggSelect.mode)
+    eggLogic.log("settings.priority",eggSelect.mode)
     status.Text="Collect ON scans eggs automatically ("..eggSelect.mode..")"
 end)
 upgradeToggle.Activated:Connect(function()
@@ -3429,6 +3624,7 @@ approachButton.Activated:Connect(function()
     if collectRunning then status.Text="Stop Collect before changing movement mode";return end
     collectEgg.approachMode=collectEgg.approachMode=="Tween" and "Walk" or "Tween"
     approachButton.Text="Approach: "..string.upper(collectEgg.approachMode)
+    eggLogic.log("settings.approach",collectEgg.approachMode)
 end)
 -- Read-only event observations. Payloads are bounded and are not interpreted as
 -- authoritative carry state until the event contract is established.
@@ -3505,6 +3701,7 @@ end)
 collectButton.Activated:Connect(function()
     if placeState.manualPreparing or placementRecord.enabled then status.Text="Stop Record placement before starting other actions";return end
     collectEgg.enabled = not collectEgg.enabled
+    eggLogic.log("collect.toggle",collectEgg.enabled and ("ON | "..eggSelect.mode.." | "..collectEgg.approachMode) or "OFF by user")
     eggLogic.collectEpoch=(eggLogic.collectEpoch or 0)+1
     if collectEgg.enabled and eggLogic.autoDiscovery then eggLogic.autoDiscovery.nextReadClock=0 end
     if collectEgg.enabled then eggLogic.rarityDeferrals=nil;collectEgg.promptWait=nil end
@@ -3567,6 +3764,7 @@ task.spawn(function()
         dispatchCollect()
         dispatchHatch(false)
         dispatchSystems()
+        if active and logUI.page.Visible and not logUI.frozen then pcall(logUI.refresh) end
         if active and collectEgg.enabled then
             local ok, snapshot = pcall(collectSnapshot)
             if ok then

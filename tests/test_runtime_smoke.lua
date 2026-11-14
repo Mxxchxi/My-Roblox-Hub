@@ -40,7 +40,7 @@ local function fixture(options)
         end
         setmetatable(obj,{__index=function(_,k)
             if methods[k] then return methods[k] end
-            if k=='Activated' or k=='InputBegan' or k=='InputChanged' or k=='InputEnded' or k=='AncestryChanged' or k=='CharacterAdded' or k=='DescendantAdded' or k=='DescendantRemoving' or k=='PromptShown' then props.signals[k]=props.signals[k] or signal();return props.signals[k] end
+            if k=='Focused' or k=='FocusLost' or k=='Activated' or k=='InputBegan' or k=='InputChanged' or k=='InputEnded' or k=='AncestryChanged' or k=='CharacterAdded' or k=='DescendantAdded' or k=='DescendantRemoving' or k=='PromptShown' then props.signals[k]=props.signals[k] or signal();return props.signals[k] end
             return props[k]
         end,__newindex=function(_,k,v)
             if k=='Text' and props.failWrite then error('mock UI write fault') end
@@ -81,7 +81,7 @@ local function fixture(options)
     local f={env=env,pg=pg,ui=ui,tasks=tasks,objects=objects,player=player,http=http}
     function f:run(s)
         if s then assert(load(s,'@Loader.lua','t',env))()
-        else self.probe=assert(load(source..'\nreturn {snapshot=collectSnapshot}', '@Games/StealAnEgg_Diagnostics.lua','t',env))() end
+        else self.probe=assert(load(source..'\nreturn {snapshot=collectSnapshot,logReport=eggLogic.logReport,log=eggLogic.log}', '@Games/StealAnEgg_Diagnostics.lua','t',env))() end
     end
     function f:button(text) for _,obj in ipairs(pg:GetDescendants()) do if obj.ClassName=='TextButton' and obj.Text==text then return obj end end;error('Button missing: '..text) end
     function f:liveConnections() local n=0;for _,s in ipairs(signals) do for _,c in ipairs(s.handlers) do if c.Connected then n=n+1 end end end;return n end
@@ -100,6 +100,18 @@ local function fixture(options)
         env.task.wait,env.task.spawn=oldWait,oldSpawn
         assert(not ok and tostring(err):find('end simulated tick',1,true),tostring(err))
     end
+    function f:logBox()
+        for _,obj in ipairs(objects) do if obj.Name=='LogText' then return obj end end;error('Log TextBox missing')
+    end
+    function f:logHint()
+        for _,obj in ipairs(objects) do if obj.Name=='LogHint' then return obj.Text end end;error('Log hint missing')
+    end
+    function f:copyLog()
+        local oldSpawn,oldWait,oldDefer=env.task.spawn,env.task.wait,env.task.defer
+        env.task.spawn=function(fn,...) fn(...) end;env.task.defer=env.task.spawn;env.task.wait=function() end
+        self:button('Copy log').Activated:Fire()
+        env.task.spawn,env.task.wait,env.task.defer=oldSpawn,oldWait,oldDefer
+    end
     function f:state()
         return {autoCollect=self.probe.snapshot(true)}
     end
@@ -109,7 +121,7 @@ local function check(name,fn) fn();tests=tests+1;print('PASS '..name) end
 check('full egg script constructs every tab and starts all automation OFF',function()
     local f=fixture();f:run();local gui=assert(f.pg:FindFirstChild('EggDiagnostics'))
     assert(gui.Enabled and gui.DisplayOrder==1000)
-    for _,name in ipairs({'Automation','Settings','Auto Hatch: OFF','Collect: OFF','Upgrade: OFF','Train: OFF','Priority: RARITY'}) do f:button(name) end
+    for _,name in ipairs({'Automation','Settings','Log','Copy log','Select all','Clear log','Auto Hatch: OFF','Collect: OFF','Upgrade: OFF','Train: OFF','Priority: RARITY'}) do f:button(name) end
 end)
 check('UI stays positively scaled while camera viewport is not ready',function()
     local f=fixture({width=1,height=1});f:run()
@@ -117,7 +129,7 @@ check('UI stays positively scaled while camera viewport is not ready',function()
 end)
 check('remaining tabs and priority work before a character humanoid is available',function()
     local f=fixture();f:run()
-    for _,name in ipairs({'Settings','Automation'}) do f:button(name).Activated:Fire() end
+    for _,name in ipairs({'Settings','Log','Automation'}) do f:button(name).Activated:Fire() end
     f:button('Priority: RARITY').Activated:Fire();f:button('Priority: NEAREST')
 end)
 check('Alt hides and restores the window and leaves restore control accessible',function()
@@ -231,6 +243,64 @@ check('scheduler keeps Collect ON and displays retry reason when home is unavail
     assert(visible)
     assert(r.autoCollect.retry.reason:find('Auto home not ready',1,true))
     f:button('Collect: ON').Activated:Fire();local stopped=f:state();assert(not stopped.autoCollect.enabled and not stopped.autoCollect.retry)
+end)
+check('Log tab renders compact current state and history',function()
+    local f=fixture();f:run();f:button('Log').Activated:Fire()
+    local text=f:logBox().Text
+    assert(text:find('v1.55',1,true) and text:find('hub.ready',1,true) and text:find('Collect: OFF',1,true))
+    assert(#text<=18000 and f:logBox().TextEditable and f:logBox().ClearTextOnFocus==false)
+end)
+check('Copy log verifies clipboard readback against the exact displayed snapshot',function()
+    local f=fixture();local copied;f.env.setclipboard=function(text) copied=text end;f.env.getclipboard=function() return copied end
+    f:run();f:copyLog()
+    assert(copied==f:logBox().Text and f:logHint():find('Copied and verified',1,true))
+end)
+check('missing clipboard APIs leave the fixed log selected for native copy',function()
+    local f=fixture();f:run();f:copyLog();local box=f:logBox()
+    assert(box.Text:find('MY ROBLOX HUB',1,true) and box.SelectionStart==1 and box.CursorPosition==#box.Text+1)
+    assert(f:logHint():find('Copy not verified',1,true) and f:logHint():find('Ctrl+A / Ctrl+C',1,true))
+end)
+check('throwing clipboard writer falls back to native selection and can be retried',function()
+    local f=fixture();local attempts=0;f.env.setclipboard=function() attempts=attempts+1;error('unavailable clipboard') end
+    f:run();f:copyLog();f:copyLog()
+    assert(attempts==2 and f:logBox().SelectionStart==1 and f:logHint():find('not verified',1,true))
+end)
+check('a writer with no reader is never claimed verified',function()
+    local f=fixture();local copied;f.env.setclipboard=function(text) copied=text end
+    f:run();f:copyLog();assert(copied==f:logBox().Text and f:logHint():find('not verified',1,true))
+end)
+check('a no-op writer with stale readback leaves the current log selected',function()
+    local f=fixture();f.env.setclipboard=function() end;f.env.getclipboard=function() return 'stale clipboard' end
+    f:run();f:copyLog();assert(f:logHint():find('not verified',1,true) and f:logBox().Text~='stale clipboard')
+end)
+check('new events cannot overwrite the snapshot during manual copying',function()
+    local f=fixture();f:run();f:copyLog();local captured=f:logBox().Text
+    f.probe.log('after.copy','new event after snapshot');f:tick()
+    assert(f:logBox().Text==captured)
+    f:button('Automation').Activated:Fire();f:button('Log').Activated:Fire()
+    assert(f:logBox().Text:find('new event after snapshot',1,true))
+end)
+check('clicking the log text freezes live updates for Ctrl A Ctrl C',function()
+    local f=fixture();f:run();f:button('Log').Activated:Fire();local captured=f:logBox().Text
+    f:logBox().Focused:Fire();f.probe.log('after.focus','new event');f:tick()
+    assert(f:logBox().Text==captured)
+end)
+check('Clear log removes history without stopping active collection',function()
+    local f=fixture();f:run();f:button('Priority: RARITY').Activated:Fire();f:button('Collect: OFF').Activated:Fire();f:tick()
+    f.probe.log('old-history','remove this history');f:copyLog();f:button('Clear log').Activated:Fire()
+    assert(f:state().autoCollect.enabled and not f:logBox().Text:find('remove this history',1,true))
+    assert(f:logBox().Text:find('buffer 0 / 60',1,true))
+end)
+check('closing the hub cancels a queued clipboard attempt',function()
+    local f=fixture();local writes=0;f.env.setclipboard=function() writes=writes+1 end
+    f:run();f:button('Copy log').Activated:Fire();local queued=f.tasks[#f.tasks]
+    f:button('X').Activated:Fire();queued.fn(table.unpack(queued.args));assert(writes==0 and f:liveConnections()==0)
+end)
+check('Clear log invalidates an older queued clipboard snapshot',function()
+    local f=fixture();local writes=0;f.env.setclipboard=function() writes=writes+1 end
+    f:run();f:button('Copy log').Activated:Fire();local queued=f.tasks[#f.tasks]
+    f:button('Clear log').Activated:Fire();queued.fn(table.unpack(queued.args));assert(writes==0)
+    f:copyLog();assert(writes==1)
 end)
 print(string.format('%d runtime startup tests passed',tests))
 
