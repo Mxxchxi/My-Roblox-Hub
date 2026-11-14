@@ -1,4 +1,4 @@
--- Steal An Egg: automation v1.59
+-- Steal An Egg: automation v1.60
 -- Auto Hatch test via nearby enabled prompts; Auto Collect tests nearby CarryAreaEgg prompts; remaining systems await mapping.
 local AUTO_PLACE_ENABLED = false -- Disabled after user-confirmed BAC kick reports.
 local Players = game:GetService("Players")
@@ -54,7 +54,7 @@ local function fit()
 end
 fit()
 local title = label(frame, "YUU HUB", 20,12,200,28,22,colors.cyan)
-label(frame, "STEAL AN EGG  /  v1.59", 20,40,300,20,11,colors.muted)
+label(frame, "STEAL AN EGG  /  v1.60", 20,40,300,20,11,colors.muted)
 local minimize = control(frame, "—", 670,16,32,30)
 local close = control(frame, "X", 710,16,32,30)
 local sidebar = create("Frame", frame, {Position = UDim2.fromOffset(12,76), Size = UDim2.fromOffset(148,382), BackgroundColor3 = colors.panel})
@@ -1617,7 +1617,7 @@ function eggLogic.performPickup(prompt,root,humanoid,character,metadata,record,m
 end
 function eggLogic.waitForRarityPrompt(choice,root,humanoid,character)
     local prompt=choice.prompt
-    local record={uid=choice.meta.uid,at=os.time(),timeoutSeconds=2,status="Waiting for game prompt"}
+    local record={uid=choice.meta.uid,category=choice.meta.assetCategory,rank=choice.meta.rarityRank,at=os.time(),timeoutSeconds=2,status="Waiting for game prompt"}
     collectEgg.promptWait=record
     local deadline=os.clock()+2
     while true do
@@ -1629,6 +1629,9 @@ function eggLogic.waitForRarityPrompt(choice,root,humanoid,character)
             record.status="Target removed or out of range";collectEgg.last=record.status;return false
         end
         local latest=eggLogic.metadata(prompt)
+        record.observed={uid=latest.uid,category=latest.assetCategory,rank=latest.rarityRank,
+            binding=latest.fieldBinding and latest.fieldBinding.method,candidates=latest.fieldBinding and latest.fieldBinding.candidateCount,
+            reason=latest.rarityBinding and latest.rarityBinding.reason}
         if not eggLogic.accepts(latest) or latest.uid~=choice.meta.uid or latest.assetCategory~=choice.meta.assetCategory
             or latest.rarityRank~=choice.meta.rarityRank then
             record.status="Target identity or Rank changed";collectEgg.last=record.status;return false
@@ -2082,7 +2085,7 @@ function eggLogic.refresh()
 end
 function eggLogic.export()
     eggLogic.refresh()
-    return {version="1.59",kind="egg_data",placeId=game.PlaceId,
+    return {version="1.60",kind="egg_data",placeId=game.PlaceId,
         collection={enabled=collectEgg.enabled,phase=collectEgg.phase,last=collectEgg.last,attempts=collectEgg.attempts,
             retry=eggLogic.retryStatus(),promptWait=collectEgg.promptWait,lastMovement=collectEgg.lastMovement,lastInput=collectEgg.lastInput},
         eggSelection={mode=eggSelect.mode,preferred=eggSelect.preferred,catalog=eggSelect.catalog,
@@ -2436,7 +2439,9 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target,allo
         return allowEquipped and placeState.enabled or not allowEquipped and collectEgg.enabled
     end
     if requireCarry==nil then requireCarry=true end
-    local nav={at=os.time(),mode="Humanoid.MoveTo",status="Planning ground return",completed=0}
+    local collectRoute=requireCarry or target~=nil and not allowEquipped
+    local purpose=requireCarry and "home" or target and not allowEquipped and "egg approach" or "other movement"
+    local nav={at=os.time(),mode="Humanoid.MoveTo",purpose=purpose,status="Planning "..purpose,completed=0}
     collectEgg.lastNavigation=nav
     local params=RaycastParams.new()
     params.FilterType=Enum.RaycastFilterType.Exclude
@@ -2456,21 +2461,21 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target,allo
             end)
             attempt.count=ok and type(result)=="table" and #result or 0
             if not ok then attempt.error=tostring(result):sub(1,140) end
-            if ok and type(result)=="table" and #result>=2 and #result<=(requireCarry and 160 or 80) then return result end
+            if ok and type(result)=="table" and #result>=2 and #result<=(collectRoute and 160 or 80) then return result end
         end
         route=plan(false)
         if not active or not movementAllowed() or player.Character~=character then nav.status="Return cancelled";return false,nav.status end
-        if not route and requireCarry then route=plan(true) end
-        if not route and requireCarry then
+        if not route and collectRoute then route=plan(true) end
+        if not route and collectRoute then
             -- Native movement can still work where the navigation mesh has no route.
             -- Keep the existing range/carry/cancellation and two-jump stall guards.
             route={{Position=destination}};nav.fallback=true
-            nav.status="No mesh route; trying bounded native return"
-            recordGameEvent("return.route.fallback",nav.status)
+            nav.status="No mesh route; trying bounded native "..purpose
+            recordGameEvent(requireCarry and "return.route.fallback" or "collect.route.fallback",nav.status)
         elseif not route then nav.status="No ground return path";return false,nav.status end
     else route={{Position=destination}} end
     if not active or not movementAllowed() or player.Character~=character then nav.status="Return cancelled";return false,nav.status end
-    if requireCarry then recordGameEvent("return.route.ready",tostring(#route).." waypoints | fallback "..tostring(nav.fallback==true)) end
+    if collectRoute then recordGameEvent(requireCarry and "return.route.ready" or "collect.route.ready",tostring(#route).." waypoints | fallback "..tostring(nav.fallback==true)) end
     nav.waypoints=#route
     local total=0
     local previous=root.Position
@@ -2512,10 +2517,10 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target,allo
         walkingHumanoid=humanoid
         collectEgg.moving=true
         humanoid:MoveTo(goal)
-        if requireCarry and point.Action==Enum.PathWaypointAction.Jump and humanoid.FloorMaterial~=Enum.Material.Air then
+        if collectRoute and point.Action==Enum.PathWaypointAction.Jump and humanoid.FloorMaterial~=Enum.Material.Air then
             if humanoid.Sit then humanoid.Sit=false end
             humanoid.Jump=true;nav.pathJumps=(nav.pathJumps or 0)+1
-            recordGameEvent("return.route.jump","Waypoint "..i)
+            recordGameEvent(requireCarry and "return.route.jump" or "collect.route.jump","Waypoint "..i)
         end
         local refreshed=os.clock()
         local recovery={origin=root.Position,checked=os.clock(),lastJump=-math.huge,attempts=0}
@@ -2534,7 +2539,7 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target,allo
         if not requireCarry and (fieldCarryActive() or manualCarry or not allowEquipped and carryVisible()) then return stop("Holding state detected during approach") end
         if target and not target.Parent then return stop("Approach target removed") end
             if recoverWalking(recovery,root,humanoid,goal) then return stop("Walking stuck after two jump attempts") end
-            if os.clock()-started>deadline then return stop("Ground return stalled at waypoint "..i) end
+            if os.clock()-started>deadline then return stop((requireCarry and "Ground return stalled at waypoint " or "Walk approach stalled at waypoint ")..i) end
             if os.clock()-refreshed>=1 then humanoid:MoveTo(goal);refreshed=os.clock() end
             nav.status=requireCarry and "Walking home" or allowEquipped=="training" and "Walking to treadmill" or allowEquipped=="upgrade" and "Walking to upgrade sign" or "Walking to egg";collectEgg.last=nav.status;collectLabel.Text=string.format("%s %d/%d",nav.status,i,#route)
             task.wait(0.1)
@@ -2543,7 +2548,7 @@ walkReturn=function(root,humanoid,character,destination,requireCarry,target,allo
     end
     if not active or not movementAllowed() then return stop("Return cancelled") end
     cancelCollectTween("At delivery point")
-    nav.status="Ground return reached delivery point"
+    nav.status=requireCarry and "Ground return reached delivery point" or target and "Walk approach reached selected egg" or "Walk destination reached"
     return true,nav.status
 end
 local function returnHome(root, humanoid, character)
@@ -2809,7 +2814,7 @@ function eggLogic.logReport()
     local catalog=eggSelect.catalog or {}
     local discovery=eggLogic.discoveryStatus()
     local field=catalog.fieldData or {}
-    local lines={"MY ROBLOX HUB | Steal An Egg v1.59 | place "..tostring(game.PlaceId)}
+    local lines={"MY ROBLOX HUB | Steal An Egg v1.60 | place "..tostring(game.PlaceId)}
     local function add(name,value) lines[#lines+1]=name..": "..eggLogic.logText(value,320) end
     add("Collect",string.format("%s | %s | mode %s | approach %s | attempts %d",collectEgg.enabled and "ON" or "OFF",
         collectEgg.phase or "IDLE",eggSelect.mode,collectEgg.approachMode or "Walk",collectEgg.attempts or 0))
@@ -2855,7 +2860,15 @@ function eggLogic.logReport()
         end
     end
     if collectEgg.retry then add("Retry",collectEgg.retry.reason.." | remaining "..tostring(eggLogic.retryStatus().remainingSeconds).."s") end
-    if collectEgg.promptWait then add("Prompt wait",collectEgg.promptWait.status.." | UID "..tostring(collectEgg.promptWait.uid)) end
+    if collectEgg.approachTarget then
+        local target=collectEgg.approachTarget
+        add("Approach target history","UID "..tostring(target.uid).." | "..tostring(target.category).." | Rank "..tostring(target.rank))
+    end
+    if collectEgg.promptWait then
+        local wait=collectEgg.promptWait;local actual=wait.observed or {}
+        add("Prompt wait history",wait.status.." | UID "..tostring(wait.uid))
+        add("Prompt binding history","actual UID "..tostring(actual.uid).." | "..tostring(actual.category).." | Rank "..tostring(actual.rank).." | binding "..tostring(actual.binding).." | candidates "..tostring(actual.candidates).." | "..tostring(actual.reason or ""))
+    end
     if collectEgg.selectedEgg then
         local m=collectEgg.selectedEgg.metadata or {}
         add("Selected","UID "..tostring(m.uid or "?").." | category "..tostring(m.assetCategory or "?").." | Rank "..tostring(m.rarityRank or "?"))
@@ -2879,7 +2892,7 @@ function eggLogic.logReport()
     if collectEgg.lastReturn then add("Return history",collectEgg.lastReturn.status.." | current phase "..tostring(collectEgg.phase)) end
     if collectEgg.lastNavigation then
         local nav=collectEgg.lastNavigation
-        add("Route history",tostring(nav.status).." | waypoint "..tostring(nav.currentWaypoint or 0).."/"..tostring(nav.waypoints or 0).." | fallback "..tostring(nav.fallback==true).." | planned jumps "..tostring(nav.pathJumps or 0))
+        add("Route history",tostring(nav.status).." | purpose "..tostring(nav.purpose or "unknown").." | waypoint "..tostring(nav.currentWaypoint or 0).."/"..tostring(nav.waypoints or 0).." | fallback "..tostring(nav.fallback==true).." | planned jumps "..tostring(nav.pathJumps or 0))
         for i,attempt in ipairs(nav.plans or {}) do
             add("Route plan "..i,"jump "..tostring(attempt.jumpAllowed).." | "..tostring(attempt.status).." | points "..tostring(attempt.count).." | "..tostring(attempt.error or ""))
         end
@@ -2964,10 +2977,27 @@ local function collectStep()
             return
         end
         if not collectCandidate(selected.prompt,root,humanoid) then
+            collectEgg.approachTarget={uid=selected.meta.uid,category=selected.meta.assetCategory,rank=selected.meta.rarityRank,at=os.time()}
+            collectEgg.phase="APPROACHING"
+            eggLogic.log("collect.approach","UID "..tostring(selected.meta.uid).." | "..tostring(selected.meta.assetCategory).." | Rank "..tostring(selected.meta.rarityRank))
             local reached=approachEgg(root,humanoid,selected.prompt)
             if eggSelect.mode=="Rarity" and inCollectRange(selected.prompt,root) then
-                if not eggLogic.waitForRarityPrompt(selected,root,humanoid,character) then return end
-            elseif not reached then return end
+                if not eggLogic.waitForRarityPrompt(selected,root,humanoid,character) then
+                    if active and collectEgg.enabled and not carryVisible() and collectEgg.promptWait.status=="Target identity or Rank changed" then
+                        eggLogic.deferRarity(selected,collectEgg.promptWait.status)
+                    end
+                    if active and collectEgg.enabled and not carryVisible() then collectEgg.phase="SEEKING" end
+                    return
+                end
+            elseif not reached then
+                if eggSelect.mode=="Rarity" and active and collectEgg.enabled and not carryVisible() then
+                    local reason="Approach failed: "..tostring(collectEgg.last)
+                    eggLogic.deferRarity(selected,reason)
+                    eggLogic.log("collect.approach.deferred",reason.." | UID "..tostring(selected.meta.uid))
+                    collectEgg.phase="SEEKING"
+                end
+                return
+            end
         end
     end
     if not selected or not active or not collectEgg.enabled or busy or carryVisible() or player.Character~=character then return end
@@ -3906,7 +3936,7 @@ end
 function logUI.prepare()
     eggLogic.observeLogState()
     local ok,text=pcall(eggLogic.logReport)
-    if not ok then text="MY ROBLOX HUB v1.59\nLog snapshot error: "..tostring(text) end
+    if not ok then text="MY ROBLOX HUB v1.60\nLog snapshot error: "..tostring(text) end
     logUI.frozen=true;logUI.copyText=text;showTab("Log")
     local wrote,writeError=pcall(function() logUI.box.Text=text end)
     if not wrote then logUI.hint.Text="Text display failed: "..tostring(writeError):sub(1,100) end
@@ -3967,7 +3997,7 @@ logUI.clear.Activated:Connect(function()
     logUI.hint.Text="History cleared. Collection and current status are unchanged."
     logUI.refresh()
 end)
-eggLogic.log("hub.ready","v1.59 | automatic discovery | all automation OFF")
+eggLogic.log("hub.ready","v1.60 | automatic discovery | all automation OFF")
 priorityButton.Activated:Connect(function()
     if collectEgg.enabled or collectRunning or busy or placeState.manualPreparing or placementRecord.enabled then
         status.Text="Stop Collect before changing priority";return

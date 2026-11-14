@@ -1483,7 +1483,7 @@ end)
 check("focused egg export includes prompt coordinates and prioritized field samples", function()
     qualityPrompt(3,nil,nil);funcs.record("RE/EggWorld/FieldEggShifted",fieldRecord("a",3,100))
     local result=funcs.eggExport()
-    assert(result.kind=="egg_data" and result.version=="1.59")
+    assert(result.kind=="egg_data" and result.version=="1.60")
     assert(result.eggSelection.catalog.entries[1].position.x==3 and result.eggSelection.catalog.fieldLinked==1)
     assert(result.eggSelection.fieldSamples[1].field.records[1].uid=="a")
 end)
@@ -2541,7 +2541,7 @@ end)
 check("log report explains missing UID bindings even when Rank data is loaded",function()
     automaticFixture();assert(funcs.autoData());qualityPrompt(3,nil,nil)
     local text=funcs.logReport()
-    assert(text:find("v1.59",1,true) and text:find("UID linked 0",1,true) and text:find("fresh 0",1,true))
+    assert(text:find("v1.60",1,true) and text:find("UID linked 0",1,true) and text:find("fresh 0",1,true))
     assert(text:find("Fresh unique field UID binding required",1,true))
 end)
 check("log report includes candidate UID category and game Rank without Directory dumps",function()
@@ -2947,5 +2947,66 @@ check("a computed detour exceeding 600 studs remains rejected",function()
     carrying=true;obstacle=true;mockRoute={{Position=position(400)},{Position=position(-400)},{Position=position(40)}}
     local ok,reason=funcs.walkNative(root,humanoid,character,position(40))
     assert(not ok and reason=="Ground route exceeds 600 studs" and not walkGoal)
+end)
+check("Rarity walks to a disabled egg through missing-mesh fallback and picks up after game enable",function()
+    rarityDefinitions({A=assetDefinition("A",1,"Mythic",6)})
+    local p=rarityPrompt(43,"a","A");p.Enabled=false
+    env.eggSelect.mode="Rarity";env.collectEgg.approachMode="Walk";obstacle=true
+    onWait=function() if walkGoal then p.Enabled=true end end
+    funcs.dispatch()
+    assert(p.began==1 and env.collectEgg.attempts==1 and env.collectEgg.lastNavigation.fallback)
+    assert(env.collectEgg.lastNavigation.purpose=="egg approach" and #pathCalls==2 and tweenCreated==0)
+    assert(env.collectEgg.lastMovement.status=="Walk approach reached selected egg")
+end)
+check("egg approach uses the jump-capable planner before falling back",function()
+    rarityDefinitions({A=assetDefinition("A",1,"Mythic",6)})
+    local p=rarityPrompt(40,"a","A");env.eggSelect.mode="Rarity";env.collectEgg.approachMode="Walk";obstacle=true
+    pathPlanHook=function(options)
+        if not options.AgentCanJump then return nativeRoute(nil,"NoPath") end
+        return nativeRoute({{Position=position(10),Action=env.Enum.PathWaypointAction.Jump},{Position=position(35)}})
+    end
+    funcs.dispatch()
+    assert(p.began==1 and #pathCalls==2 and not env.collectEgg.lastNavigation.fallback)
+    assert(env.collectEgg.lastNavigation.pathJumps==1 and humanoid.Jump)
+end)
+check("a genuinely blocked top Rank egg is deferred so a reachable lower Rank can be collected",function()
+    rarityDefinitions({A=assetDefinition("A",1,"Mythic",6),B=assetDefinition("B",1,"Rare",3)})
+    local high=rarityPrompt(40,"a","A");local low=rarityPrompt(15,"b","B")
+    env.eggSelect.mode="Rarity";env.collectEgg.approachMode="Walk";obstacle=true
+    onWait=function() if walkGoal and walkGoal.X>15 then walkGoal=root.Position end end
+    funcs.dispatch()
+    assert(high.began==0 and env.collectEgg.attempts==0 and funcs.rarityDeferred(funcs.eggMeta(high)))
+    assert(env.collectEgg.phase=="SEEKING")
+    funcs.dispatch();assert(low.began==1 and high.began==0 and env.collectEgg.attempts==1)
+end)
+check("fallback arrival never forces a disabled game prompt enabled",function()
+    rarityDefinitions({A=assetDefinition("A",1,"Mythic",6)})
+    local p=rarityPrompt(43,"a","A");p.Enabled=false
+    env.eggSelect.mode="Rarity";env.collectEgg.approachMode="Walk";obstacle=true
+    funcs.dispatch()
+    assert(p.began==0 and not p.Enabled and env.collectEgg.attempts==0)
+    assert(env.collectEgg.promptWait.status=="Game prompt stayed disabled" and funcs.rarityDeferred(funcs.eggMeta(p)))
+    assert(funcs.logReport():find("Prompt wait history: Game prompt stayed disabled",1,true))
+end)
+check("UID changes at arrival are logged and never receive pickup input",function()
+    rarityDefinitions({A=assetDefinition("A",1,"Mythic",6)})
+    local p=rarityPrompt(40,"a","A",true);p.Enabled=false
+    env.eggSelect.mode="Rarity";env.collectEgg.approachMode="Walk";obstacle=true
+    onWait=function() if walkGoal then p.attrs.UID="new";p.Enabled=true end end
+    funcs.dispatch()
+    assert(p.began==0 and env.collectEgg.attempts==0 and env.collectEgg.promptWait.status=="Target identity or Rank changed")
+    assert(env.collectEgg.promptWait.observed.uid=="new" and env.collectEgg.phase=="SEEKING")
+    assert(funcs.logReport():find("Prompt binding history: actual UID new",1,true))
+end)
+check("OFF during fallback approach stops movement without deferring the target",function()
+    rarityDefinitions({A=assetDefinition("A",1,"Mythic",6)})
+    local p=rarityPrompt(40,"a","A");env.eggSelect.mode="Rarity";env.collectEgg.approachMode="Walk";obstacle=true
+    onWait=function() env.collectEgg.enabled=false end
+    funcs.dispatch();assert(p.began==0 and not funcs.rarityDeferred(funcs.eggMeta(p)))
+end)
+check("non-Collect training movement does not gain the pickup fallback policy",function()
+    env.collectEgg.enabled=false;env.training.enabled=true;obstacle=true
+    local ok,reason=funcs.walkNative(root,humanoid,character,position(40),false,nil,"training")
+    assert(not ok and reason=="No ground return path" and #pathCalls==1 and not env.collectEgg.lastNavigation.fallback)
 end)
 print(string.format("%d Auto Collect tests passed", tests))

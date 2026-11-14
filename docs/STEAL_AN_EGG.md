@@ -1,4 +1,4 @@
-# Steal An Egg — v1.59
+# Steal An Egg — v1.60
 
 PlaceId: 107778070777162. Load through the existing universal Loader.
 All automation and placement recording start OFF. Evidence below separates user-reported game results from offline checks.
@@ -401,3 +401,16 @@ Log includes route plan outcomes/errors, waypoint counts/progress, fallback use,
 Validation: 413 engine tests, 36 runtime startup/control cases, four Loader contracts and Lua 5.4 compilation pass. New cases cover a jump-capable path after ground failure, preferred ground paths, a 121-waypoint route, airborne jump suppression, successful native fallback without delivery claims, blocked fallback recovery, OFF cancellation, egg loss cancellation, planner error visibility, the 12-second fallback ceiling and the 600-stud detour limit. These are offline simulations; live return still needs verification.
 
 Rerun the usual Loader and confirm v1.59. Collect should begin a return after a game-reported pickup; send Copy log if it remains stationary, especially Route history and Route plan lines.
+
+
+## Apply native route recovery to outbound pickup approaches (v1.60)
+
+The user's v1.59 report has zero pickup attempts, no carry state and five UID-linked accepted candidates. It shows a single ground-only NoPath plan during SEEKING. The v1.59 recovery was restricted to loaded home returns, leaving outbound Walk approaches on the old ground-only planner. The report also shows disabled prompts and repeated identity-change exits; arriving near a visual egg alone does not establish readiness to pick it up.
+
+Collect's outbound approaches now use the same ground-then-jump-capable planning and bounded native MoveTo fallback as loaded returns. Grounded path jumps are honoured, limits/cancellation/carry checks remain active, and no tween/teleport is added. Failed approaches defer that exact UID for eight seconds so another accepted target can be tried. OFF or carry interruption does not defer the target. Existing two-second waits for game-enabled prompts remain; the script never forces Enabled or ignores positive identity conflicts. Non-Collect training/upgrade/placement navigation retains its previous policy.
+
+Log now labels route purpose (home, egg approach, other movement), reports the approach target, and labels prompt-wait information as history. Prompt binding history contains the actual UID/category/Rank/binding seen during readiness checks, so a stale ready status is not confused with a current candidate. Identity-change readiness failures also defer the original UID, avoiding an immediate retry against the same changed target.
+
+Validation: 420 engine tests, 36 full-file runtime cases, four Loader contracts and full Lua 5.4 compilation pass. Seven new tests cover outbound fallback to a disabled-then-enabled prompt and pickup dispatch, jump-capable outbound planning, deferring an unreachable top Rank in favour of a reachable lower Rank, disabled-prompt preservation, changed-UID logging/no input, OFF without deferral, and unchanged training policy. These are offline control-flow simulations; live pickup and return still need a retest.
+
+Rerun the usual Loader and confirm v1.60. Turn Collect ON; if it reaches an egg but does not pick it up, send Copy log with Prompt wait history, Prompt binding history, Route history and Route plan lines.
