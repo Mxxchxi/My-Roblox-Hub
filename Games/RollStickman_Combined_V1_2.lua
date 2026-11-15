@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R46
+-- Roll A Stickman Combined Auto V1.2 R47
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R46 starting; waiting for game to load")
+print("[RAS] R47 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R46  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R47  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -970,6 +970,32 @@ local function modalTitle()
     return visible(obj) and textOf(obj) or ""
 end
 local function modalOpen() return visible(modalPanel()) end
+-- Search only the current game page/modal; never click matching shop/nav text.
+local function uiButton(root, labels)
+    if not root then return nil end
+    for _, obj in ipairs(root:GetDescendants()) do
+        if ready(obj) then
+            local value = buttonText(obj)
+            if labels[value] then return obj end
+            for _, labelObj in ipairs(obj:GetDescendants()) do
+                if visible(labelObj) and labels[textOf(labelObj)] then return obj end
+            end
+        end
+    end
+end
+local function uiSummary(root)
+    local found, seen = {}, {}
+    if root then
+        for _, obj in ipairs(root:GetDescendants()) do
+            local value = visible(obj) and textOf(obj) or ""
+            if value ~= "" and not seen[value] and #found < 30 then
+                seen[value] = true
+                table.insert(found, value)
+            end
+        end
+    end
+    return table.concat(found, " | ")
+end
 -- Status reads game UI only. Hidden values are explicitly shown as last seen.
 local statusCache = {}
 local function statusPlain(obj)
@@ -993,8 +1019,27 @@ local function sampleStatus(key, obj)
 end
 local function dungeonTypeOnPage()
     local title = child(page(), {"Hero", "Plate", "Title"})
-    if not visible(title) then return nil end
-    local value = textOf(title)
+    local value = visible(title) and textOf(title) or ""
+    if value == "" then
+        local root = page()
+        if root then
+            for _, obj in ipairs(root:GetDescendants()) do
+                if visible(obj) and obj.Name == "Title" then
+                    local candidate = textOf(obj)
+                    local parent = obj.Parent
+                    local isButton = false
+                    while parent and parent ~= root do
+                        if parent:IsA("GuiButton") then isButton = true; break end
+                        parent = parent.Parent
+                    end
+                    if not isButton and (candidate:find("DEEP HALLS", 1, true)
+                        or candidate:find("KEY CRYPT", 1, true)) then
+                        value = candidate; break
+                    end
+                end
+            end
+        end
+    end
     if value:find("DEEP HALLS", 1, true) then return "halls" end
     if value:find("KEY CRYPT", 1, true) then return "crypt" end
 end
@@ -1113,29 +1158,49 @@ local function runDungeon(version)
     end
     local current = dungeonTypeOnPage()
     if current ~= selectedDungeon then
-        local leave = child(screen, {"Leave"})
+        local leave = uiButton(page(), {["LEAVE PARTY"] = true})
         if ready(leave) and buttonText(leave) == "LEAVE PARTY" then
             if fire("dungeon.leave", leave, "LEAVE PARTY", 3) then task.wait(1) end
         end
         if not valid("dungeon", version) then return end
+        screen = page()
         local pick = child(screen, {"Pick", selectedDungeon})
+            or uiButton(screen, {[dungeonName(selectedDungeon)] = true,
+                ["THE " .. dungeonName(selectedDungeon)] = true})
         if ready(pick) then
             fire("dungeon.pick." .. selectedDungeon, pick, nil, 3)
             task.wait(1)
         end
         current = dungeonTypeOnPage()
         if current ~= selectedDungeon then
-            nextDungeon = os.clock() + 10
-            note("Dungeon selector unavailable; waiting for " .. dungeonName(selectedDungeon))
-            return
+            -- If the other type is positively identified, run it rather than
+            -- waiting forever for a selector that may be hidden in a party.
+            if current then
+                selectedDungeon = current
+                log("Dungeon selector hidden; using visible " .. dungeonName(current))
+            else
+                nextDungeon = os.clock() + 30
+                note("Dungeon type unreadable | " .. uiSummary(page()))
+                returnToBattle()
+                return
+            end
         end
     end
+    screen = page()
     local ticket = child(screen, {"Hero", "Tickets", "R1", "Amount"})
     local ticketValue = visible(ticket) and textOf(ticket) or ""
+    if ticketValue == "" and screen then
+        for _, obj in ipairs(screen:GetDescendants()) do
+            if visible(obj) and obj.Name == "Amount" and obj:FindFirstAncestor("Tickets") then
+                ticketValue = textOf(obj); break
+            end
+        end
+    end
     local available = tonumber(ticketValue:match("^(%d+)%s*/"))
     if available == nil then
         nextDungeon = os.clock() + 10
-        note(dungeonName(selectedDungeon) .. " tickets not readable; retrying")
+        note(dungeonName(selectedDungeon) .. " tickets not readable | " .. uiSummary(screen))
+        returnToBattle()
         return
     end
     if available == 0 then
@@ -1158,9 +1223,9 @@ local function runDungeon(version)
         return
     end
     noTicketsUntil[selectedDungeon] = 0
-    local start = child(screen, {"Party", "Action"})
+    local start = uiButton(screen, {["START SOLO"] = true})
     if not (ready(start) and buttonText(start) == "START SOLO") then
-        local open = child(screen, {"Open"})
+        local open = uiButton(screen, {["OPEN A PARTY"] = true})
         if not fire("dungeon.open", open, "OPEN A PARTY", 4) then
             nextDungeon = os.clock() + 10
             note("Dungeon party unavailable; retrying")
@@ -1169,7 +1234,7 @@ local function runDungeon(version)
         task.wait(1)
     end
     if not valid("dungeon", version) then return end
-    start = child(page(), {"Party", "Action"})
+    start = uiButton(page(), {["START SOLO"] = true})
     if fire("dungeon.start", start, "START SOLO", 6) then
         dungeonStarted, dungeonSeen = true, false
         dungeonSentAt, dungeonReturnedAt = os.clock(), nil
@@ -1227,7 +1292,16 @@ end)
 local expeditionIds = {"Epatrol", "Esupply", "Eruins", "Ewastes", "Estarfall"}
 local sendLocked = {}
 local function expRow(id)
-    return child(modalPanel(), {"Content", "Inner", id})
+    local root = modalPanel()
+    return root and root:FindFirstChild(id, true)
+end
+local function expControl(row, name, label)
+    local direct = row and row:FindFirstChild(name, true)
+    if ready(direct) and buttonText(direct) == label then return direct end
+    return uiButton(row, {[label] = true})
+end
+local function expClock(row)
+    return row and row:FindFirstChild("Clock", true)
 end
 local function expeditionBadgeCount()
     local badge = get({"Frame", "Nav", "Row", "expeditions", "Badge"})
@@ -1251,10 +1325,6 @@ local function expeditionTick(version)
     if not valid("expedition", version) then return end
     if modalTitle() ~= "EXPEDITIONS" then
         if modalOpen() then return end
-        if expeditionBadgeCount() <= 0 then
-            nextExpedition = os.clock() + 8
-            return
-        end
         if not fire("exp.tab", get({"Frame", "Nav", "Row", "expeditions"}), nil, 4) then
             nextExpedition = os.clock() + 8
             return
@@ -1265,38 +1335,54 @@ local function expeditionTick(version)
         nextExpedition = os.clock() + 8
         return
     end
+    local ids, seen = {}, {}
     for _, id in ipairs(expeditionIds) do
+        if expRow(id) then table.insert(ids, id); seen[id] = true end
+    end
+    for _, obj in ipairs(modalPanel():GetDescendants()) do
+        if obj.Name:match("^E%l") and not seen[obj.Name]
+            and uiButton(obj, {["CLAIM"] = true, ["SEND AGAIN"] = true,
+                ["SEND"] = true, ["RECALL"] = true}) then
+            seen[obj.Name] = true; table.insert(ids, obj.Name)
+        end
+    end
+    local observed, active = 0, 0
+    for _, id in ipairs(ids) do
         if not valid("expedition", version) then return end
         local row = expRow(id)
-        local claim = child(row, {"Claim"})
-        local again = child(row, {"Again"})
-        local recall = child(row, {"Recall"})
-        local clock = child(row, {"Clock"})
+        local claim = expControl(row, "Claim", "CLAIM")
+        local again = expControl(row, "Again", "SEND AGAIN")
+        local recall = expControl(row, "Recall", "RECALL")
+        local clock = expClock(row)
+        if claim or again or recall or uiButton(row, {["SEND"] = true}) then observed = observed + 1 end
         if expReady(recall, "RECALL") and visible(clock) then
+            active = active + 1
             sendLocked[id] = nil
         elseif expReady(claim, "CLAIM") then
             sendLocked[id] = nil
             if fire("exp.claim." .. id, claim, "CLAIM", 3) then
                 note(id .. " claimed")
                 waitUntil(version, 6, function()
-                    return expReady(child(expRow(id), {"Again"}), "SEND AGAIN")
+                    return expReady(expControl(expRow(id), "Again", "SEND AGAIN"), "SEND AGAIN")
                 end)
             end
         end
-        again = child(expRow(id), {"Again"})
-        if not sendLocked[id] and expReady(again, "SEND AGAIN") then
+        again = expControl(expRow(id), "Again", "SEND AGAIN")
+            or expControl(expRow(id), "Send", "SEND")
+        local sendLabel = again and buttonText(again)
+        if not sendLocked[id] and again then
             -- Lock before dispatch: SEND AGAIN can remain visible for ~3s.
             sendLocked[id] = true
-            if fire("exp.again." .. id, again, "SEND AGAIN", 6) then
-                note(id .. " SEND AGAIN")
+            if fire("exp.again." .. id, again, sendLabel, 6) then
+                note(id .. " " .. sendLabel)
                 local confirmed = waitUntil(version, 10, function()
                     local r = expRow(id)
-                    local c = child(r, {"Clock"})
-                    return expReady(child(r, {"Recall"}), "RECALL")
+                    local c = expClock(r)
+                    return expReady(expControl(r, "Recall", "RECALL"), "RECALL")
                         and visible(c) and textOf(c) ~= ""
                 end)
                 if confirmed then
-                    local clock = child(expRow(id), {"Clock"})
+                    local clock = expClock(expRow(id))
                     log(id .. " dispatch confirmed: " .. textOf(clock))
                 elseif valid("expedition", version) then
                     note(id .. " dispatch unconfirmed; locked against duplicate")
@@ -1306,10 +1392,15 @@ local function expeditionTick(version)
             end
         end
     end
+    if observed == 0 then
+        note("Expeditions controls unreadable | " .. uiSummary(modalPanel()))
+    else
+        log("Expeditions checked | rows=" .. observed .. " | running=" .. active)
+    end
     if valid("expedition", version) then
         fire("exp.close", child(modalPanel(), {"Close"}), "X", 3)
     end
-    nextExpedition = os.clock() + 12
+    nextExpedition = os.clock() + 60
 end
 
 -- Aurora is read from MOONS > Now.Title. The summoning shop always lists
@@ -2644,7 +2735,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R46 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R47 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3020,7 +3111,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R46 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R47 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -3226,7 +3317,7 @@ task.spawn(function()
             end
             if not busy and flags.expedition and not blockingDungeonResult
                 and now >= nextExpedition then
-                if modalTitle() == "EXPEDITIONS" or expeditionBadgeCount() > 0 then
+                if modalTitle() == "EXPEDITIONS" or not modalOpen() then
                     run("expedition", expeditionTick)
                 else
                     nextExpedition = now + 8
