@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R47
+-- Roll A Stickman Combined Auto V1.2 R48
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R47 starting; waiting for game to load")
+print("[RAS] R48 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R47  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R48  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -798,7 +798,16 @@ end
 local function buttonText(obj)
     local face = obj and obj:FindFirstChild("Face")
     local value = child(face, {"Label"}) or child(obj, {"Label"}) or obj
-    return textOf(value)
+    local result = textOf(value)
+    if result == "" and obj then
+        for _, item in ipairs(obj:GetDescendants()) do
+            if visible(item) then
+                result = textOf(item)
+                if result ~= "" then return result end
+            end
+        end
+    end
+    return result
 end
 local function ready(obj)
     return obj and obj:IsA("GuiButton") and obj.Active and visible(obj)
@@ -1017,8 +1026,29 @@ local function sampleStatus(key, obj)
     if value ~= "" then rememberStatus(key, value); return value end
     return cachedStatus(key)
 end
+local dungeonUI = {}
+function dungeonUI.hero()
+    local root = page()
+    return root and root:FindFirstChild("Hero", true)
+end
+function dungeonUI.tickets()
+    local hero = dungeonUI.hero()
+    local tickets = hero and hero:FindFirstChild("Tickets", true)
+    if not tickets or not visible(tickets) then return nil, "unreadable" end
+    for _, obj in ipairs(tickets:GetDescendants()) do
+        local value = visible(obj) and textOf(obj) or ""
+        local count = tonumber(value:match("^(%d+)%s*/%s*%d+"))
+        if count then return count, value end
+    end
+    return nil, "unreadable"
+end
+function dungeonUI.idleBattle()
+    local value = battleTitle()
+    return value:match("^WAVE %d+") ~= nil or value:match("^BOSS %d+") ~= nil
+end
 local function dungeonTypeOnPage()
-    local title = child(page(), {"Hero", "Plate", "Title"})
+    local hero = dungeonUI.hero()
+    local title = hero and hero:FindFirstChild("Title", true)
     local value = visible(title) and textOf(title) or ""
     if value == "" then
         local root = page()
@@ -1065,7 +1095,7 @@ local function observeDungeon(now)
         dungeonReturnedAt = nil
         return
     end
-    if dungeonSeen and waveBattle() then
+    if dungeonSeen and dungeonUI.idleBattle() then
         dungeonReturnedAt = dungeonReturnedAt or now
         if now - dungeonReturnedAt >= 5 then
             dungeonStarted, dungeonSeen = false, false
@@ -1089,7 +1119,7 @@ end
 -- modals while Endless is visible and Dungeon automation is ON.
 local function recoverDungeonModal(now)
     local title = modalTitle()
-    local eligible = flags.dungeon and waveBattle() and not dungeonStarted
+    local eligible = flags.dungeon and dungeonUI.idleBattle() and not dungeonStarted
         and (title == "THE DEEP HALLS" or title == "THE KEY CRYPT")
     if not eligible then
         modalEligibleAt, modalAttempts = nil, 0
@@ -1114,7 +1144,7 @@ end
 local function returnToBattle()
     local endless = get({"Frame", "Nav", "Row", "endless"})
     if fire("dungeon.back", endless, nil, 3) then
-        log("Returned to battle while dungeon tickets are empty")
+        log("Dungeon return to battle requested")
         return true
     end
     note("Cannot return to battle; inspect ENDLESS tab")
@@ -1129,7 +1159,13 @@ local function runDungeon(version)
             nextDungeon = os.clock() + 10
             return
         end
-        task.wait(1)
+        local deadline = os.clock() + 5
+        repeat
+            task.wait(0.25)
+            if not valid("dungeon", version) then return end
+        until dungeonTypeOnPage() or uiButton(page(), {["OPEN A PARTY"] = true,
+            ["START SOLO"] = true, ["DEEP HALLS"] = true, ["KEY CRYPT"] = true})
+            or os.clock() >= deadline
     end
     if not valid("dungeon", version) then return end
     local screen = page()
@@ -1141,9 +1177,7 @@ local function runDungeon(version)
     if sharedTicketsEmpty then
         -- Both types previously showed 0/5. Check the current ticket counter
         -- without switching selectors; this leaves the battle page free for RAID.
-        local ticket = child(screen, {"Hero", "Tickets", "R1", "Amount"})
-        local value = visible(ticket) and textOf(ticket) or ""
-        local count = tonumber(value:match("^(%d+)%s*/"))
+        local count, value = dungeonUI.tickets()
         if count == nil or count == 0 then
             nextDungeon = os.clock() + (count == 0 and DUNGEON_RECHECK_SECONDS or 20)
             if returnToBattle() then
@@ -1187,16 +1221,7 @@ local function runDungeon(version)
         end
     end
     screen = page()
-    local ticket = child(screen, {"Hero", "Tickets", "R1", "Amount"})
-    local ticketValue = visible(ticket) and textOf(ticket) or ""
-    if ticketValue == "" and screen then
-        for _, obj in ipairs(screen:GetDescendants()) do
-            if visible(obj) and obj.Name == "Amount" and obj:FindFirstAncestor("Tickets") then
-                ticketValue = textOf(obj); break
-            end
-        end
-    end
-    local available = tonumber(ticketValue:match("^(%d+)%s*/"))
+    local available, ticketValue = dungeonUI.tickets()
     if available == nil then
         nextDungeon = os.clock() + 10
         note(dungeonName(selectedDungeon) .. " tickets not readable | " .. uiSummary(screen))
@@ -1222,6 +1247,7 @@ local function runDungeon(version)
         end
         return
     end
+    log("Dungeon ready | " .. dungeonName(selectedDungeon) .. " | tickets=" .. ticketValue)
     noTicketsUntil[selectedDungeon] = 0
     local start = uiButton(screen, {["START SOLO"] = true})
     if not (ready(start) and buttonText(start) == "START SOLO") then
@@ -2735,7 +2761,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R47 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R48 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3111,7 +3137,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R47 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R48 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -3149,7 +3175,18 @@ task.spawn(function()
             if not busy and flags.raid and not modalOpen() and now >= nextRaid then
                 raidTick()
             end
-            if not busy and flags.arena and not inDungeon() and not modalOpen()
+            -- Give a due Dungeon one turn before Arena immediately repeats.
+            -- Raid retains its independent preemption and priority hold.
+            if not busy and flags.dungeon and not dungeonStarted and
+                not inDungeon() and not modalOpen() and now >= nextDungeon then
+                local screen = page()
+                if dungeonUI.idleBattle() or dungeonTypeOnPage()
+                    or (screen and screen:FindFirstChild("Pick", true)) then
+                    log("Dungeon scheduled | target=" .. dungeonName(selectedDungeon))
+                    run("dungeon", runDungeon)
+                end
+            end
+            if not busy and flags.arena and not dungeonStarted and not inDungeon() and not modalOpen()
                 and now >= (neonUI.nextArena or 0) then
                 neonUI.nextArena = now + 3600
                 run("arena", function(version)
@@ -3321,12 +3358,6 @@ task.spawn(function()
                     run("expedition", expeditionTick)
                 else
                     nextExpedition = now + 8
-                end
-            end
-            if not busy and flags.dungeon and not dungeonStarted and
-                not inDungeon() and not modalOpen() and now >= nextDungeon then
-                if waveBattle() or dungeonTypeOnPage() then
-                    run("dungeon", runDungeon)
                 end
             end
         end)
