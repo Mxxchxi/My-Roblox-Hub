@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R49
+-- Roll A Stickman Combined Auto V1.2 R50
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R49 starting; waiting for game to load")
+print("[RAS] R50 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -25,7 +25,7 @@ assert(pg:WaitForChild("RollAStickman", 120), "RollAStickman UI not ready after 
 
 local SETTINGS_FILE = "RollStickman_Combined_V1_2_settings.json"
 local SETTINGS_KEY = "RollStickman_Combined_V1_2_settings"
-local settingKeys = {"level", "raid", "arena", "dungeon", "expedition", "moon", "cards", "pet", "antiAfk"}
+local settingKeys = {"level", "raid", "arena", "dungeon", "expedition", "guildBoss", "moon", "cards", "pet", "antiAfk"}
 local potionNames = {luck = "Luck Potion", haste = "Haste Potion", gild = "Gilded Potion"}
 -- These seven names are confirmed by the user's in-game MOONS screenshot.
 local potionConfig = {when = "Aurora", moons = {AURORA = true}, cardMoons = {AURORA = true}, petLuckMoons = {AURORA = true}, petPlayEveryMinutes = 5, petPlayEnabled = true, moonInspectMinutes = 5, moonHudOnly = false, webhookEnabled = false, webhookUrl = "", available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, multipliers = {NORMAL = 1, SILVER = 1.5, AURORA = 12}, selected = {luck = true, haste = true, gild = true}}
@@ -242,7 +242,7 @@ local previousFlags = {}
 if previous then
     local previousPanel = previous:FindFirstChild("Panel")
     local names = {level = "LevelToggle", raid = "RaidToggle", arena = "ArenaToggle",
-        dungeon = "DungeonToggle", expedition = "ExpeditionToggle",
+        dungeon = "DungeonToggle", expedition = "ExpeditionToggle", guildBoss = "GuildBossToggle",
         moon = "MoonToggle", cards = "CardToggle", pet = "PetToggle", antiAfk = "AntiAfkToggle"}
     for key, name in pairs(names) do
         local storedFlag = previous:GetAttribute("Flag_" .. key)
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R49  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R50  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -405,6 +405,7 @@ local toggles = {
     raid = pageItem("Fight", button("RaidToggle", "RAID: OFF", 12, 116, 336, 36)),
     dungeon = pageItem("Fight", button("DungeonToggle", "DUNGEON: OFF", 12, 200, 336, 36)),
     expedition = pageItem("Fight", button("ExpeditionToggle", "EXPEDITIONS: OFF", 12, 242, 336, 36)),
+    guildBoss = pageItem("Fight", button("GuildBossToggle", "GUILD BOSS: OFF", 12, 284, 336, 36)),
     moon = pageItem("Potion", button("MoonToggle", "USE POTION: OFF", 12, 116, 336, 30)),
     cards = pageItem("Open Card", button("CardToggle", "AUTO OPEN CARD: OFF", 12, 116, 336, 30)),
     pet = pageItem("Pet", button("PetToggle", "AUTO PET: OFF", 12, 116, 336, 30)),
@@ -413,9 +414,10 @@ local toggles = {
 pageLabel("Team", "TeamHeading", "TEAM  /  UPGRADES", 90, 20)
 pageLabel("Team", "TeamHint", "LEVEL UP uses LEVEL UP ALL when that game button is visible. Open the team upgrade page to use it.", 165, 70)
 pageLabel("Fight", "FightHeading", "FIGHT  /  AUTOMATION", 90, 20)
-pageLabel("Fight", "DungeonMode", "DUNGEON · ALL TYPES\nNo tickets: check again after 2 hours.", 290, 42)
-local dungeonSchedule = pageLabel("Fight", "DungeonSchedule", "Dungeon check: ready", 340, 38)
-pageLabel("Fight", "ArenaHint", "ARENA · Continuous while available\nEmpty quota: check in 1 hour.", 390, 44)
+pageLabel("Fight", "DungeonMode", "DUNGEON · ALL TYPES\nNo tickets: check again after 2 hours.", 332, 42)
+local dungeonSchedule = pageLabel("Fight", "DungeonSchedule", "Dungeon check: ready", 382, 38)
+pageLabel("Fight", "ArenaHint", "ARENA · Continuous while available\nEmpty quota: check in 1 hour.", 432, 44)
+neonUI.guildHint = pageLabel("Fight", "GuildBossHint", "GUILD BOSS · Checks when idle, then every 5 minutes.\nRaid has priority. COPY LOG includes battle snapshots.", 484, 60)
 pageLabel("Potion", "PotionHeading", "POTION  /  CONDITIONS", 90, 20)
 local potionUI = {checks = {}, scanRequested = false, entries = {}, iconMap = {}, iconConflicts = {}, probeAt = 0}
 potionUI.dropdown = pageItem("Potion", button("PotionWhen", "Use Potion When: Aurora   v", 12, 152, 276, 30))
@@ -656,8 +658,8 @@ if savedPosition then
     if ok then panel.Position = UDim2.fromOffset(x, y) end
 end
 settingsPosition = {x = panel.Position.X.Offset, y = panel.Position.Y.Offset}
-local versions = {level = 0, raid = 0, arena = 0, dungeon = 0, expedition = 0, moon = 0, cards = 0, pet = 0, antiAfk = 0}
-local titles = {level = "LEVEL UP", raid = "RAID", arena = "ARENA", dungeon = "DUNGEON",
+local versions = {level = 0, raid = 0, arena = 0, dungeon = 0, expedition = 0, guildBoss = 0, moon = 0, cards = 0, pet = 0, antiAfk = 0}
+local titles = {level = "LEVEL UP", raid = "RAID", arena = "ARENA", dungeon = "DUNGEON", guildBoss = "GUILD BOSS",
     expedition = "EXPEDITIONS", moon = "USE POTION", cards = "AUTO OPEN CARD", pet = "AUTO PET", antiAfk = "ANTI AFK"}
 local function paintToggle(key)
     gui:SetAttribute("Flag_" .. key, flags[key] == true)
@@ -860,6 +862,7 @@ for key, obj in pairs(toggles) do
         if key == "cards" then versions.moon = versions.moon + 1 end
         if key == "moon" or key == "cards" then potionUI.completedEvent = nil end
         if key == "pet" then petUI.nextCheck = 0; petUI.applied = nil end
+        if key == "guildBoss" and neonUI.guild then neonUI.guild.nextCheck = 0 end
         local title = titles[key]
         obj.Text = title .. (flags[key] and ": ON" or ": OFF")
         paintToggle(key)
@@ -899,7 +902,7 @@ end)
 -- remotes, or user-entered TextBox contents are included in this report.
 function neonUI.captureGameUI()
     local root = pg:FindFirstChild("RollAStickman")
-    local lines = {"GAME UI REPORT | R49 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    local lines = {"GAME UI REPORT | R50 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
         "Open Guild > Boss before copying; paths are relative to RollAStickman."}
     if not root then
@@ -943,6 +946,9 @@ copyButton.Activated:Connect(function()
     end
     local reportOK, report = pcall(neonUI.captureGameUI)
     value = value .. "\n\n" .. (reportOK and report or ("GAME UI REPORT ERROR: " .. tostring(report)))
+    if neonUI.guild and #neonUI.guild.reports > 0 then
+        value = value .. "\n\nGUILD BOSS HISTORY\n" .. table.concat(neonUI.guild.reports, "\n\n")
+    end
     if type(setclipboard) == "function" and pcall(setclipboard, value) then
         copyButton.Text = "COPIED"
     else
@@ -1467,6 +1473,134 @@ local function expeditionTick(version)
         fire("exp.close", child(modalPanel(), {"Close"}), "X", 3)
     end
     nextExpedition = os.clock() + 60
+end
+
+-- Guild paths verified by R49 GAME UI REPORT from 2026-11-19.
+-- Week counters are guild statistics, not confirmed personal attack quota.
+neonUI.guild = {nextCheck = 0, reports = {}}
+function neonUI.guild.scroll()
+    return child(page(), {"Scroll"})
+end
+function neonUI.guild.isPage()
+    return visible(child(neonUI.guild.scroll(), {"Tabs", "war"}))
+end
+function neonUI.guild.isBoss()
+    local title = child(neonUI.guild.scroll(), {"War", "Title"})
+    return visible(title) and textOf(title) == "THE GUILD BOSS"
+end
+function neonUI.guild.fight()
+    if not neonUI.guild.isBoss() then return nil end
+    local button = child(neonUI.guild.scroll(), {"Fight"})
+    return ready(button) and buttonText(button) == "FIGHT" and button or nil
+end
+function neonUI.guild.capture(reason)
+    local ok, report = pcall(neonUI.captureGameUI)
+    if ok then
+        table.insert(neonUI.guild.reports, "GUILD BOSS | " .. reason .. "\n" .. report)
+        if #neonUI.guild.reports > 4 then table.remove(neonUI.guild.reports, 1) end
+    end
+end
+function neonUI.guild.wait(version, seconds, predicate)
+    local deadline = os.clock() + seconds
+    repeat
+        if not valid("guildBoss", version) then return false end
+        if predicate() then return true end
+        task.wait(0.25)
+    until os.clock() >= deadline
+    return valid("guildBoss", version) and predicate()
+end
+function neonUI.guild.back(version)
+    if not valid("guildBoss", version) or not neonUI.guild.isPage() then return end
+    if fire("guild.back", get({"Frame", "Nav", "Row", "endless"}), nil, 2) then
+        local returned = neonUI.guild.wait(version, 4, function()
+            return not neonUI.guild.isPage() and dungeonUI.idleBattle()
+        end)
+        if valid("guildBoss", version) then
+            log(returned and "Guild Boss returned to battle"
+                or "Guild Boss return unconfirmed; COPY LOG")
+        end
+    end
+end
+function neonUI.guild.tick(version)
+    local guild = neonUI.guild
+    if not valid("guildBoss", version) then return end
+    guild.nextCheck = os.clock() + 300
+    neonUI.guildHint.Text = "GUILD BOSS · Checking Guild > WAR"
+    if not guild.isPage() then
+        if not fire("guild.open", get({"Frame", "Hud", "Utilguild"}), nil, 3) then
+            note("Guild button unavailable; next check in 5 minutes")
+            return
+        end
+        if not guild.wait(version, 5, guild.isPage) then
+            if valid("guildBoss", version) then
+                guild.capture("GUILD_PAGE_UNCONFIRMED")
+                note("Guild page unconfirmed; COPY LOG")
+            end
+            return
+        end
+    end
+    if not valid("guildBoss", version) then return end
+    if not guild.isBoss() then
+        if not fire("guild.war", child(guild.scroll(), {"Tabs", "war"}), "WAR", 3)
+            or not guild.wait(version, 5, guild.isBoss) then
+            if valid("guildBoss", version) then
+                guild.capture("WAR_UNCONFIRMED")
+                note("Guild Boss WAR page unconfirmed; COPY LOG")
+                guild.back(version)
+            end
+            return
+        end
+    end
+    if not valid("guildBoss", version) then return end
+    local fight = guild.fight()
+    if not fight then
+        guild.capture("FIGHT_UNAVAILABLE")
+        note("Guild Boss FIGHT unavailable; quota unverified; next check in 5 minutes")
+        neonUI.guildHint.Text = "GUILD BOSS · FIGHT unavailable; retry in 5 minutes"
+        guild.back(version)
+        return
+    end
+    guild.capture("BEFORE_FIGHT")
+    if not valid("guildBoss", version) then return end
+    if not fire("guild.fight", fight, "FIGHT", 10) then return end
+    note("Guild Boss FIGHT dispatched; waiting for page transition")
+    if not guild.wait(version, 10, function() return not guild.isPage() end) then
+        if valid("guildBoss", version) then
+            guild.capture("START_UNCONFIRMED")
+            guild.nextCheck = math.huge
+            neonUI.guildHint.Text = "GUILD BOSS · Start unconfirmed. COPY LOG; toggle OFF/ON to retry."
+            note("Guild Boss start unconfirmed; automatic retries paused; COPY LOG")
+            guild.back(version)
+        end
+        return
+    end
+    if not valid("guildBoss", version) then return end
+    guild.capture("AFTER_PAGE_TRANSITION")
+    note("Guild Boss page changed; waiting for stable return; result not verified")
+    neonUI.guildHint.Text = "GUILD BOSS · Waiting for return (result unverified)"
+    local started, stable, deadline = os.clock(), nil, os.clock() + 180
+    repeat
+        task.wait(0.5)
+        if not valid("guildBoss", version) then return end
+        local returned = not modalOpen() and (guild.isPage() or dungeonUI.idleBattle())
+        if returned and os.clock() - started >= 5 then
+            stable = stable or os.clock()
+        else
+            stable = nil
+        end
+        if stable and os.clock() - stable >= 3 then
+            guild.capture("RETURN_OBSERVED_RESULT_UNVERIFIED")
+            note("Guild Boss return observed; result not verified; next check in 5 minutes")
+            neonUI.guildHint.Text = "GUILD BOSS · Return observed; check again in 5 minutes"
+            guild.nextCheck = os.clock() + 300
+            guild.back(version)
+            return
+        end
+    until os.clock() >= deadline
+    guild.capture("RETURN_TIMEOUT")
+    guild.nextCheck = math.huge
+    neonUI.guildHint.Text = "GUILD BOSS · Return timeout. COPY LOG; toggle OFF/ON to retry."
+    note("Guild Boss return timeout; automatic retries paused; COPY LOG")
 end
 
 -- Aurora is read from MOONS > Now.Title. The summoning shop always lists
@@ -2801,7 +2935,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R49 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R50 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3177,7 +3311,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R49 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R50 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -3214,6 +3348,11 @@ task.spawn(function()
             end
             if not busy and flags.raid and not modalOpen() and now >= nextRaid then
                 raidTick()
+            end
+            if not busy and flags.guildBoss and not dungeonStarted and not inDungeon()
+                and not modalOpen() and now >= neonUI.guild.nextCheck
+                and (dungeonUI.idleBattle() or neonUI.guild.isPage()) then
+                run("guildBoss", neonUI.guild.tick)
             end
             -- Give a due Dungeon one turn before Arena immediately repeats.
             -- Raid retains its independent preemption and priority hold.
