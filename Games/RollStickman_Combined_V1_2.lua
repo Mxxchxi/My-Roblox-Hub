@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R48
+-- Roll A Stickman Combined Auto V1.2 R49
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R48 starting; waiting for game to load")
+print("[RAS] R49 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R48  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R49  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -594,7 +594,7 @@ neonUI.webhook.url.BorderSizePixel = 0
 pageItem("Settings", neonUI.webhook.url)
 neonUI.webhook.test = pageItem("Settings", button("WebhookTest", "TEST WEBHOOK", 12, 334, 336, 28))
 neonUI.webhook.status = pageLabel("Settings", "WebhookStatus", "Webhook: OFF", 369, 28)
-local copyButton = pageItem("Settings", button("CopyLog", "COPY LOG / PET REPORT", 12, 409, 336, 32))
+local copyButton = pageItem("Settings", button("CopyLog", "COPY LOG / UI REPORT", 12, 409, 336, 32))
 local logHeader = pageLabel("Settings", "LogHeader", "ACTIVITY LOG", 453, 20)
 local scroll = Instance.new("ScrollingFrame")
 scroll.Name = "ActivityLog"
@@ -895,6 +895,44 @@ stopButton.Activated:Connect(function()
     settingsStorage = writeSettings(flags)
     note("All switches OFF")
 end)
+-- Capture the game UI at the moment COPY LOG is pressed. No game actions,
+-- remotes, or user-entered TextBox contents are included in this report.
+function neonUI.captureGameUI()
+    local root = pg:FindFirstChild("RollAStickman")
+    local lines = {"GAME UI REPORT | R49 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
+        "Open Guild > Boss before copying; paths are relative to RollAStickman."}
+    if not root then
+        table.insert(lines, "Game UI root missing")
+        return table.concat(lines, "\n")
+    end
+    local total = 0
+    for _, obj in ipairs(root:GetDescendants()) do
+        if visible(obj) and (obj:IsA("GuiButton") or obj:IsA("TextLabel")) then
+            local value = textOf(obj)
+            if obj:IsA("GuiButton") or value ~= "" then
+                if total >= 600 then
+                    table.insert(lines, "TRUNCATED: more than 600 visible controls")
+                    break
+                end
+                local parts, current = {}, obj
+                while current and current ~= root do
+                    table.insert(parts, 1, current.Name)
+                    current = current.Parent
+                end
+                local detail = obj:IsA("GuiButton")
+                    and (" | button=" .. buttonText(obj):sub(1, 180)
+                        .. " | active=" .. tostring(obj.Active)
+                        .. " | ready=" .. tostring(ready(obj) == true)) or ""
+                table.insert(lines, table.concat(parts, "/") .. " | " .. obj.ClassName
+                    .. " | text=" .. value:sub(1, 180) .. detail)
+                total = total + 1
+            end
+        end
+    end
+    table.insert(lines, "END GAME UI REPORT | controls=" .. total)
+    return table.concat(lines, "\n")
+end
 copyButton.Activated:Connect(function()
     local value = table.concat(logs, "\n")
     if #cardUI.openReports > 0 then
@@ -903,6 +941,8 @@ copyButton.Activated:Connect(function()
     if petUI.report and #petUI.report > 0 then
         value = value .. "\n\nFULL PET UI REPORT\n" .. table.concat(petUI.report, "\n")
     end
+    local reportOK, report = pcall(neonUI.captureGameUI)
+    value = value .. "\n\n" .. (reportOK and report or ("GAME UI REPORT ERROR: " .. tostring(report)))
     if type(setclipboard) == "function" and pcall(setclipboard, value) then
         copyButton.Text = "COPIED"
     else
@@ -2761,7 +2801,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R48 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R49 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3137,7 +3177,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R48 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R49 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
