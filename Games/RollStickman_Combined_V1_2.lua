@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R50
+-- Roll A Stickman Combined Auto V1.2 R51
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -6,7 +6,7 @@
 
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R50 starting; waiting for game to load")
+print("[RAS] R51 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 if game.PlaceId ~= 115068315659966 then return end
 local Players = game:GetService("Players")
@@ -322,7 +322,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R50  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R51  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -902,7 +902,7 @@ end)
 -- remotes, or user-entered TextBox contents are included in this report.
 function neonUI.captureGameUI()
     local root = pg:FindFirstChild("RollAStickman")
-    local lines = {"GAME UI REPORT | R50 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    local lines = {"GAME UI REPORT | R51 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
         "Open Guild > Boss before copying; paths are relative to RollAStickman."}
     if not root then
@@ -1493,6 +1493,14 @@ function neonUI.guild.fight()
     local button = child(neonUI.guild.scroll(), {"Fight"})
     return ready(button) and buttonText(button) == "FIGHT" and button or nil
 end
+function neonUI.guild.result()
+    if modalTitle() ~= "GUILD BOSS" then return nil end
+    local scroll = child(modalPanel(), {"Content", "Inner", "Scroll"})
+    local done = child(scroll, {"Buttons", "Done"})
+    local points = child(scroll, {"Points"})
+    if visible(scroll) and visible(points) and textOf(points):find("DAMAGE TO THE GUILD BOSS", 1, true)
+        and ready(done) and buttonText(done) == "NICE!" then return scroll end
+end
 function neonUI.guild.capture(reason)
     local ok, report = pcall(neonUI.captureGameUI)
     if ok then
@@ -1520,6 +1528,38 @@ function neonUI.guild.back(version)
                 or "Guild Boss return unconfirmed; COPY LOG")
         end
     end
+end
+function neonUI.guild.finish(version)
+    local guild = neonUI.guild
+    if not valid("guildBoss", version) then return end
+    local scroll = guild.result()
+    if not scroll then return end
+    local sub = child(scroll, {"Buttons", "Again", "Face", "Sub"})
+    local remaining = visible(sub) and tonumber(textOf(sub):match("^(%d+)%s+LEFT TODAY$")) or nil
+    local damage = textOf(child(scroll, {"Points"}))
+    local reward = textOf(child(scroll, {"Headline"}))
+    guild.capture("RESULT_CONFIRMED")
+    log("Guild Boss result confirmed | " .. damage .. " | " .. reward
+        .. " | leftToday=" .. tostring(remaining or "unreadable"))
+    -- Close the verified result first; do not repeatedly press FIGHT AGAIN
+    -- while the previous result remains visible or Raid cancels this worker.
+    guild.nextCheck = math.huge
+    if not valid("guildBoss", version) then return end
+    if not fire("guild.result.done", child(scroll, {"Buttons", "Done"}), "NICE!", 2)
+        or not guild.wait(version, 4, function() return not modalOpen() end) then
+        if valid("guildBoss", version) then
+            neonUI.guildHint.Text = "GUILD BOSS · Result close unconfirmed; retrying close only"
+            note("Guild Boss result close unconfirmed; no new FIGHT sent")
+        end
+        return
+    end
+    if not valid("guildBoss", version) then return end
+    guild.back(version)
+    if not valid("guildBoss", version) then return end
+    guild.nextCheck = os.clock() + (remaining and remaining > 0 and 1 or 300)
+    neonUI.guildHint.Text = remaining and remaining > 0
+        and ("GUILD BOSS · " .. remaining .. " left today; next round when idle")
+        or "GUILD BOSS · No confirmed remaining attempts; check in 5 minutes"
 end
 function neonUI.guild.tick(version)
     local guild = neonUI.guild
@@ -1582,6 +1622,10 @@ function neonUI.guild.tick(version)
     repeat
         task.wait(0.5)
         if not valid("guildBoss", version) then return end
+        if guild.result() then
+            guild.finish(version)
+            return
+        end
         local returned = not modalOpen() and (guild.isPage() or dungeonUI.idleBattle())
         if returned and os.clock() - started >= 5 then
             stable = stable or os.clock()
@@ -2935,7 +2979,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R50 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R51 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3311,7 +3355,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R50 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R51 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
@@ -3349,7 +3393,10 @@ task.spawn(function()
             if not busy and flags.raid and not modalOpen() and now >= nextRaid then
                 raidTick()
             end
-            if not busy and flags.guildBoss and not dungeonStarted and not inDungeon()
+            if not busy and flags.guildBoss and neonUI.guild.result() then
+                -- Also recover a result left open by an older script or Raid.
+                run("guildBoss", neonUI.guild.finish)
+            elseif not busy and flags.guildBoss and not dungeonStarted and not inDungeon()
                 and not modalOpen() and now >= neonUI.guild.nextCheck
                 and (dungeonUI.idleBattle() or neonUI.guild.isPage()) then
                 run("guildBoss", neonUI.guild.tick)
