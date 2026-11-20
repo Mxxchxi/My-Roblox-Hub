@@ -597,6 +597,12 @@ assert(clipboard:find("SHOP SELL ROUTE",1,true)
        and clipboard:find("Sell vendor candidates=",1,true)
        and clipboard:find("Ore-only Sell candidates=",1,true),
        "sale route must expose warp/vendor/sell diagnostics")
+findButton("SellDiagnostics").Activated:Fire()
+assert(clipboard:find("V0.14 SHOP SELL ROUTE",1,true)
+       and clipboard:find("Shops destination candidates=",1,true)
+       and clipboard:find("Explicit ore-only Sell controls=",1,true)
+       and clipboard:find("Sell Ores clicks=1/1",1,true),
+       "dedicated COPY SELL ROUTE diagnostic missing route outcomes")
 findButton("AutoSell").Activated:Fire()
 assert(not first.sell and first.sellPhase=="OFF", "sell route OFF did not stop")
 root.Position=vector(0,0,0)
