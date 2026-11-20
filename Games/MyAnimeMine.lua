@@ -2111,6 +2111,7 @@ local function sellRouteDiagnosticReport()
             " | Sell vendor interactions="..controller.sellVendorAttempts..
             " | Sell Ores clicks="..controller.sellCallsOK.."/"..controller.sellAttempts,
         "Last target="..tostring(controller.sellActionTarget)..
+            " | Last sale mode="..tostring(controller.sellActionKind)..
             " | vendor="..tostring(controller.sellVendorPath)..
             " | vendorDist="..tostring(controller.sellVendorDistance),
         "CharacterPos="..tostring(rootPart() and rootPart().Position),
