@@ -173,7 +173,7 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, sellStopWalk=sellStopWalk, recentTakeAllForHandoff=recentTakeAllForHandoff, canCollectDuringSell=canCollectDuringSell, gameChestFrame=gameChestFrame, teleportLauncherCandidates=teleportLauncherCandidates, validatedSellStandSession=validatedSellStandSession, isExactSellStandButton=isExactSellStandButton, sellSelectAllButton=sellSelectAllButton, knownOreSellFrame=knownOreSellFrame}"
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, baseReturnDestination=baseReturnDestination, returnBaseStep=returnBaseStep, returnBaseDistance=returnBaseDistance, finishVerifiedBaseReturn=finishVerifiedBaseReturn, sellStopWalk=sellStopWalk, recentTakeAllForHandoff=recentTakeAllForHandoff, canCollectDuringSell=canCollectDuringSell, gameChestFrame=gameChestFrame, teleportLauncherCandidates=teleportLauncherCandidates, validatedSellStandSession=validatedSellStandSession, isExactSellStandButton=isExactSellStandButton, sellSelectAllButton=sellSelectAllButton, knownOreSellFrame=knownOreSellFrame}"
     local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
     return assert(env.MyAnimeMineHubController), helpers
 end
@@ -530,6 +530,7 @@ local teleClicks = 0
 local teleMenu = instance("Frame")
 teleMenu.Name = "TeleportFrame"; teleMenu.Visible = false; teleMenu.Parent = mineGui
 local shopsButton
+env.baseReturnTest={button=nil, clicks=0, before=0, teleBefore=0, target=nil, count=0}
 teleport.MouseButton1Click:Connect(function()
     teleClicks = teleClicks + 1
     teleMenu.Visible = true
@@ -540,6 +541,16 @@ teleport.MouseButton1Click:Connect(function()
         shopsButton.MouseButton1Click:Connect(function()
             root.Position = vector(500,0,0)
             teleMenu.Visible = false
+        end)
+    end
+    if not env.baseReturnTest.button then
+        env.baseReturnTest.button = instance("TextButton")
+        env.baseReturnTest.button.Name="BaseButton";env.baseReturnTest.button.Text="Base"
+        env.baseReturnTest.button.Parent=teleMenu
+        env.baseReturnTest.button.MouseButton1Click:Connect(function()
+            env.baseReturnTest.clicks=env.baseReturnTest.clicks+1
+            root.Position=vector(0,0,0)
+            teleMenu.Visible=false
         end)
     end
 end)
@@ -624,28 +635,97 @@ assert(first.sellPhase=="SELL_MENU" and selectClicks==1 and oreSells==0
        and first.sellCallsOK==sellEarly and unrelatedSelectClicks==0,
        "Select All must be dispatched once before Sell, only inside SellFrame")
 helpers.shopSellStep(22)
-assert(first.sellPhase=="DONE" and oreSells==1 and genericSells==0
+assert(first.sellPhase=="RETURN_BASE_OPEN" and oreSells==1 and genericSells==0
        and unrelatedSellOreClicks==0
        and nativeSellClicks==nativeClicksBefore and first.sellCallsOK==1
        and sellOrder[1]=="Select All" and sellOrder[2]=="Sell",
-       "route must call Select All then Sell in strict order")
+       "after ordered Select All then Sell, return navigation must start")
 findButton("Scan").Activated:Fire()
-assert(findButton("AutoSell").Text=="AUTO SELL ORES: SENT"
-       and first.sell, "DONE means dispatched only; UI must show SENT, not ROUTING or verified sale")
+assert(findButton("AutoSell").Text=="AUTO SELL ORES: RETURNING"
+       and first.sell, "after Sell, UI must show RETURNING rather than implying a verified sale")
 findButton("ActionDiagnostics").Activated:Fire()
 assert(clipboard:find("SHOP SELL ROUTE",1,true)
        and clipboard:find("Sell vendor candidates=",1,true)
        and clipboard:find("Ore-only Sell candidates=",1,true),
        "sale route must expose warp/vendor/sell diagnostics")
 findButton("SellDiagnostics").Activated:Fire()
-assert(clipboard:find("V0.20 SHOP SELL ROUTE",1,true)
+assert(clipboard:find("V0.21 SHOP SELL ROUTE",1,true)
        and clipboard:find("Shops destination candidates=",1,true)
        and clipboard:find("Explicit ore-only Sell controls=",1,true)
        and clipboard:find("Select All clicks=1/1",1,true)
        and clipboard:find("Sell Ores clicks=1/1",1,true),
        "dedicated COPY SELL ROUTE diagnostic missing route outcomes")
+assert(clipboard:find("Return Base: originalPlot=MinePlot7",1,true)
+       and clipboard:find("verified=false",1,true),
+       "return diagnostics must identify plot and pending validation")
+env.baseReturnTest.teleBefore=teleClicks
+helpers.shopSellStep(24)
+assert(first.sellPhase=="RETURN_BASE_WAIT" and teleClicks==env.baseReturnTest.teleBefore+1
+       and first.sellReturnClicks==1 and not first.sellReturnVerified,
+       "after Sell, game must dispatch the native Base/Shops toggle once")
+env.baseReturnTest.target,env.baseReturnTest.count=helpers.baseReturnDestination()
+assert(env.baseReturnTest.target==env.baseReturnTest.button
+       and env.baseReturnTest.count==1,
+       "visible Base choice from TeleportFrame must be recognized")
+helpers.shopSellStep(26)
+assert(first.sellPhase=="RETURN_BASE_WAIT" and env.baseReturnTest.clicks==1
+       and first.sellReturnChoiceClicks==1,
+       "Base destination should be clicked only once")
+first.collect=true
+helpers.shopSellStep(28)
+assert(first.sellPhase=="RETURNED_BASE" and not first.sell
+       and first.sellReturnVerified and first.sellReturnCurrentDistance==40
+       and helpers.canCollectDuringSell(),
+       "confirmed return to selected MinePlot must safely release Auto Collect")
+findButton("Scan").Activated:Fire()
+assert(findButton("AutoSell").Text=="AUTO SELL ORES: RETURNED",
+       "after confirmed return, display RETURNED and stop one-shot Sell")
+findButton("SellDiagnostics").Activated:Fire()
+assert(clipboard:find("verified=true",1,true)
+       and clipboard:find("status=VERIFIED_NEAR_SELECTED_PLOT",1,true),
+       "return diagnostics must retain verified plot after a completed sale")
+first.collect=false
+teleMenu.Visible=false
+
+-- A return toggle that teleports directly, with no Base submenu,
+-- should still pass once the selected Chest is near.
+first.sell=true
+first.sellPhase="RETURN_BASE_WAIT"
+first.sellReturnOriginalPlot="MinePlot7"
+first.sellReturnStartDistance=538
+first.sellReturnVerified=false
+first.sellReturnChoiceClicks=0
+root.Position=vector(578,0,0)
+env.baseReturnTest.before=env.baseReturnTest.clicks
+root.Position=vector(0,0,0)
+helpers.returnBaseStep(32,"RETURN_BASE_WAIT")
+assert(first.sellPhase=="RETURNED_BASE" and not first.sell
+       and first.sellReturnVerified
+       and env.baseReturnTest.clicks==env.baseReturnTest.before,
+       "Base/Shops direct toggle must verify return without an extra destination click")
+
+-- A click that leaves the player at Shops cannot unlock Collect.
+root.Position=vector(578,0,0)
+first.sell=true
+first.sellPhase="RETURN_BASE_WAIT"
+first.sellReturnOriginalPlot="MinePlot7"
+first.sellReturnStartDistance=538
+first.sellReturnVerified=false
+first.sellReturnChoiceClicks=1
+first.sellPhaseAt=33
+first.collect=true
+helpers.returnBaseStep(52,"RETURN_BASE_WAIT")
+assert(first.sellPhase=="PAUSED" and first.sell
+       and not first.sellReturnVerified and not helpers.canCollectDuringSell()
+       and first.sellReturnStatus=="RETURN_UNVERIFIED",
+       "wrong destination must pause; Auto Collect stays locked")
+findButton("SellDiagnostics").Activated:Fire()
+assert(clipboard:find("status=RETURN_UNVERIFIED",1,true)
+       and clipboard:find("verified=false",1,true),
+       "failed return diagnostic must show unverified state")
 findButton("AutoSell").Activated:Fire()
-assert(not first.sell and first.sellPhase=="OFF", "sell route OFF did not stop")
+first.collect=false
+root.Position=vector(0,0,0)
 
 -- LIVE V0.17 REGRESSION: Auto Collect just opened MineGui/ChestFrame,
 -- then Auto Sell was enabled. Chest modal makes TeleportButton hidden.
@@ -907,7 +987,7 @@ helpers.shopSellStep(27)
 assert(first.sellPhase=="SELL_MENU" and selectClicks==2 and exactClicks==exactBefore,
        "real SellStand menu must dispatch Select All before SellButton")
 helpers.shopSellStep(29)
-assert(first.sellPhase=="DONE" and first.sellActionKind=="CONFIRMED_SELL_STAND"
+assert(first.sellPhase=="RETURN_BASE_OPEN" and first.sellActionKind=="CONFIRMED_SELL_STAND"
        and exactClicks==exactBefore+1 and wrongClicks==0
        and genericSells==beforeAll and unrelatedSelectClicks==0,
        "SellButton should dispatch after Select All; never wrong-context or generic Sell All")
@@ -986,7 +1066,7 @@ helpers.shopSellStep(26)
 assert(first.sellPhase=="SELL_MENU" and selectClicks==initialSelectClicks+1
        and not first.sellSent, "touch-only stand must click Select All before Sell")
 helpers.shopSellStep(28)
-assert(first.sellPhase=="DONE" and oreSells==initialOreSells+1
+assert(first.sellPhase=="RETURN_BASE_OPEN" and oreSells==initialOreSells+1
        and unrelatedSellOreClicks==0 and genericSells==beforeAll,
        "touch-only stand must finish explicit Sell Ores, never unrelated inventory sales")
 first.sell=false
@@ -1152,4 +1232,4 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.20 reuse recent same-Plot Take All; pending/stale/wrong-Plot guards and seller regression")
+print("PASS My Anime Mine V0.21 Shops sale, Base/Shops return and verified MinePlot release; recent Take All + safe seller regression")

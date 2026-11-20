@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.20 (reuse recent Take All during Shops handoff)
+-- My Roblox Hub | My Anime Mine v0.21 (return to selected Base after Sell)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -56,6 +56,17 @@ local controller = {
     sellWarpOrigin = nil,
     sellVendorPath = "none",
     sellVendorDistance = nil,
+    sellReturnTarget = "none",
+    sellReturnOriginalPlot = nil,
+    sellReturnOrigin = nil,
+    sellReturnStartDistance = nil,
+    sellReturnCurrentDistance = nil,
+    sellReturnClicks = 0,
+    sellReturnChoiceClicks = 0,
+    sellReturnVerified = false,
+    sellReturnStatus = "NOT_STARTED",
+    sellReturnCloseSent = false,
+    sellReturnAt = 0,
     sellMenuButtons = {},
     sellLastMoveAt = 0,
     sellLastProgressAt = 0,
@@ -334,7 +345,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.20 | Reuse recent Take All before Shops; selling and money unverified.",
+    Text = "V0.21 | Sell > return to selected Base > resume Auto Collect (when verified).",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -1653,6 +1664,158 @@ local function shopsWarpDestination()
     return #candidates == 1 and candidates[1] or nil, #candidates
 end
 
+
+-- The game's native top Base/Shops toggle is the same MineGui/
+-- TeleportButton used for going to Shops. Verify its return destination by
+-- the Chest prompt on the selected Plot, not by arbitrary travel distance.
+local function baseReturnDestination()
+    local candidates={}
+    for _,button in ipairs(playerGui:GetDescendants()) do
+        if gameGuiButton(button) and isVisible(button) and not isPremiumAction(button)
+            and gameGuiAncestorNamed(button,"MineGui")
+            and (gameGuiAncestorNamed(button,"TeleportFrame")
+                 or gameGuiAncestorNamed(button,"TeleportMenu")
+                 or gameGuiAncestorNamed(button,"TeleportGui")) then
+            local name=normalizeLabel(button.Name)
+            local label=normalizeLabel(textOf(button))
+            local valid = name=="base" or name=="basebutton"
+                or name=="mybase" or name=="mybasebutton"
+                or name=="myplot" or name=="myplotbutton"
+                or name=="backtobase" or name=="returntobase"
+                or label=="base" or label=="mybase" or label=="myplot"
+                or label=="returntobase"
+            if valid then candidates[#candidates+1]=button end
+        end
+    end
+    return #candidates==1 and candidates[1] or nil,#candidates
+end
+
+local function returnBaseDistance()
+    if not controller.selectedPlot or
+        controller.sellReturnOriginalPlot~=controller.selectedPlot then
+        return nil,"Plot changed during sale"
+    end
+    local chest,distance,reason=selectedChest()
+    if not chest or type(distance)~="number" then
+        return nil,reason or "Selected-Plot ChestPrompt unavailable"
+    end
+    return distance,describe(chest)
+end
+
+local function finishVerifiedBaseReturn(distance,now)
+    controller.sellReturnVerified=true
+    controller.sellReturnCurrentDistance=distance
+    controller.sellReturnStatus="VERIFIED_NEAR_SELECTED_PLOT"
+    controller.sellReturnAt=now
+    controller.sell=false
+    controller.sellPhase="RETURNED_BASE"
+    controller.sellPhaseAt=now
+    controller.sellStage=("Returned near %s Chest (%.1f studs); Auto Collect %s"):format(
+        tostring(controller.selectedPlot),distance,controller.collect and "can resume" or "is OFF")
+    writeLog("SHOP SELL: "..controller.sellStage..
+        " | previous Sell dispatch does not prove cash credit")
+end
+
+local function returnBaseStep(now,phase)
+    local root=rootPart()
+    if not root then
+        controller.sellReturnStatus="WAITING_FOR_CHARACTER"
+        return
+    end
+    local distance,source=returnBaseDistance()
+    controller.sellReturnCurrentDistance=distance
+    if not distance then
+        sellSetPhase("PAUSED","Return Base blocked: "..tostring(source),now)
+        controller.sellReturnStatus="PLOT_TARGET_MISSING"
+        return
+    end
+
+    -- Only a return near the SAME previously selected Plot can release the
+    -- Collect worker. This is a proximity check, not ownership proof.
+    local originDistance=controller.sellReturnStartDistance
+    if distance<=75 and (not originDistance or originDistance<110
+        or distance<originDistance-60) then
+        finishVerifiedBaseReturn(distance,now)
+        return
+    end
+
+    if phase=="RETURN_BASE_OPEN" then
+        if now-controller.sellPhaseAt<1.3 then
+            controller.sellReturnStatus="SELL_BUTTON_SETTLING"
+            return
+        end
+        local _,chestOpen=gameChestFrame()
+        if chestOpen then
+            controller.sellReturnStatus="CHEST_MODAL_BLOCKING_TELEPORT"
+            if now-controller.sellPhaseAt>13 then
+                sellSetPhase("PAUSED","Return Base: Chest modal still open",now)
+            end
+            return
+        end
+        local mine=playerGui:FindFirstChild("MineGui")
+        local frame=mine and mine:FindFirstChild("SellFrame")
+        if frame and isVisible(frame) then
+            controller.sellReturnStatus="SELLFRAME_STILL_OPEN"
+            if now-controller.sellPhaseAt>13 then
+                sellSetPhase("PAUSED","Return Base: SellFrame still open; close it manually",now)
+            end
+            return
+        end
+        local launcher=shopsTeleportLauncher()
+        if not launcher then
+            controller.sellReturnStatus="BASE_SHOPS_BUTTON_NOT_VISIBLE"
+            if now-controller.sellPhaseAt>14 then
+                sellSetPhase("PAUSED","Return Base: TeleportButton hidden or absent (COPY SELL ROUTE)",now)
+            end
+            return
+        end
+        controller.sellReturnTarget=describe(launcher)
+        controller.sellReturnClicks=controller.sellReturnClicks+1
+        controller.sellReturnOrigin=root.Position
+        controller.sellReturnStartDistance=distance
+        local ok,reason=sellClick(launcher)
+        if ok then
+            controller.sellReturnStatus="BASE_SHOPS_TOGGLE_SENT"
+            sellSetPhase("RETURN_BASE_WAIT",
+                "Base/Shops button dispatched ("..reason.."); checking selected Plot",now)
+        else
+            controller.sellReturnStatus="BASE_SHOPS_CLICK_ERROR"
+            sellSetPhase("PAUSED","Return Base button click error: "..reason,now)
+        end
+        return
+    end
+
+    if phase=="RETURN_BASE_WAIT" then
+        if controller.sellReturnChoiceClicks==0 then
+            local base,count=baseReturnDestination()
+            if count>1 then
+                controller.sellReturnStatus="AMBIGUOUS_BASE_DESTINATIONS"
+                sellSetPhase("PAUSED","Multiple Base destinations; will not guess",now)
+                return
+            elseif base then
+                controller.sellReturnTarget=describe(base)
+                controller.sellReturnChoiceClicks=1
+                local ok,reason=sellClick(base)
+                if not ok then
+                    controller.sellReturnStatus="BASE_DESTINATION_CLICK_ERROR"
+                    sellSetPhase("PAUSED","Base destination click failed: "..reason,now)
+                else
+                    controller.sellReturnStatus="BASE_DESTINATION_SENT"
+                    controller.sellStage="Base destination dispatched; verifying selected Plot"
+                end
+                return
+            end
+        end
+        controller.sellReturnStatus="AWAITING_SELECTED_PLOT"
+        controller.sellStage=("Returning to %s; Chest distance %.1f studs"):format(
+            tostring(controller.selectedPlot),distance)
+        if now-controller.sellPhaseAt>17 then
+            controller.sellReturnStatus="RETURN_UNVERIFIED"
+            sellSetPhase("PAUSED",("Return Base unverified (Chest %.1f studs away); Collect remains paused"):format(distance),now)
+        end
+    end
+end
+
 local function sellNodePosition(item)
     if item:IsA("BasePart") then return item.Position end
     return positionOf(item)
@@ -1860,7 +2023,10 @@ end
 local function shopSellStep(now)
     if not controller.sell then return end
     local phase = controller.sellPhase
-    if phase == "DONE" or phase == "PAUSED" then return end
+    if phase == "DONE" or phase == "PAUSED" or phase == "RETURNED_BASE" then return end
+    if phase=="RETURN_BASE_OPEN" or phase=="RETURN_BASE_WAIT" then
+        returnBaseStep(now,phase)
+    end
     local root = rootPart()
     if not root then
         controller.sellStage = "Waiting for character"
@@ -2127,7 +2293,13 @@ local function shopSellStep(now)
             controller.sellAttempts = controller.sellAttempts+1
             if ok then
                 controller.sellCallsOK = controller.sellCallsOK+1
-                sellSetPhase("DONE","Sell "..kind.." sent ("..reason.."); ore/currency UNVERIFIED, return to Plot manually",now)
+                controller.sellReturnOriginalPlot=controller.selectedPlot
+                controller.sellReturnOrigin=root.Position
+                controller.sellReturnStartDistance=select(1,returnBaseDistance())
+                controller.sellReturnCurrentDistance=controller.sellReturnStartDistance
+                controller.sellReturnStatus="READY_TO_RETURN"
+                sellSetPhase("RETURN_BASE_OPEN",
+                    "Sell "..kind.." sent ("..reason.."); returning to Base (ore/currency UNVERIFIED)",now)
             else
                 sellSetPhase("PAUSED","Sell Ores click error: "..reason,now)
             end
@@ -2164,7 +2336,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.20 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.21 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -2324,7 +2496,7 @@ end
 
 local function sellRouteDiagnosticReport()
     local lines={
-        "MY ANIME MINE V0.20 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.21 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
         "PlaceId="..tostring(game.PlaceId)..
             " | autoSell="..tostring(controller.sell)..
             " | autoCollect="..tostring(controller.collect)..
@@ -2346,6 +2518,14 @@ local function sellRouteDiagnosticReport()
             " | vendorDist="..tostring(controller.sellVendorDistance)..
             " | vendorTouched="..tostring(controller.sellVendorTouched),
         "CharacterPos="..tostring(rootPart() and rootPart().Position),
+        "Return Base: originalPlot="..tostring(controller.sellReturnOriginalPlot)..
+            " | status="..tostring(controller.sellReturnStatus)..
+            " | verified="..tostring(controller.sellReturnVerified)..
+            " | buttonClicks="..tostring(controller.sellReturnClicks)..
+            " | destinationClicks="..tostring(controller.sellReturnChoiceClicks)..
+            " | target="..tostring(controller.sellReturnTarget)..
+            " | distanceBefore="..tostring(controller.sellReturnStartDistance)..
+            " | distanceNow="..tostring(controller.sellReturnCurrentDistance),
     }
     local tele=shopsTeleportLauncher()
     local shops,shopCount=shopsWarpDestination()
@@ -2375,6 +2555,9 @@ local function sellRouteDiagnosticReport()
             " | mouse="..tostring(c.MouseButton1Click)..
             " activated="..tostring(c.Activated)
     end
+    local base,baseCount=baseReturnDestination()
+    lines[#lines+1]="Return Base visible destination candidates="..baseCount..
+        " | selected="..(base and describe(base) or "NONE")
     lines[#lines+1]="Teleport button="..(tele and describe(tele) or "NOT FOUND")
     lines[#lines+1]="Shops destination candidates="..shopCount..
         " | selected="..(shops and describe(shops) or "NONE")
@@ -2412,14 +2595,14 @@ local function sellRouteDiagnosticReport()
             end
         end
     end
-    lines[#lines+1]="NOTE: an eligible Take All within 8s on this Plot may be reused; otherwise wait for a new dispatch. Take All and Sell are NOT proof of inventory or currency credit."
+    lines[#lines+1]="NOTE: after Sell, toggle Base/Shops and verify distance to original Plot Chest before resuming Collect. Sale/money and Plot ownership NOT verified."
     return table.concat(lines,"\n")
 end
 
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.20 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.21 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
@@ -2529,7 +2712,10 @@ local function refreshStatus()
     autoPlotLabel.Text = "PLOT AUTO: " .. tostring(controller.selectedPlot or "SEARCHING") ..
         "  |  WALK AUTO: " .. (controller.walkToChest and "ON" or "OFF")
     manualWatchButton.Text = "WATCH TAKE ALL: " .. (controller.watchManual and "ON" or "OFF")
-    local sellIndicator = not controller.sell and "OFF"
+    local sellIndicator = controller.sellPhase == "RETURNED_BASE" and "RETURNED"
+        or not controller.sell and "OFF"
+        or (controller.sellPhase == "RETURN_BASE_OPEN"
+            or controller.sellPhase == "RETURN_BASE_WAIT") and "RETURNING"
         or controller.sellPhase == "DONE" and "SENT"
         or controller.sellPhase == "PAUSED" and "PAUSED" or "ROUTING"
     sellButton.Text = "AUTO SELL ORES: " .. sellIndicator
@@ -2645,6 +2831,16 @@ connect(sellButton.Activated, function()
         controller.sellSelectAllAt = 0
         controller.sellSelectAllEvent = "none"
         controller.sellActionKind = nil
+        controller.sellReturnTarget = "none"
+        controller.sellReturnOriginalPlot = controller.selectedPlot
+        controller.sellReturnOrigin = nil
+        controller.sellReturnStartDistance = nil
+        controller.sellReturnCurrentDistance = nil
+        controller.sellReturnClicks = 0
+        controller.sellReturnChoiceClicks = 0
+        controller.sellReturnVerified = false
+        controller.sellReturnStatus = "NOT_STARTED"
+        controller.sellReturnCloseSent = false
         controller.sellWarpOrigin = nil
         local now = os.clock()
         controller.sellStartedAt = now
@@ -2767,7 +2963,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.20 started | recent Take All reuse before Shops | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.21 started | Shops sell and verified return Base | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
