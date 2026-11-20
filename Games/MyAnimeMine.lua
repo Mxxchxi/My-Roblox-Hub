@@ -996,6 +996,15 @@ end
 
 local function isPremiumAction(button)
     local label = actionLabel(button):lower()
+    -- Upgrade prices may be shown in a sibling label rather than on the button.
+    local parent = button.Parent
+    if parent then
+        for _, sibling in ipairs(parent:GetChildren()) do
+            if sibling:IsA("TextLabel") then
+                label = label .. " " .. textOf(sibling):lower()
+            end
+        end
+    end
     return label:find("robux", 1, true) ~= nil
         or label:find("r$", 1, true) ~= nil
         or label:find("gamepass", 1, true) ~= nil
@@ -1490,6 +1499,10 @@ task.spawn(function()
                 end
             end
         end
+        if controller.watchManual then
+            if controller.equip then controller.equipStage = "Paused for manual Take All test" end
+            if controller.upgrade then controller.upgradeStage = "Paused for manual Take All test" end
+        end
         if (controller.equip or controller.upgrade) and now - lastActionScan >= 2.8 then
             lastActionScan = now
             scanActionButtons()
@@ -1497,7 +1510,7 @@ task.spawn(function()
 
         -- Equip Best is a low-frequency action. One inventory-open attempt
         -- per cycle avoids toggling a game menu open/closed repeatedly.
-        if controller.equip and now - lastEquipTick >= 6 then
+        if controller.equip and not controller.watchManual and now - lastEquipTick >= 6 then
             lastEquipTick = now
             if findTakeAll() then
                 controller.equipStage = "Waiting for Chest UI to close"
@@ -1526,7 +1539,7 @@ task.spawn(function()
         end
 
         if controller.upgradePending then resolveUpgradeFeedback(now) end
-        if controller.upgrade and now - lastUpgradeTick >= 3.5 then
+        if controller.upgrade and not controller.watchManual and now - lastUpgradeTick >= 3.5 then
             lastUpgradeTick = now
             if not controller.selectedPlot then
                 autoSelectPlot()
