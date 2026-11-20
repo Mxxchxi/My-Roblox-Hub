@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.14 (warp Shops then walk to ore sell stall)
+-- My Roblox Hub | My Anime Mine v0.15 (SellStand-bound SellFrame SellButton)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -317,7 +317,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.14 | Auto Sell Ores: warp Shops > walk to sell stand > sell ores only.",
+    Text = "V0.15 | Shops > SellStand > verified SellFrame/SellButton.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -1678,26 +1678,63 @@ local function sellVendorTargets()
     return list
 end
 
+-- Runtime-confirmed game paths (V0.14):
+-- SellStand/GingerbreadKeeper/UpperTorso/SellPrompt opened
+-- MineGui/SellFrame/Content/SellButton (MouseButton1Click listener 1).
+-- The bare SellButton is only actionable after this exact vendor interaction.
+local function validatedSellStandSession()
+    return controller.sell and controller.sellPhase == "SELL_MENU"
+        and controller.sellVendorAttempts >= 1
+        and type(controller.sellVendorPath) == "string"
+        and controller.sellVendorPath:find(
+            "SellStand/GingerbreadKeeper/UpperTorso/SellPrompt", 1, true) ~= nil
+end
+
+local function isExactSellStandButton(button)
+    if not button or not gameGuiButton(button) or not isVisible(button)
+        or button.Name ~= "SellButton" then return false end
+    local content=button.Parent
+    local frame=content and content.Parent
+    local mine=frame and frame.Parent
+    if not content or content.Name ~= "Content"
+        or not frame or frame.Name ~= "SellFrame"
+        or not mine or mine.Name ~= "MineGui" or mine.Parent ~= playerGui
+        or isPremiumAction(button) then return false end
+    -- Exclude non-ore sale UI if this frame is ever reused.
+    for _, item in ipairs(frame:GetDescendants()) do
+        if item:IsA("TextLabel") or item:IsA("TextButton") then
+            local t=normalizeLabel(item.Name.." "..textOf(item))
+            if t:find("sellcharacters",1,true)
+                or t:find("sellunits",1,true)
+                or t:find("sellpets",1,true)
+                or t:find("sellequipment",1,true)
+                or t:find("sellweapons",1,true) then return false end
+        end
+    end
+    return validatedSellStandSession()
+end
+
 local function oreSellButton()
-    local candidates = {}
-    for _, button in ipairs(playerGui:GetDescendants()) do
+    local candidates={}
+    for _,button in ipairs(playerGui:GetDescendants()) do
         if gameGuiButton(button) and isVisible(button) and not isPremiumAction(button) then
-            local name = normalizeLabel(button.Name)
-            local label = normalizeLabel(textOf(button))
-            -- An unqualified "Sell", "Select All" or "Sell All" may liquidate
-            -- miners/equipment. Only explicitly ore-scoped actions qualify.
-            local explicit = name == "sellores" or name == "sellore"
-                or name == "sellallores" or name == "selloresbutton"
-                or label == "sellores" or label == "sellallores"
-            if explicit and (gameGuiAncestorNamed(button, "MineGui")
-                or gameGuiAncestorNamed(button, "SellGui")
-                or gameGuiAncestorNamed(button, "SellFrame")
-                or gameGuiAncestorNamed(button, "SellMenu")) then
-                candidates[#candidates+1] = button
+            local name=normalizeLabel(button.Name)
+            local label=normalizeLabel(textOf(button))
+            local explicit=name=="sellores" or name=="sellore"
+                or name=="sellallores" or name=="selloresbutton"
+                or label=="sellores" or label=="sellallores"
+            if explicit and (gameGuiAncestorNamed(button,"MineGui")
+                or gameGuiAncestorNamed(button,"SellGui")
+                or gameGuiAncestorNamed(button,"SellFrame")
+                or gameGuiAncestorNamed(button,"SellMenu")) then
+                candidates[#candidates+1]={button=button,kind="EXPLICIT_ORES"}
+            elseif isExactSellStandButton(button) then
+                candidates[#candidates+1]={button=button,kind="CONFIRMED_SELL_STAND"}
             end
         end
     end
-    return #candidates == 1 and candidates[1] or nil, #candidates
+    if #candidates==1 then return candidates[1].button,1,candidates[1].kind end
+    return nil,#candidates,#candidates>1 and "AMBIGUOUS" or "NONE"
 end
 
 local function sellStopWalk()
@@ -1861,15 +1898,16 @@ local function shopSellStep(now)
         return
     end
     if phase == "SELL_MENU" then
-        local action,count = oreSellButton()
+        local action,count,kind = oreSellButton()
         if action then
             controller.sellActionTarget = describe(action)
+            controller.sellActionKind = kind
             local ok,reason = sellClick(action)
             controller.sellSent = true
             controller.sellAttempts = controller.sellAttempts+1
             if ok then
                 controller.sellCallsOK = controller.sellCallsOK+1
-                sellSetPhase("DONE","Sell Ores click sent; currency NOT verified",now)
+                sellSetPhase("DONE","Sell "..kind.." dispatched ("..reason.."); currency NOT verified",now)
             else
                 sellSetPhase("PAUSED","Sell Ores click error: "..reason,now)
             end
@@ -1877,7 +1915,7 @@ local function shopSellStep(now)
             sellSetPhase("PAUSED", count>1 and "Ambiguous ore-only Sell buttons"
                 or "Sell interface does not expose an ore-only button; no Sell All attempted",now)
         else
-            controller.sellStage = "Waiting for verified Sell Ores action"
+            controller.sellStage = "Waiting for Sell Ores or verified SellStand SellButton"
         end
     end
 end
@@ -1906,7 +1944,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.14 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.15 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -1975,8 +2013,11 @@ local function actionDiagnosticReport()
         lines[#lines+1] = ("Vendor[%d]: %s | kind=%s | dist=%.1f | range=%.1f"):format(
             i,describe(v.target),v.type,v.distance,v.maxRange)
     end
+    local _,_,sellKind=oreSellButton()
     lines[#lines+1] = "Ore-only Sell candidates="..sellActionCount..
-        " | ready="..(sellAction and describe(sellAction) or "NONE")
+        " | ready="..(sellAction and describe(sellAction) or "NONE")..
+        " | mode="..tostring(sellKind)..
+        " | verifiedStand="..tostring(validatedSellStandSession())
     lines[#lines+1] = "Generic Sell/Select All buttons are NOT auto-clicked: they may sell miners."
     lines[#lines + 1] = "Native Chest Auto Sell (legacy, not used by route): enabled=" .. tostring(controller.sell) ..
         " | stage=" .. tostring(controller.sellStage) ..
@@ -2051,13 +2092,13 @@ local function actionDiagnosticReport()
             textOf(button):sub(1, 45), nearbyButtonContext(button):sub(1, 75))
     end
     lines[#lines + 1] =
-        "NOTE: Shop-route Auto Sell requires Shops warp, Sell Items stand, and explicit ORE-ONLY Sell. Never auto-clicks generic Sell All or uses the Auto Sell Game Pass."
+        "NOTE: Sale requires ore-only button or exact SellFrame/SellButton after GingerbreadKeeper SellPrompt. Never auto-clicks Sell All."
     return table.concat(lines, "\n")
 end
 
 local function sellRouteDiagnosticReport()
     local lines={
-        "MY ANIME MINE V0.14 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.15 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
         "PlaceId="..tostring(game.PlaceId)..
             " | autoSell="..tostring(controller.sell)..
             " | autoCollect="..tostring(controller.collect)..
@@ -2086,9 +2127,11 @@ local function sellRouteDiagnosticReport()
         lines[#lines+1]=("Vendor[%d]: %s | kind=%s | distance=%.1f | maxRange=%.1f"):format(
             i,describe(v.target),v.type,v.distance,v.maxRange)
     end
-    local action,count=oreSellButton()
+    local action,count,kind=oreSellButton()
     lines[#lines+1]="Explicit ore-only Sell controls="..count..
-        " | selected="..(action and describe(action) or "NONE")
+        " | selected="..(action and describe(action) or "NONE")..
+        " | mode="..tostring(kind)
+    lines[#lines+1]="Validated SellStand session="..tostring(validatedSellStandSession())
     lines[#lines+1]="Visible game buttons related to warp/shop/sell:"
     local found=0
     for _,button in ipairs(playerGui:GetDescendants()) do
@@ -2107,14 +2150,14 @@ local function sellRouteDiagnosticReport()
             end
         end
     end
-    lines[#lines+1]="NOTE: no generic Sell All button is clicked; a sent signal is not proof of sale or money received."
+    lines[#lines+1]="NOTE: only explicit ores or EXACT SellFrame/Content/SellButton after GingerbreadKeeper SellPrompt; never generic Sell All. Currency not verified."
     return table.concat(lines,"\n")
 end
 
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.14 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.15 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
@@ -2426,7 +2469,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.14 started | warp Shops then Sell Ores | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.15 started | validated SellStand button | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
