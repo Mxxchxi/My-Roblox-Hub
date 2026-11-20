@@ -1452,6 +1452,10 @@ local function actionDiagnosticReport()
             " holderClicks=" .. controller.holderActions .. "/" .. controller.holderAttempts,
         "Selected holder=" .. (controller.openedHolder and describe(controller.openedHolder) or "none"),
         "Inventory target=" .. tostring(controller.inventoryLastTarget),
+        "Headless mode=" .. tostring(controller.headlessOnly) ..
+            " | equipStatus=" .. tostring(controller.headlessEquipStatus) ..
+            " | upgradeStatus=" .. tostring(controller.headlessUpgradeStatus) ..
+            " | equipTarget=" .. tostring(controller.headlessEquipTarget),
         "Upgrade walk=" .. tostring(controller.upgradeWalkTarget ~= nil) ..
             " | attempts=" .. tostring(controller.upgradeWalkAttempts) ..
             " lastTarget=" .. tostring(controller.upgradeWalkLastTarget),
@@ -1475,6 +1479,23 @@ local function actionDiagnosticReport()
     addButtons("Stats", controller.statsCandidates)
     addButtons("Upgrade", controller.upgradeCandidates)
     addButtons("GameUpgradesMenu (read-only, not auto-purchased)", controller.guiUpgradeMenu)
+    local hiddenBest = hiddenEquipBestCandidates()
+    lines[#lines + 1] = "Headless loaded Equip Best buttons=" .. tostring(#hiddenBest)
+    for i, button in ipairs(hiddenBest) do
+        if i > 12 then break end
+        local connections = takeAllConnections(button)
+        lines[#lines + 1] = ("HiddenEquip[%d]: %s | visible=%s | mouse=%s activated=%s"):format(
+            i, describe(button), tostring(isVisible(button)),
+            tostring(connections.MouseButton1Click), tostring(connections.Activated))
+    end
+    local remotes = headlessRemotes()
+    lines[#lines + 1] = ("HEADLESS REMOTE DISCOVERY (read-only; total=%d, listed=%d):"):format(
+        controller.headlessRemoteCount or 0, #remotes)
+    for i, remote in ipairs(remotes) do
+        if i > 60 then break end
+        lines[#lines + 1] = ("Remote[%d]: %s | class=%s"):format(
+            i, remote.path, remote.kind)
+    end
     local holders = holderTargets()
     lines[#lines + 1] = "Holder last probe=" .. tostring(controller.lastHolderProbe) ..
         " | last in range=" .. tostring(controller.lastHolderProbeInRange)
@@ -1507,7 +1528,7 @@ local function actionDiagnosticReport()
             textOf(button):sub(1, 45), nearbyButtonContext(button):sub(1, 75))
     end
     lines[#lines + 1] =
-        "NOTE: no game UI path has been verified live; dispatch is not proof of equip/stat gains. No premium actions targeted."
+        "NOTE: Headless mode never opens Inventory/Stats/Holders/Upgrades game panels. Remotes are read-only; no unknown signature is invoked."
     return table.concat(lines, "\n")
 end
 
@@ -1529,6 +1550,9 @@ local function diagnosticReport()
     append("Auto Equip=" .. tostring(controller.equip) ..
         " stage=" .. tostring(controller.equipStage) .. " calls=" ..
         tostring(controller.equipActions) .. "/" .. tostring(controller.equipAttempts))
+    append("Headless only=" .. tostring(controller.headlessOnly) ..
+        " | status=" .. tostring(controller.headlessEquipStatus) ..
+        " / " .. tostring(controller.headlessUpgradeStatus))
     append("Auto Upgrade=" .. tostring(controller.upgrade) ..
         " stage=" .. tostring(controller.upgradeStage) .. " calls=" ..
         tostring(controller.upgradeActions) .. "/" .. tostring(controller.upgradeAttempts))
@@ -1645,7 +1669,7 @@ connect(equipButton.Activated, function()
         controller.equipStage = "OFF"
     end
     writeLog("AUTO EQUIP BEST " .. (controller.equip and "ON" or "OFF") ..
-        " | uses visible game Inventory button only")
+        " | HEADLESS ONLY: no Inventory UI opens")
     refreshStatus()
 end)
 connect(upgradeButton.Activated, function()
@@ -1676,7 +1700,7 @@ connect(upgradeButton.Activated, function()
         controller.upgradeStage = "OFF"
     end
     writeLog("AUTO UPGRADE STATS " .. (controller.upgrade and "ON" or "OFF") ..
-        " | miner Damage, Speed, Mining Speed; game currency only")
+        " | HEADLESS ONLY: remote command requires verified protocol; no UI opens")
     refreshStatus()
 end)
 connect(actionDiagnosticsButton.Activated, function()
@@ -1823,125 +1847,44 @@ task.spawn(function()
             scanActionButtons()
         end
 
-        -- Equip Best is a low-frequency action. One inventory-open attempt
-        -- per cycle avoids toggling a game menu open/closed repeatedly.
-        if controller.equip and not controller.watchManual and now - lastEquipTick >= 6 then
+        -- V0.12: no automatic game UI windows. An actual loaded hidden
+        -- Equip Best control may be dispatched directly if it has a listener.
+        if controller.equip and not controller.watchManual
+            and now - lastEquipTick >= 6 then
             lastEquipTick = now
-            if findTakeAll() then
-                controller.equipStage = "Waiting for Chest UI to close"
-            else
-                local best = firstAvailable(controller.equipCandidates)
-                local inventory = firstAvailable(controller.inventoryCandidates)
-                if best and now - (controller.lastEquipAt or 0) >= 20 then
-                    controller.lastEquipAt = now
+            if now - (controller.lastEquipAt or 0) >= 20 then
+                local ok, status = tryHeadlessEquip()
+                controller.headlessEquipStatus = status
+                controller.equipStage = status
+                controller.lastEquipAt = now
+                if ok then
                     controller.equipAttempts = controller.equipAttempts + 1
-                    local ok, result, event = dispatchGameButton(best)
-                    if ok then controller.equipActions = controller.equipActions + 1 end
-                    controller.equipStage = ok and "Equip Best click dispatched" or ("Equip: " .. result)
-                    writeLog("AUTO EQUIP " .. controller.equipStage ..
-                        " | event=" .. event .. " | " .. describe(best) ..
-                        " | equip result NOT verified")
-                elseif not best and inventory and controller.inventoryOpenAttempts < 1 then
-                    controller.inventoryOpenAttempts = controller.inventoryOpenAttempts + 1
-                    controller.inventoryLastTarget = describe(inventory)
-                    local ok, result, event = dispatchGameButton(inventory)
-                    controller.equipStage = ok and "Inventory click sent; scanning for Equip Best"
-                        or ("Inventory click ERROR: " .. result)
-                    writeLog("AUTO EQUIP: " .. controller.equipStage .. " | event=" .. event ..
-                        " | " .. controller.inventoryLastTarget .. " | NOT proof Inventory opened")
-                elseif not best then
-                    controller.equipStage = "Equip Best not visible; COPY EQUIP / UPGRADE TARGETS"
+                    controller.equipActions = controller.equipActions + 1
+                    writeLog("HEADLESS EQUIP: " .. status ..
+                        " | target=" .. controller.headlessEquipTarget ..
+                        " | result not verified")
+                elseif status ~= controller.lastHeadlessEquipMessage then
+                    controller.lastHeadlessEquipMessage = status
+                    writeLog("HEADLESS EQUIP: " .. status ..
+                        " | no Inventory window opened")
                 end
             end
         end
 
-        if controller.upgradePending then resolveUpgradeFeedback(now) end
-        if controller.upgrade and not controller.watchManual and now - lastUpgradeTick >= 3.5 then
+        -- Live captures did not identify the server's upgrade Remote/method
+        -- or arguments. Do NOT click a Holder, Stats button or BuyButton,
+        -- as each may open a window or spend the wrong currency.
+        if controller.upgrade and not controller.watchManual
+            and now - lastUpgradeTick >= 8 then
             lastUpgradeTick = now
-            controller.upgradeLastTick = now
-            if not controller.selectedPlot then autoSelectPlot() end
-            if not controller.selectedPlot then
-                controller.upgradeStage = "Waiting for nearby plot (not acquired)"
-            elseif findTakeAll() then
-                controller.upgradeStage = "Waiting for Chest to close"
-            elseif controller.upgradePending then
-                controller.upgradeStage = "Waiting for Stats UI feedback"
-            elseif controller.upgradeAttempts >= 80 then
-                controller.upgrade = false
-                controller.upgradeStage = "PAUSED: 80 attempted stat upgrades per cycle"
-                writeLog("AUTO UPGRADE paused after 80 attempts; inspect results before restarting.")
-            else
-                local valid = {}
-                for _, item in ipairs(controller.upgradeCandidates) do
-                    if item.Parent and isVisible(item) and isUpgradeAction(item) then
-                        valid[#valid + 1] = item
-                    end
-                end
-                if controller.openedHolder and #valid > 0 then
-                    local index = (controller.upgradeIndex - 1) % #valid + 1
-                    controller.upgradeIndex = index + 1
-                    local target = valid[index]
-                    controller.upgradeAttempts = controller.upgradeAttempts + 1
-                    local signature = upgradeRowSnapshot(target)
-                    local stat = statContext(target) or "unknown"
-                    local ok, result, event = dispatchGameButton(target)
-                    if ok then
-                        controller.upgradeActions = controller.upgradeActions + 1
-                        controller.upgradePending = {
-                            button = target, before = signature, started = now,
-                            stat = stat, event = event,
-                        }
-                    end
-                    controller.upgradeStage = ok and ("Upgrading " .. stat .. " (check pending)")
-                        or ("Upgrade ERROR: " .. result)
-                    writeLog("AUTO UPGRADE " .. controller.upgradeStage ..
-                        " | " .. describe(target) .. " | game currency only")
-                elseif controller.openedHolder and not controller.statsTabAttempted
-                    and now - controller.openedHolderAt < 25
-                    and firstAvailable(controller.statsCandidates) then
-                    local tab = firstAvailable(controller.statsCandidates)
-                    controller.statsTabAttempted = true
-                    local ok, result, event = dispatchGameButton(tab)
-                    controller.upgradeStage = ok and "Opening character Stats tab"
-                        or ("Stats tab ERROR: " .. result)
-                    writeLog("AUTO UPGRADE " .. controller.upgradeStage .. " | event=" ..
-                        event .. " | " .. describe(tab))
-                elseif now >= controller.holderNextAt then
-                    local detector, distance = nextHolderDetector()
-                    if detector then
-                        stopUpgradeWalking()
-                        controller.upgradeBusyUntil = now + 6
-                        controller.holderNextAt = now + 23
-                        controller.holderAttempts = controller.holderAttempts + 1
-                        controller.lastHolderProbe = describe(detector)
-                        controller.lastHolderProbeInRange = ("%.1f studs"):format(distance)
-                        local ok, err = pcall(fireclickdetector, detector)
-                        if ok then
-                            controller.holderActions = controller.holderActions + 1
-                            controller.openedHolder = detector
-                            controller.openedHolderAt = now
-                            controller.statsTabAttempted = false
-                            controller.upgradeNoChange = 0
-                            controller.upgradeStage = ("Opening miner at %.1f studs"):format(distance)
-                        else
-                            controller.upgradeStage = "UpgradeClick ERROR: " .. tostring(err)
-                        end
-                        writeLog("AUTO UPGRADE " .. controller.upgradeStage ..
-                            " | " .. describe(detector) .. " | result NOT verified")
-                    else
-                        local allHolders = holderTargets()
-                        if #allHolders == 0 then
-                            controller.upgradeStage = "No Holders/UpgradeClick found on selected Plot"
-                        else
-                            controller.upgradeStage = approachUpgradeHolder(allHolders[1], now)
-                            if controller.upgradeStage:find("PAUSED:", 1, true) then
-                                writeLog("AUTO UPGRADE " .. controller.upgradeStage)
-                            end
-                        end
-                    end
-                else
-                    controller.upgradeStage = "Waiting for miner Stats panel"
-                end
+            local remotes = headlessRemotes()
+            controller.headlessUpgradeStatus =
+                "HEADLESS_PROTOCOL_UNKNOWN (" .. #remotes .. " remote candidates)"
+            controller.upgradeStage = controller.headlessUpgradeStatus
+            if controller.lastHeadlessUpgradeMessage ~= controller.upgradeStage then
+                controller.lastHeadlessUpgradeMessage = controller.upgradeStage
+                writeLog("HEADLESS UPGRADE: " .. controller.upgradeStage ..
+                    " | no game UI opened; no unverified remote invoked")
             end
         end
         if controller.watchManual then monitorManualButton() end
