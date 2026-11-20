@@ -29,11 +29,10 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 - The game normally mines rocks through **placed anime characters**. Rock ClickDetectors may be unrelated selection controls, so Auto Mine (CLICK) is experimental and not guaranteed to mine.
 - Test automation in the live game before claiming gameplay success.
 
-## Feature branch test (before merge)
+## Runtime test
 
 ```lua
-getgenv().MyRobloxHubRef = "feature/my-anime-mine-chest-route-v0-3"
-loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub/feature/my-anime-mine-chest-route-v0-3/Loader.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub/main/Loader.lua"))()
 ```
 
 For reporting a failure: enter the actual game, select SCAN GAME, select COPY LOG, and paste the log. Confirm that the GUI `MyAnimeMineHub` appeared and the console reported `Started My Anime Mine`.
