@@ -1635,9 +1635,7 @@ local function shopsWarpDestination()
             if explicit and not isPremiumAction(button)
                 and not gameGuiAncestorNamed(button, "ShopPurchase")
                 and not gameGuiAncestorNamed(button, "Store")
-                and (isVisible(button) or gameGuiAncestorNamed(button, "TeleportFrame")
-                    or gameGuiAncestorNamed(button, "TeleportGui")
-                    or gameGuiAncestorNamed(button, "TeleportMenu")) then
+                and isVisible(button) then
                 candidates[#candidates+1] = button
             end
         end
