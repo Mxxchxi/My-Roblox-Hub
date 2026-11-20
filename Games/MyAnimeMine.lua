@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.8 (auto plot selection and auto walk)
+-- My Roblox Hub | My Anime Mine v0.9 (auto equip best and crew-stat upgrades)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -35,6 +35,28 @@ local controller = {
     running = true,
     mine = false,
     collect = false,
+    equip = false,
+    upgrade = false,
+    equipAttempts = 0,
+    equipActions = 0,
+    inventoryOpenAttempts = 0,
+    equipStage = "OFF",
+    upgradeAttempts = 0,
+    upgradeActions = 0,
+    upgradeNoChange = 0,
+    upgradeStage = "OFF",
+    upgradePending = nil,
+    holderAttempts = 0,
+    holderActions = 0,
+    openedHolder = nil,
+    openedHolderAt = 0,
+    holderIndex = 1,
+    holderNextAt = 0,
+    statsTabAttempted = false,
+    equipCandidates = {},
+    inventoryCandidates = {},
+    upgradeCandidates = {},
+    statsCandidates = {},
     minimized = false,
     walkToChest = false,
     selectedPlot = nil,
@@ -108,6 +130,8 @@ function controller:Stop()
     self.running = false
     self.mine = false
     self.collect = false
+    self.equip = false
+    self.upgrade = false
     self.walkToChest = false
     self.watchManual = false
     self.manualPending = nil
@@ -154,8 +178,8 @@ local gui = make("ScreenGui", playerGui, {
 })
 controller.gui = gui
 local panel = make("Frame", gui, {
-    Name = "Main", Size = UDim2.fromOffset(510, 536),
-    Position = UDim2.new(0.5, -255, 0.5, -268),
+    Name = "Main", Size = UDim2.fromOffset(510, 648),
+    Position = UDim2.new(0.5, -255, 0.5, -324),
     BackgroundColor3 = palette.background, BorderSizePixel = 0,
 })
 make("UICorner", panel, { CornerRadius = UDim.new(0, 12) })
@@ -231,7 +255,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.8 | AUTO COLLECT auto-selects nearby Plot and walks to Chest. Stay at your own Plot.",
+    Text = "V0.9 | Auto Equip Best and crew-stat upgrades use game GUI. Test with diagnostics.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -249,24 +273,27 @@ local autoPlotLabel = make("TextLabel", panel, {
     Text = "PLOT: AUTO DETECT  |  WALK: AUTO WITH COLLECT",
 })
 make("UICorner", autoPlotLabel, { CornerRadius = UDim.new(0, 7) })
-local manualWatchButton = button("ManualWatch", "WATCH MANUAL TAKE ALL: OFF", 16, 298, 478, 38)
+local equipButton = button("AutoEquip", "AUTO EQUIP BEST: OFF", 16, 298, 230, 38)
+local upgradeButton = button("AutoUpgrade", "AUTO UPGRADE STATS: OFF", 264, 298, 230, 38)
+local manualWatchButton = button("ManualWatch", "WATCH MANUAL TAKE ALL: OFF", 16, 345, 478, 38)
+local actionDiagnosticsButton = button("ActionDiagnostics", "COPY EQUIP / UPGRADE TARGETS", 16, 393, 478, 38)
 local statusLabel = make("TextLabel", panel, {
-    Name = "Status", Position = UDim2.fromOffset(17, 346),
-    Size = UDim2.fromOffset(478, 51),
+    Name = "Status", Position = UDim2.fromOffset(17, 437),
+    Size = UDim2.fromOffset(478, 65),
     BackgroundTransparency = 1, Font = Enum.Font.Code, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.accent, Text = "Discovering...",
 })
 make("TextLabel", panel, {
-    Name = "LogTitle", Position = UDim2.fromOffset(16, 413),
+    Name = "LogTitle", Position = UDim2.fromOffset(16, 507),
     Size = UDim2.fromOffset(478, 20),
     BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 13,
     TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = palette.text,
     Text = "LOG / DIAGNOSTICS",
 })
 local logFrame = make("Frame", panel, {
-    Name = "LogPanel", Position = UDim2.fromOffset(16, 436),
-    Size = UDim2.fromOffset(478, 88), BackgroundColor3 = palette.panel,
+    Name = "LogPanel", Position = UDim2.fromOffset(16, 531),
+    Size = UDim2.fromOffset(478, 101), BackgroundColor3 = palette.panel,
     BorderSizePixel = 0,
 })
 make("UICorner", logFrame, { CornerRadius = UDim.new(0, 6) })
@@ -895,9 +922,10 @@ end
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.8 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.9 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
-        tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect))
+        tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
+        " autoEquip=" .. tostring(controller.equip) .. " autoUpgrade=" .. tostring(controller.upgrade))
     append(("Targets: rocks=%d prompts=%d TakeAll=%d"):format(
         #controller.detectors, #controller.prompts, #controller.takeAllButtons))
     local root = rootPart()
@@ -980,10 +1008,16 @@ local function refreshStatus()
         "  |  WALK AUTO: " .. (controller.walkToChest and "ON" or "OFF")
     manualWatchButton.Text = "WATCH MANUAL TAKE ALL: " .. (controller.watchManual and "ON" or "OFF")
     manualWatchButton.BackgroundColor3 = controller.watchManual and palette.accent or palette.button
-    statusLabel.Text = ("Rock: %d | Chest prompt: %d | TakeAll: %d | calls %d/%d/%d\nStage: %s"):format(
+    equipButton.Text = "AUTO EQUIP BEST: " .. (controller.equip and "ON" or "OFF")
+    upgradeButton.Text = "AUTO UPGRADE STATS: " .. (controller.upgrade and "ON" or "OFF")
+    equipButton.BackgroundColor3 = controller.equip and palette.accent or palette.button
+    upgradeButton.BackgroundColor3 = controller.upgrade and palette.accent or palette.button
+    statusLabel.Text = ("Rock %d | Chest %d | TakeAll %d | collect calls %d/%d\nEquip: %s (%d OK) | Upgrade: %s (%d OK)\nCollect: %s"):format(
         #controller.detectors, #controller.prompts, #controller.takeAllButtons,
-        controller.mineActions, controller.collectActions, controller.takeAllActions,
-        tostring(controller.collectionStage):sub(1, 86))
+        controller.collectActions, controller.takeAllActions,
+        tostring(controller.equipStage):sub(1, 35), controller.equipActions,
+        tostring(controller.upgradeStage):sub(1, 35), controller.upgradeActions,
+        tostring(controller.collectionStage):sub(1, 67))
 end
 
 connect(mineButton.Activated, function()
@@ -1078,7 +1112,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.8 started | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.9 started | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
