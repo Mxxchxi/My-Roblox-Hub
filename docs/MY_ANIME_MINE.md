@@ -1,4 +1,4 @@
-# My Anime Mine (v0.8)
+# My Anime Mine (v0.9)
 
 - Roblox game: https://www.roblox.com/games/79389059854988/My-Anime-Mine
 - PlaceId: `79389059854988`
@@ -13,6 +13,12 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 ```
 
 ## Features and limitations
+
+- **AUTO EQUIP BEST** (OFF by default): searches for the game's Equip Best GUI control and triggers its existing click listener periodically. When not visible, tries opening the game's Inventory menu once per enable cycle. No undocumented remote signatures are used. The click and equipment changes require live verification.
+- **AUTO UPGRADE STATS** (OFF by default): tries UpgradeClick detectors on miners (Holders) in the selected plot, opens the miner's Stats tab when detected, and selects only character Damage, Speed, and Mining Speed upgrade GUI controls. Excludes candidates with Robux, gamepass, premium, purchase, shop, or research hints, and does not automate Research Tree purchases. Clicking a game UI upgrade can spend in-game currency; no Robux actions are intentionally targeted. The script pauses after three unchanged UI attempts or 80 attempts per cycle. The live GUI hierarchy is not yet confirmed and may require adapting from an in-game diagnostic.
+- Two independent toggles leave the previously working Auto Collect behavior unchanged. When a Chest is open these new workflows defer UI actions.
+- **COPY EQUIP / UPGRADE TARGETS** reports candidate game GUI paths, readable labels, click listener counts, selected holder, action stages, and dispatch statistics. If a target is missing or an upgrade does not take effect, paste this copied report.
+
 
 - Scans nearby `ClickDetector` instances associated with rock/ore names.
 - Scans nearby `ProximityPrompt` instances associated with collecting/chests.
@@ -41,6 +47,10 @@ For reporting a failure: enter the actual game, select SCAN GAME, select COPY LO
 ## Regression checklist
 
 - [ ] UI loads when entering My Anime Mine.
+- [ ] AUTO EQUIP BEST and AUTO UPGRADE STATS start OFF, operate independently, and do not interrupt Auto Collect.
+- [ ] Equip Best finds an Inventory game button and dispatches its supported click event; verify equipped units in Roblox.
+- [ ] Stat upgrades find only the selected plot's Holder UpgradeClick and Damage/Speed/Mining Speed buttons, not Robux or Research purchases.
+- [ ] COPY EQUIP / UPGRADE TARGETS lists button and holder paths; hidden game purchase buttons are not clicked.
 - [ ] All automatic toggles begin OFF.
 - [ ] The UI can be closed and the loader can be rerun without duplicate windows.
 - [ ] LeftAlt hides and restores the window; restore chip works, and active toggles are retained.

@@ -165,7 +165,7 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll}"
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector}"
     local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
     return assert(env.MyAnimeMineHubController), helpers
 end
@@ -212,6 +212,93 @@ assert(helpers.chestItemCount(takeAllButton) == 15, "Chest count parser did not 
 chestCountLabel.Text = "1,250/183.9K Items"
 assert(helpers.chestItemCount(takeAllButton) == 1250, "Chest count parser did not support commas")
 chestCountLabel.Text = "15/183.9K Items"
+
+-- Mock actual game GUI controls separately from the hub. Equip Best should
+-- require no unknown remote, and Stats upgrades must be restricted by context.
+local inventoryGui = instance("ScreenGui")
+inventoryGui.Name = "InventoryGui"
+inventoryGui.Parent = playerGui
+local inventoryOpen = instance("TextButton")
+inventoryOpen.Name = "InventoryButton"
+inventoryOpen.Text = "Inventory"
+inventoryOpen.Parent = inventoryGui
+local inventoryClicks = 0
+inventoryOpen.MouseButton1Click:Connect(function() inventoryClicks = inventoryClicks + 1 end)
+local equipBest = instance("TextButton")
+equipBest.Name = "EquipBestButton"
+equipBest.Text = "Equip Best"
+equipBest.Parent = inventoryGui
+local equipClicks = 0
+equipBest.MouseButton1Click:Connect(function() equipClicks = equipClicks + 1 end)
+
+local statsGui = instance("ScreenGui")
+statsGui.Name = "UnitGui"
+statsGui.Parent = playerGui
+local statsPanel = instance("Frame")
+statsPanel.Name = "StatsFrame"
+statsPanel.Parent = statsGui
+local statsTab = instance("TextButton")
+statsTab.Name = "StatsButton"; statsTab.Text = "Stats"; statsTab.Parent = statsPanel
+local damageRow = instance("Frame")
+damageRow.Name = "DamageRow"; damageRow.Parent = statsPanel
+local damageLabel = instance("TextLabel")
+damageLabel.Name = "DamageName"; damageLabel.Text = "Damage"; damageLabel.Parent = damageRow
+local upgradeDamage = instance("TextButton")
+upgradeDamage.Name = "UpgradeButton"; upgradeDamage.Text = "Upgrade"; upgradeDamage.Parent = damageRow
+local damageClicks = 0
+upgradeDamage.MouseButton1Click:Connect(function() damageClicks = damageClicks + 1 end)
+local speedRow = instance("Frame")
+speedRow.Name = "SpeedRow"; speedRow.Parent = statsPanel
+local upgradeSpeed = instance("TextButton")
+upgradeSpeed.Name = "LevelUpButton"; upgradeSpeed.Text = "Upgrade"; upgradeSpeed.Parent = speedRow
+local premium = instance("TextButton")
+premium.Name = "UpgradeRobux"; premium.Text = "R$199"; premium.Parent = damageRow
+local premiumRow = instance("Frame")
+premiumRow.Name = "MiningSpeedRow"; premiumRow.Parent = statsPanel
+local paidPrice = instance("TextLabel")
+paidPrice.Name = "Price"; paidPrice.Text = "R$399"; paidPrice.Parent = premiumRow
+local paidButton = instance("TextButton")
+paidButton.Name = "UpgradeButton"; paidButton.Text = "Upgrade"; paidButton.Parent = premiumRow
+local research = instance("Frame")
+research.Name = "ResearchPanel"; research.Parent = statsGui
+local researchRow = instance("Frame")
+researchRow.Name = "DamageRow"; researchRow.Parent = research
+local upgradeResearch = instance("TextButton")
+upgradeResearch.Name = "UpgradeButton"; upgradeResearch.Text = "Upgrade"
+upgradeResearch.Parent = researchRow
+
+helpers.scanActionButtons()
+assert(#first.equipCandidates == 1 and first.equipCandidates[1] == equipBest,
+       "did not identify visible Equip Best game button")
+assert(#first.inventoryCandidates == 1 and first.inventoryCandidates[1] == inventoryOpen,
+       "did not identify Inventory opener")
+assert(#first.statsCandidates == 1 and first.statsCandidates[1] == statsTab,
+       "did not discover Stats tab")
+assert(helpers.isUpgradeAction(upgradeDamage) and helpers.isUpgradeAction(upgradeSpeed),
+       "legitimate crew Damage and Speed upgrades not detected")
+assert(not helpers.isUpgradeAction(premium) and not helpers.isUpgradeAction(paidButton)
+       and not helpers.isUpgradeAction(upgradeResearch),
+       "Robux/research upgrade must never be selected")
+assert(#first.upgradeCandidates == 2 and helpers.statContext(upgradeDamage) == "Damage"
+       and helpers.statContext(upgradeSpeed) == "Speed",
+       "mixed upgrade targets or wrong stat context")
+local okEquip, _, equipEvent = helpers.dispatchGameButton(equipBest)
+assert(okEquip and equipEvent == "MouseButton1Click" and equipClicks == 1,
+       "Equip Best signal did not trigger real game click handler")
+local okUpgrade, _, upgradeEvent = helpers.dispatchGameButton(upgradeDamage)
+assert(okUpgrade and upgradeEvent == "MouseButton1Click" and damageClicks == 1,
+       "Upgrade signal did not trigger real game click handler")
+findButton("AutoEquip").Activated:Fire()
+findButton("AutoUpgrade").Activated:Fire()
+assert(first.equip and first.upgrade, "equip and upgrade toggles failed to enable")
+findButton("ActionDiagnostics").Activated:Fire()
+assert(clipboard:find("EQUIP / UPGRADE TARGETS", 1, true)
+       and clipboard:find("EquipBest", 1, true)
+       and clipboard:find("statUpgrades=2", 1, true),
+       "equip/upgrade target copy missing candidate details")
+findButton("AutoEquip").Activated:Fire()
+findButton("AutoUpgrade").Activated:Fire()
+assert(not first.equip and not first.upgrade, "equip and upgrade toggles must switch OFF")
 findButton("Scan").Activated:Fire()
 findButton("CopyLog").Activated:Fire()
 assert(clipboard and clipboard:find("PlaceId 79389059854988", 1, true), "copy log unavailable")
@@ -228,8 +315,22 @@ local root=instance("BasePart");root.Name="HumanoidRootPart"
 root.Position=vector(0,0,0);root.Parent=character
 createPlot("MinePlot8", 3, false)
 createPlot("MinePlot7", 40, true)
+local plot = workspace:FindFirstChild("MinePlot7")
+local holderGroup = instance("Folder"); holderGroup.Name="Holders"; holderGroup.Parent=plot
+local holder = instance("Model"); holder.Name="M5"; holder.Parent=holderGroup
+local upgradePart = instance("BasePart"); upgradePart.Name="UpgradePart"
+upgradePart.Position=vector(23,0,0); upgradePart.Parent=holder
+local detector = instance("ClickDetector"); detector.Name="UpgradeClick"
+detector.MaxActivationDistance=32; detector.Parent=upgradePart
 findButton("Scan").Activated:Fire()
 assert(first.selectedPlot == "MinePlot7", "auto selector failed to choose the verified near-Plot candidate")
+local selectedHolder, holderDist = helpers.nextHolderDetector(true)
+assert(selectedHolder == detector and holderDist == 23,
+       "selected plot holder upgrade detector not found")
+findButton("AutoUpgrade").Activated:Fire()
+assert(first.upgrade and first.selectedPlot == "MinePlot7",
+       "upgrade must work independently with automatically detected plot")
+findButton("AutoUpgrade").Activated:Fire()
 local hub = playerGui:FindFirstChild("MyAnimeMineHub")
 assert(hub:FindFirstChild("Main"):FindFirstChild("AutoPlotStatus"),
        "missing automatic plot/walk status")
@@ -371,7 +472,8 @@ for _, child in ipairs(playerGui:GetChildren()) do
     if child.Name == "MyAnimeMineHub" then count = count + 1 end
 end
 assert(count == 1, "duplicate UI after rerun")
-assert(not second.mine and not second.collect, "rerun must begin OFF")
+assert(not second.mine and not second.collect and not second.equip and not second.upgrade,
+       "rerun must begin with all auto toggles OFF")
 assert(not second.minimized and findButton("RestoreWindow").Visible == false,
     "rerun must restore expanded UI")
 assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
@@ -379,4 +481,4 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.8 auto plot discovery, auto walk with Collect, Chest checks, manual watch and UI lifecycle")
+print("PASS My Anime Mine V0.9 Equip Best, stat upgrade filtering, holder target, Collect and UI lifecycle")

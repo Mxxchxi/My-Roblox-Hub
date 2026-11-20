@@ -23,6 +23,15 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn('Name = "MyAnimeMineHub"', SOURCE)
         self.assertIn("mine = false", SOURCE)
         self.assertIn("collect = false", SOURCE)
+        self.assertIn("equip = false", SOURCE)
+        self.assertIn("upgrade = false", SOURCE)
+        self.assertIn("local function scanActionButtons()", SOURCE)
+        self.assertIn("local function isUpgradeAction(button)", SOURCE)
+        self.assertIn("local function nextHolderDetector(peek)", SOURCE)
+        self.assertIn("local function actionDiagnosticReport()", SOURCE)
+        self.assertIn("local function resolveUpgradeFeedback(now)", SOURCE)
+        self.assertIn("controller.upgradeNoChange >= 3", SOURCE)
+        self.assertIn("controller.upgradeAttempts >= 80", SOURCE)
         self.assertIn("function controller:Stop()", SOURCE)
         self.assertIn('connect(close.Activated, function() controller:Stop() end)', SOURCE)
         self.assertIn("previous:Stop()", SOURCE)
@@ -53,7 +62,7 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn("takeAllAttempts >= 6", SOURCE)
 
     def test_diagnostic_and_conservative_interactions(self):
-        for token in ("SCAN GAME", "COPY LOG", "COPY TARGET DIAGNOSTICS", "PLOT AUTO:", "WALK AUTO:", "WATCH MANUAL TAKE ALL", "MouseButton1Click", "getconnections", "ClickDetector", "ProximityPrompt",
+        for token in ("SCAN GAME", "COPY LOG", "COPY TARGET DIAGNOSTICS", "PLOT AUTO:", "WALK AUTO:", "WATCH MANUAL TAKE ALL", "AUTO EQUIP BEST", "AUTO UPGRADE STATS", "COPY EQUIP / UPGRADE TARGETS", "MouseButton1Click", "getconnections", "ClickDetector", "ProximityPrompt",
                       "fireclickdetector", "fireproximityprompt", "firesignal", "setclipboard"):
             self.assertIn(token, SOURCE)
         self.assertIn("minePlotName(prompt) == controller.selectedPlot", SOURCE)
