@@ -36,6 +36,7 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn("Chest still open/pending after 24s", SOURCE)
         self.assertIn("TeleportButton exists but hidden", SOURCE)
         self.assertIn("TeleportButton absent from MineGui", SOURCE)
+        self.assertIn('and isVisible(button) then', SOURCE)
         self.assertIn("TakeAllPending=", SOURCE)
         self.assertIn("local function shopsTeleportLauncher()", SOURCE)
         self.assertIn("local function shopsWarpDestination()", SOURCE)
