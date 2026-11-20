@@ -26,10 +26,12 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn("function controller:Stop()", SOURCE)
         self.assertIn('connect(close.Activated, function() controller:Stop() end)', SOURCE)
         self.assertIn("previous:Stop()", SOURCE)
+        self.assertIn("local function diagnosticReport()", SOURCE)
+        self.assertIn("local function findTakeAll()", SOURCE)
 
     def test_diagnostic_and_conservative_interactions(self):
-        for token in ("SCAN GAME", "COPY LOG", "ClickDetector", "ProximityPrompt",
-                      "fireclickdetector", "fireproximityprompt", "setclipboard"):
+        for token in ("SCAN GAME", "COPY LOG", "COPY TARGET DIAGNOSTICS", "ClickDetector", "ProximityPrompt",
+                      "fireclickdetector", "fireproximityprompt", "firesignal", "setclipboard"):
             self.assertIn(token, SOURCE)
         self.assertNotIn(":FireServer(", SOURCE)
         self.assertNotIn(":InvokeServer(", SOURCE)
