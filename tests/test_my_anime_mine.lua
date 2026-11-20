@@ -173,7 +173,7 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, sellStopWalk=sellStopWalk, validatedSellStandSession=validatedSellStandSession, isExactSellStandButton=isExactSellStandButton}"
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, sellStopWalk=sellStopWalk, validatedSellStandSession=validatedSellStandSession, isExactSellStandButton=isExactSellStandButton, sellSelectAllButton=sellSelectAllButton, knownOreSellFrame=knownOreSellFrame}"
     local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
     return assert(env.MyAnimeMineHubController), helpers
 end
@@ -552,6 +552,23 @@ sellPrompt.MaxActivationDistance=10; sellPrompt.Enabled=true
 sellPrompt.Parent=sellStand
 local sellScreen=instance("Frame")
 sellScreen.Name="SellFrame";sellScreen.Visible=false;sellScreen.Parent=mineGui
+local selectContent=instance("Frame")
+selectContent.Name="Content";selectContent.Parent=sellScreen
+local selectAll=instance("TextButton")
+selectAll.Name="SelectAllButton";selectAll.Text="Select All";selectAll.Parent=selectContent
+local selectClicks=0
+local sellOrder={}
+selectAll.MouseButton1Click:Connect(function()
+    selectClicks=selectClicks+1
+    sellOrder[#sellOrder+1]="Select All"
+end)
+local unrelatedSelect=instance("TextButton")
+unrelatedSelect.Name="SelectAllButton";unrelatedSelect.Text="Select All"
+unrelatedSelect.Parent=inventoryGui
+local unrelatedSelectClicks=0
+unrelatedSelect.MouseButton1Click:Connect(function()
+    unrelatedSelectClicks=unrelatedSelectClicks+1
+end)
 local oreSell=instance("TextButton")
 oreSell.Name="SellOres"; oreSell.Text="Sell Ores";oreSell.Parent=sellScreen
 local genericSell=instance("TextButton")
@@ -559,6 +576,8 @@ genericSell.Name="SellAll"; genericSell.Text="Sell All";genericSell.Parent=sellS
 local oreSells,genericSells=0,0
 oreSell.MouseButton1Click:Connect(function()
     oreSells=oreSells+1
+    sellOrder[#sellOrder+1]="Sell"
+    assert(selectClicks >= oreSells, "Sell must never precede Select All")
     sellScreen.Visible=false
 end)
 genericSell.MouseButton1Click:Connect(function() genericSells=genericSells+1 end)
@@ -586,21 +605,29 @@ assert(first.sellMoveTarget==sellPrompt and first.sellWalkAttempts>0,
        "route must walk to Sell Items vendor, never teleport to its coordinate")
 root.Position=vector(578,0,0)
 helpers.shopSellStep(18)
-assert(first.sellPhase=="SELL_MENU" and sellScreen.Visible,
-       "sell vendor prompt must open sell interface")
+assert(first.sellPhase=="SELECT_ALL" and sellScreen.Visible,
+       "sell vendor prompt must enter Select All phase first")
+local sellEarly=first.sellCallsOK
 helpers.shopSellStep(20)
+assert(first.sellPhase=="SELL_MENU" and selectClicks==1 and oreSells==0
+       and first.sellSelectAllCallsOK==1 and first.sellSelectAllSent
+       and first.sellCallsOK==sellEarly and unrelatedSelectClicks==0,
+       "Select All must be dispatched once before Sell, only inside SellFrame")
+helpers.shopSellStep(22)
 assert(first.sellPhase=="DONE" and oreSells==1 and genericSells==0
-       and nativeSellClicks==nativeClicksBefore and first.sellCallsOK==1,
-       "route may only send explicit Sell Ores action, never Sell All or gamepass")
+       and nativeSellClicks==nativeClicksBefore and first.sellCallsOK==1
+       and sellOrder[1]=="Select All" and sellOrder[2]=="Sell",
+       "route must call Select All then Sell in strict order")
 findButton("ActionDiagnostics").Activated:Fire()
 assert(clipboard:find("SHOP SELL ROUTE",1,true)
        and clipboard:find("Sell vendor candidates=",1,true)
        and clipboard:find("Ore-only Sell candidates=",1,true),
        "sale route must expose warp/vendor/sell diagnostics")
 findButton("SellDiagnostics").Activated:Fire()
-assert(clipboard:find("V0.15 SHOP SELL ROUTE",1,true)
+assert(clipboard:find("V0.16 SHOP SELL ROUTE",1,true)
        and clipboard:find("Shops destination candidates=",1,true)
        and clipboard:find("Explicit ore-only Sell controls=",1,true)
+       and clipboard:find("Select All clicks=1/1",1,true)
        and clipboard:find("Sell Ores clicks=1/1",1,true),
        "dedicated COPY SELL ROUTE diagnostic missing route outcomes")
 findButton("AutoSell").Activated:Fire()
@@ -657,10 +684,22 @@ local validButton,validCount,validMode=helpers.oreSellButton()
 assert(validButton==exactButton and validCount==1 and validMode=="CONFIRMED_SELL_STAND",
        "must prefer only exact SellFrame/Content/SellButton at real vendor")
 local beforeAll=genericSells
-helpers.shopSellStep(28)
+local exactBefore=exactClicks
+first.sellSelectAllSent=false
+first.sellPhase="SELL_MENU"
+helpers.shopSellStep(25)
+assert(first.sellPhase=="PAUSED" and exactClicks==exactBefore,
+       "Seller must refuse to click SellButton without Select All")
+first.sellPhase="SELECT_ALL"
+first.sellPhaseAt=26
+helpers.shopSellStep(27)
+assert(first.sellPhase=="SELL_MENU" and selectClicks==2 and exactClicks==exactBefore,
+       "real SellStand menu must dispatch Select All before SellButton")
+helpers.shopSellStep(29)
 assert(first.sellPhase=="DONE" and first.sellActionKind=="CONFIRMED_SELL_STAND"
-       and exactClicks==1 and wrongClicks==0 and genericSells==beforeAll,
-       "SellButton should dispatch once; never wrong-context or generic Sell All")
+       and exactClicks==exactBefore+1 and wrongClicks==0
+       and genericSells==beforeAll and unrelatedSelectClicks==0,
+       "SellButton should dispatch after Select All; never wrong-context or generic Sell All")
 findButton("SellDiagnostics").Activated:Fire()
 assert(clipboard:find("Last sale mode=CONFIRMED_SELL_STAND",1,true),
        "post-sale diagnostics must preserve last confirmed SellStand action mode")
@@ -670,6 +709,41 @@ first.sellPhase="SELL_MENU"
 assert(not helpers.isExactSellStandButton(exactButton),
        "non-ore sell control in SellFrame must block generic SellButton")
 forbidden.Parent=nil
+
+-- Missing Select All must pause before ANY sale.
+first.sell=true
+first.sellPhase="SELECT_ALL"
+first.sellPhaseAt=30
+first.sellSelectAllSent=false
+local lastExact=exactClicks
+selectAll.Parent=nil
+helpers.shopSellStep(31)
+assert(first.sellPhase=="SELECT_ALL" and exactClicks==lastExact,
+       "missing Select All must wait without clicking Sell")
+helpers.shopSellStep(46)
+assert(first.sellPhase=="PAUSED" and exactClicks==lastExact,
+       "missing Select All must pause; no silent Sell")
+-- A Select All label inside a nested control is also supported.
+local nestedSelect=instance("TextButton")
+nestedSelect.Name="ActionButton";nestedSelect.Text="";nestedSelect.Parent=selectContent
+local nestedLabel=instance("TextLabel")
+nestedLabel.Name="Text";nestedLabel.Text="Select All";nestedLabel.Parent=nestedSelect
+local nestedClicks=0
+nestedSelect.MouseButton1Click:Connect(function() nestedClicks=nestedClicks+1 end)
+first.sellPhase="SELECT_ALL"
+local foundNested,nestedCount=helpers.sellSelectAllButton()
+assert(foundNested==nestedSelect and nestedCount==1,
+       "nested TextLabel Select All should be resolved within seller Content")
+local duplicate=instance("TextButton")
+duplicate.Name="SelectAllButton";duplicate.Parent=selectContent
+duplicate.MouseButton1Click:Connect(function() error("ambiguous Select All must not click") end)
+local beforeNested=nestedClicks
+helpers.shopSellStep(47)
+assert(first.sellPhase=="PAUSED" and nestedClicks==beforeNested and exactClicks==lastExact,
+       "ambiguous Select All must pause with no button dispatched")
+duplicate.Parent=nil
+nestedSelect.Parent=nil
+selectAll.Parent=selectContent
 first.sell=false
 first.sellPhase="OFF"
 sellScreen.Visible=false
@@ -681,7 +755,7 @@ first.sell=true
 first.sellPhase="VENDOR_WALK"
 root.Position=vector(579,0,0)
 helpers.shopSellStep(24)
-assert(first.sellPhase=="SELL_MENU", "touch-only Sell Items stand should enter Sell GUI detection")
+assert(first.sellPhase=="SELECT_ALL", "touch-only Sell Items stand must enter Select All phase")
 first.sell=false
 first.sellPhase="OFF"
 root.Position=vector(0,0,0)
@@ -845,4 +919,4 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.15 runtime SellFrame/SellButton with verified SellPrompt, safe seller and Collect lifecycle")
+print("PASS My Anime Mine V0.16 Select All before Sell for shop and GingerbreadKeeper; no unrelated sales or Collect regressions")
