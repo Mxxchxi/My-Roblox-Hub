@@ -1,10 +1,10 @@
--- My Roblox Hub | My Anime Mine v0.7 (chest close/reopen outcome tracking)
+-- My Roblox Hub | My Anime Mine v0.8 (auto plot selection and auto walk)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
 -- Auto Collect uses only the player's explicitly selected plot, then opens its chest and clicks Take All.
 -- Mining in this game is normally performed by placed characters.
--- All automatic features start OFF. Auto Walk is separately opt-in; no purchases, selling, or teleporting.
+-- Auto Collect starts OFF. When enabled it auto-detects a nearby plot and walks to its Chest without teleporting.
 
 if game.PlaceId ~= 79389059854988 then
     warn("[My Anime Mine] Wrong PlaceId: " .. tostring(game.PlaceId))
@@ -38,7 +38,8 @@ local controller = {
     minimized = false,
     walkToChest = false,
     selectedPlot = nil,
-    collectionStage = "Set your plot near its UpgradeClick",
+    plotSelectionReason = "WAITING",
+    collectionStage = "Detecting nearby plot automatically",
     moveTarget = nil,
     moveStarted = 0,
     movePreviousDistance = nil,
@@ -230,15 +231,24 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.7 | Manual Take All closes Chest normally. Reopen checks after cooldown; no reward proof.",
+    Text = "V0.8 | AUTO COLLECT auto-selects nearby Plot and walks to Chest. Stay at your own Plot.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
 local scanButton = button("Scan", "SCAN GAME", 16, 158, 230, 38)
 local copyButton = button("CopyLog", "COPY LOG", 264, 158, 230, 38)
 local detailButton = button("Diagnostics", "COPY TARGET DIAGNOSTICS", 16, 205, 478, 38)
-local setPlotButton = button("SetPlot", "SET MY PLOT", 16, 250, 230, 38)
-local walkButton = button("WalkToChest", "WALK TO CHEST: OFF", 264, 250, 230, 38)
+local autoPlotLabel = make("TextLabel", panel, {
+    Name = "AutoPlotStatus", Position = UDim2.fromOffset(16, 250),
+    Size = UDim2.fromOffset(478, 38),
+    BackgroundColor3 = palette.panel,
+    BorderSizePixel = 0,
+    Font = Enum.Font.GothamSemibold, TextSize = 12,
+    TextXAlignment = Enum.TextXAlignment.Center,
+    TextColor3 = palette.subtle,
+    Text = "PLOT: AUTO DETECT  |  WALK: AUTO WITH COLLECT",
+})
+make("UICorner", autoPlotLabel, { CornerRadius = UDim.new(0, 7) })
 local manualWatchButton = button("ManualWatch", "WATCH MANUAL TAKE ALL: OFF", 16, 298, 478, 38)
 local statusLabel = make("TextLabel", panel, {
     Name = "Status", Position = UDim2.fromOffset(17, 346),
@@ -478,28 +488,74 @@ local function minePlotName(instance)
     return nil
 end
 
+-- Closest *upgrade marker* plus a matching Chest near the character.
+-- There is no confirmed ownership API. Never choose a distant or ambiguous plot.
 local function choosePlotNearPlayer()
     local root = rootPart()
     if not root then return nil, nil, "Character/HumanoidRootPart missing" end
-    local best, bestDistance = nil, 65
+    local distances = {}
     for _, detector in ipairs(controller.detectors) do
         if detector.Parent and detector.Name:lower():find("upgrade", 1, true) then
-            local plotName = minePlotName(detector)
+            local plot = minePlotName(detector)
             local pos = positionOf(detector)
-            if plotName and pos then
-                local dist = (pos - root.Position).Magnitude
-                if dist < bestDistance then
-                    best, bestDistance = plotName, dist
+            if plot and pos then
+                local d = (pos - root.Position).Magnitude
+                if d <= 65 and (not distances[plot] or d < distances[plot]) then
+                    distances[plot] = d
                 end
             end
         end
     end
-    if not best then
-        return nil, nil, "No UpgradeClick within 65 studs. Stand near your own plot then SCAN GAME."
+
+    local candidate, best, second = nil, math.huge, math.huge
+    for plot, markerDistance in pairs(distances) do
+        local chestDistance = math.huge
+        for _, prompt in ipairs(controller.prompts) do
+            if prompt.Parent and minePlotName(prompt) == plot
+                and prompt.Name == "ChestPrompt" then
+                local pos = positionOf(prompt)
+                if pos then
+                    local d = (pos - root.Position).Magnitude
+                    if d < chestDistance then chestDistance = d end
+                end
+            end
+        end
+        if chestDistance <= 75 then
+            -- Prefer the plot whose Chest is nearest, then its upgrade marker.
+            local score = chestDistance + markerDistance * 0.1
+            if score < best then
+                second = best
+                candidate, best = plot, score
+            elseif score < second then
+                second = score
+            end
+        end
     end
-    return best, bestDistance, nil
+    if not candidate then
+        return nil, nil, "No nearby plot with both UpgradeClick and ChestPrompt"
+    end
+    if second - best < 8 then
+        return nil, nil, "Ambiguous nearby plots; stand closer to your own Chest"
+    end
+    return candidate, distances[candidate],
+        "Proximity only; plot ownership NOT verified"
 end
 
+local function autoSelectPlot()
+    if controller.selectedPlot then return true end
+    local plot, distance, detail = choosePlotNearPlayer()
+    if not plot then
+        controller.plotSelectionReason = detail
+        controller.collectionStage = "Auto Plot: " .. tostring(detail)
+        return false
+    end
+    controller.selectedPlot = plot
+    controller.plotSelectionReason = "Nearby Chest and upgrade marker; ownership NOT verified"
+    controller.collectionStage = "Auto Plot: " .. plot
+    writeLog(("AUTO PLOT selected %s | upgrade marker %.1f studs | ownership NOT verified"):format(
+        plot, distance))
+    return true
+end
 local function selectedChest()
     if not controller.selectedPlot then return nil, nil, "Plot not selected" end
     local root = rootPart()
@@ -564,7 +620,8 @@ local function approachChest(prompt, distance, now)
     if now - controller.moveProgressAt > 11 then
         stopWalking()
         controller.walkToChest = false
-        return "WALK BLOCKED after 11s. Walk OFF; move closer manually."
+        controller.collect = false
+        return "WALK BLOCKED after 11s. Auto Collect OFF; move closer before retry."
     end
     if now - (controller.lastMoveCommand or 0) >= 1.8 then
         controller.lastMoveCommand = now
@@ -573,7 +630,8 @@ local function approachChest(prompt, distance, now)
         if not ok then
             stopWalking()
             controller.walkToChest = false
-            return "MoveTo failed: " .. tostring(err)
+            controller.collect = false
+            return "MoveTo failed; Auto Collect OFF: " .. tostring(err)
         end
     end
     return ("Walking to %s Chest %.1f studs (range %.1f)"):format(
@@ -837,7 +895,7 @@ end
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.7 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.8 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect))
     append(("Targets: rocks=%d prompts=%d TakeAll=%d"):format(
@@ -846,7 +904,8 @@ local function diagnosticReport()
     append("Root=" .. (root and tostring(root.Position) or "NOT FOUND"))
     local nearPlot, plotDistance, plotReason = choosePlotNearPlayer()
     append("Plot selected=" .. tostring(controller.selectedPlot) ..
-        " (manual proximity selection; ownership NOT verified)")
+        " (AUTO proximity selection; ownership NOT verified)")
+    append("Plot selection reason=" .. tostring(controller.plotSelectionReason))
     append("Closest upgrade plot=" .. (nearPlot and
         (nearPlot .. (" dist=%.1f"):format(plotDistance)) or tostring(plotReason)))
     local chest, chestDistance, chestReason = selectedChest()
@@ -917,9 +976,8 @@ local function refreshStatus()
     collectButton.Text = "AUTO COLLECT: " .. (controller.collect and "ON" or "OFF")
     mineButton.BackgroundColor3 = controller.mine and palette.accent or palette.button
     collectButton.BackgroundColor3 = controller.collect and palette.accent or palette.button
-    setPlotButton.Text = "MY PLOT: " .. tostring(controller.selectedPlot or "NOT SET")
-    walkButton.Text = "WALK TO CHEST: " .. (controller.walkToChest and "ON" or "OFF")
-    walkButton.BackgroundColor3 = controller.walkToChest and palette.accent or palette.button
+    autoPlotLabel.Text = "PLOT AUTO: " .. tostring(controller.selectedPlot or "SEARCHING") ..
+        "  |  WALK AUTO: " .. (controller.walkToChest and "ON" or "OFF")
     manualWatchButton.Text = "WATCH MANUAL TAKE ALL: " .. (controller.watchManual and "ON" or "OFF")
     manualWatchButton.BackgroundColor3 = controller.watchManual and palette.accent or palette.button
     statusLabel.Text = ("Rock: %d | Chest prompt: %d | TakeAll: %d | calls %d/%d/%d\nStage: %s"):format(
@@ -936,27 +994,6 @@ connect(mineButton.Activated, function()
     controller.mine = not controller.mine
     writeLog("Auto Mine (rock click) " .. (controller.mine and "ON" or "OFF") ..
         " | characters normally mine rocks without clicking them")
-    refreshStatus()
-end)
-connect(setPlotButton.Activated, function()
-    scan(false)
-    local plotName, distance, reason = choosePlotNearPlayer()
-    if plotName then
-        controller.selectedPlot = plotName
-        controller.collectionStage = "Plot set: " .. plotName .. " (check ownership yourself)"
-        stopWalking()
-        writeLog(("Plot marked: %s (upgrade marker %.1f studs away; ownership NOT verified)"):format(
-            plotName, distance))
-    else
-        writeLog("Set plot failed: " .. tostring(reason))
-    end
-    refreshStatus()
-end)
-connect(walkButton.Activated, function()
-    controller.walkToChest = not controller.walkToChest
-    if not controller.walkToChest then stopWalking() end
-    writeLog("Walk to Chest " .. (controller.walkToChest and "ON" or "OFF") ..
-        " | no teleport; only selected plot")
     refreshStatus()
 end)
 connect(manualWatchButton.Activated, function()
@@ -986,7 +1023,10 @@ connect(collectButton.Activated, function()
         return
     end
     controller.collect = not controller.collect
+    controller.walkToChest = controller.collect
     if controller.collect then
+        scan(false)
+        autoSelectPlot()
         controller.takeAllNoChange = 0
         controller.takeAllNotDecreased = 0
         controller.lastChestCountBefore = nil
@@ -1008,12 +1048,13 @@ connect(collectButton.Activated, function()
         controller.collectionStage = "OFF"
     end
     writeLog("Auto Collect " .. (controller.collect and "ON" or "OFF") ..
-        " | tries collection prompts and visible Take All buttons")
+        " | plot selection and Chest walking are automatic")
     refreshStatus()
 end)
 connect(scanButton.Activated, function()
     writeLog("Manual scan requested")
     scan(true)
+    autoSelectPlot()
     refreshStatus()
 end)
 connect(detailButton.Activated, function()
@@ -1037,15 +1078,17 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.7 started | toggles OFF | PlaceId 79389059854988")
-writeLog("Set your plot near UpgradeClick, then enable Auto Collect; enable Walk to Chest to approach.")
+writeLog("My Anime Mine v0.8 started | toggles OFF | PlaceId 79389059854988")
+writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
+autoSelectPlot()
 refreshStatus()
 
 task.spawn(function()
     local lastScan, lastMine, lastCollect, lastStatus = os.clock(), 0, 0, 0
     local lastMineReason, lastCollectReason = "", ""
+    local lastAutoPlotCheck = 0
     local lastMineLog, lastCollectLog = 0, 0
     while controller.running do
         task.wait(0.35)
@@ -1079,12 +1122,16 @@ task.spawn(function()
         if controller.watchManual then monitorManualButton() end
         if controller.manualPending then settleManualTakeAll(now) end
         if controller.takeAllPending then settleTakeAll(now) end
+        if not controller.selectedPlot and now - lastAutoPlotCheck >= 5 then
+            lastAutoPlotCheck = now
+            autoSelectPlot()
+        end
         if controller.collect and now - lastCollect >= 1.25 then
             lastCollect = now
             local action = "none"
             local button = findTakeAll()
             if not controller.selectedPlot then
-                controller.collectionStage = "Select MY PLOT near your UpgradeClick first"
+                controller.collectionStage = "AUTO PLOT SEARCH: " .. tostring(controller.plotSelectionReason)
             elseif now < controller.takeAllReopenAt then
                 controller.collectionStage = ("Chest closed normally; reopen in %.1fs"):format(
                     controller.takeAllReopenAt - now)
