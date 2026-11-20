@@ -173,7 +173,7 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, sellStopWalk=sellStopWalk}"
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, sellStopWalk=sellStopWalk, validatedSellStandSession=validatedSellStandSession, isExactSellStandButton=isExactSellStandButton}"
     local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
     return assert(env.MyAnimeMineHubController), helpers
 end
@@ -605,6 +605,76 @@ assert(clipboard:find("V0.14 SHOP SELL ROUTE",1,true)
        "dedicated COPY SELL ROUTE diagnostic missing route outcomes")
 findButton("AutoSell").Activated:Fire()
 assert(not first.sell and first.sellPhase=="OFF", "sell route OFF did not stop")
+
+-- V0.14 REAL RUNTIME LOG: GingerbreadKeeper's SellPrompt opens a
+-- visible MineGui/SellFrame/Content/SellButton with one MouseButton1Click
+-- listener and EMPTY button text. That is the permitted context-specific
+-- exception, never a generic Sell All or a wrong-panel SellButton.
+local ginger=instance("Model")
+ginger.Name="GingerbreadKeeper"
+local stand=instance("Folder"); stand.Name="SellStand";stand.Parent=workspace
+ginger.Parent=stand
+local torso=instance("BasePart")
+torso.Name="UpperTorso"; torso.Position=vector(578,0,0);torso.Parent=ginger
+local realSellPrompt=instance("ProximityPrompt")
+realSellPrompt.Name="SellPrompt";realSellPrompt.ActionText="Sell"
+realSellPrompt.MaxActivationDistance=14;realSellPrompt.Parent=torso
+local exactContent=instance("Frame")
+exactContent.Name="Content";exactContent.Parent=sellScreen
+local exactButton=instance("TextButton")
+exactButton.Name="SellButton";exactButton.Text="";exactButton.Parent=exactContent
+local exactClicks=0
+exactButton.MouseButton1Click:Connect(function() exactClicks=exactClicks+1 end)
+local wrongPanel=instance("Frame")
+wrongPanel.Name="ShopFrame";wrongPanel.Parent=mineGui
+local wrongContent=instance("Frame")
+wrongContent.Name="Content";wrongContent.Parent=wrongPanel
+local wrongSell=instance("TextButton")
+wrongSell.Name="SellButton";wrongSell.Text="";wrongSell.Parent=wrongContent
+local wrongClicks=0
+wrongSell.MouseButton1Click:Connect(function() wrongClicks=wrongClicks+1 end)
+oreSell.Visible=false
+sellScreen.Visible=true
+first.sell=true
+first.sellPhase="SELL_MENU"
+first.sellVendorPath="Workspace/SellItemsStand/SellItemsPrompt"
+first.sellVendorAttempts=1
+assert(not helpers.validatedSellStandSession()
+       and not helpers.isExactSellStandButton(exactButton),
+       "wrong vendor must not authorize a generic SellButton")
+local noneWrong=helpers.oreSellButton()
+assert(noneWrong==nil, "unverified vendor must not click generic SellButton")
+first.sellVendorPath="Workspace/SellStand/GingerbreadKeeper/UpperTorso/SellPrompt"
+first.sellVendorAttempts=0
+assert(not helpers.validatedSellStandSession()
+       and not helpers.isExactSellStandButton(exactButton),
+       "being near the vendor without prompt interaction is insufficient")
+first.sellVendorAttempts=1
+assert(helpers.validatedSellStandSession()
+       and helpers.isExactSellStandButton(exactButton),
+       "verified vendor and exact GUI hierarchy must unlock SellButton")
+local validButton,validCount,validMode=helpers.oreSellButton()
+assert(validButton==exactButton and validCount==1 and validMode=="CONFIRMED_SELL_STAND",
+       "must prefer only exact SellFrame/Content/SellButton at real vendor")
+local beforeAll=genericSells
+helpers.shopSellStep(28)
+assert(first.sellPhase=="DONE" and first.sellActionKind=="CONFIRMED_SELL_STAND"
+       and exactClicks==1 and wrongClicks==0 and genericSells==beforeAll,
+       "SellButton should dispatch once; never wrong-context or generic Sell All")
+findButton("SellDiagnostics").Activated:Fire()
+assert(clipboard:find("validated SellStand",1,true)
+       or clipboard:find("Validated SellStand session=true",1,true),
+       "sell diagnostics must show confirmed SellStand session")
+local forbidden=instance("TextLabel")
+forbidden.Name="ForbiddenSale";forbidden.Text="Sell Characters";forbidden.Parent=sellScreen
+first.sellPhase="SELL_MENU"
+assert(not helpers.isExactSellStandButton(exactButton),
+       "non-ore sell control in SellFrame must block generic SellButton")
+forbidden.Parent=nil
+first.sell=false
+first.sellPhase="OFF"
+sellScreen.Visible=false
+
 -- Some sell stands are touch-operated. Walking onto the named stand
 -- must be allowed even if it has no ProximityPrompt.
 sellPrompt.Parent=nil
@@ -776,4 +846,4 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.14 Shops warp, Sell Items MoveTo, ore-only sale and Collect lifecycle")
+print("PASS My Anime Mine V0.15 runtime SellFrame/SellButton with verified SellPrompt, safe seller and Collect lifecycle")
