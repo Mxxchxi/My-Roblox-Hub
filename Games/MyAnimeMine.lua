@@ -1372,6 +1372,9 @@ local function diagnosticReport()
     append("Auto Upgrade=" .. tostring(controller.upgrade) ..
         " stage=" .. tostring(controller.upgradeStage) .. " calls=" ..
         tostring(controller.upgradeActions) .. "/" .. tostring(controller.upgradeAttempts))
+    append("Upgrade move target=" .. tostring(controller.upgradeWalkLastTarget) ..
+        " | move attempts=" .. tostring(controller.upgradeWalkAttempts) ..
+        " | navigating=" .. tostring(controller.upgradeWalkTarget ~= nil))
     append("Closest upgrade plot=" .. (nearPlot and
         (nearPlot .. (" dist=%.1f"):format(plotDistance)) or tostring(plotReason)))
     local chest, chestDistance, chestReason = selectedChest()
@@ -1492,6 +1495,7 @@ connect(upgradeButton.Activated, function()
     end
     controller.upgrade = not controller.upgrade
     if controller.upgrade then
+        stopUpgradeWalking()
         controller.upgradeStage = "Finding selected-plot miner Stats"
         controller.upgradeAttempts = 0
         controller.upgradeNoChange = 0
@@ -1504,6 +1508,7 @@ connect(upgradeButton.Activated, function()
         autoSelectPlot()
         scanActionButtons()
     else
+        stopUpgradeWalking()
         controller.upgradePending = nil
         controller.upgradeStage = "OFF"
     end
@@ -1738,6 +1743,8 @@ task.spawn(function()
                 elseif now >= controller.holderNextAt then
                     local detector, distance = nextHolderDetector()
                     if detector then
+                        stopUpgradeWalking()
+                        controller.upgradeBusyUntil = now + 6
                         controller.holderNextAt = now + 23
                         controller.holderAttempts = controller.holderAttempts + 1
                         local ok, err = pcall(fireclickdetector, detector)
@@ -1754,8 +1761,15 @@ task.spawn(function()
                         writeLog("AUTO UPGRADE " .. controller.upgradeStage ..
                             " | " .. describe(detector) .. " | result NOT verified")
                     else
-                        controller.upgradeStage =
-                            "No in-range Holder UpgradeClick on selected Plot"
+                        local allHolders = holderTargets()
+                        if #allHolders == 0 then
+                            controller.upgradeStage = "No Holders/UpgradeClick found on selected Plot"
+                        else
+                            controller.upgradeStage = approachUpgradeHolder(allHolders[1], now)
+                            if controller.upgradeStage:find("PAUSED:", 1, true) then
+                                writeLog("AUTO UPGRADE " .. controller.upgradeStage)
+                            end
+                        end
                     end
                 else
                     controller.upgradeStage = "Waiting for miner Stats panel"
@@ -1769,7 +1783,11 @@ task.spawn(function()
             lastAutoPlotCheck = now
             autoSelectPlot()
         end
-        if controller.collect and now - lastCollect >= 1.25 then
+        -- Holder travel gets a short exclusive movement window. The working
+        -- Auto Collect loop is otherwise unchanged and resumes afterward.
+        if controller.collect and not controller.upgradeWalkTarget
+            and now >= (controller.upgradeBusyUntil or 0)
+            and now - lastCollect >= 1.25 then
             lastCollect = now
             local action = "none"
             local button = findTakeAll()
