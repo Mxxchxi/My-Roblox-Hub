@@ -1798,11 +1798,14 @@ local function shopSellStep(now)
             sellSetPhase("PAUSED",("Sell stand %.1f studs away (>185 limit)"):format(vendor.distance),now)
             return
         end
-        local required = math.max(3, math.min(10, vendor.maxRange - 1))
+        -- A touch-operated Sell stand can show its UI by walking onto its
+        -- actual BasePart. Stop only when within 3 studs of a bare marker.
+        local required = vendor.type == "marker" and 3
+            or math.max(3, math.min(10, vendor.maxRange - 1))
         if vendor.distance <= required then
             sellStopWalk()
             if vendor.type == "marker" then
-                sellSetPhase("PAUSED","At Sell stand, but interaction prompt/click missing",now)
+                sellSetPhase("SELL_MENU","Reached Sell stand marker; checking touch-opened Sell GUI",now)
                 return
             end
             if vendor.maxRange <= 0 then
