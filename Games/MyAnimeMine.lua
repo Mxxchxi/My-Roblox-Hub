@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.9 (auto equip best and crew-stat upgrades)
+-- My Roblox Hub | My Anime Mine v0.10 (action target discovery and holder approach)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -51,11 +51,19 @@ local controller = {
     holderActions = 0,
     openedHolder = nil,
     openedHolderAt = 0,
+    upgradeWalkTarget = nil,
+    upgradeWalkProgressAt = 0,
+    upgradeWalkLastDistance = nil,
+    upgradeWalkAttempts = 0,
+    upgradeWalkLastCommand = 0,
+    upgradeWalkLastTarget = "none",
     holderIndex = 1,
     holderNextAt = 0,
     statsTabAttempted = false,
     equipCandidates = {},
     inventoryCandidates = {},
+    guiButtonSamples = {},
+    guiHiddenSamples = {},
     upgradeCandidates = {},
     statsCandidates = {},
     minimized = false,
@@ -134,6 +142,13 @@ function controller:Stop()
     self.equip = false
     self.upgrade = false
     self.walkToChest = false
+    if self.upgradeWalkTarget then
+        local char = player.Character
+        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if humanoid and root then pcall(function() humanoid:MoveTo(root.Position) end) end
+        self.upgradeWalkTarget = nil
+    end
     self.watchManual = false
     self.manualPending = nil
     if self.manualMonitorConnection then
@@ -256,7 +271,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.9 | Auto Equip Best and crew-stat upgrades use game GUI. Test with diagnostics.",
+    Text = "V0.10 | Expanded GUI scan and holder approach. Auto Collect workflow preserved.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -1158,7 +1173,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.9 EQUIP / UPGRADE TARGETS | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.10 EQUIP / UPGRADE TARGETS | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -1207,7 +1222,7 @@ end
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.9 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.10 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoEquip=" .. tostring(controller.equip) .. " autoUpgrade=" .. tostring(controller.upgrade))
@@ -1457,7 +1472,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.9 started | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.10 started | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
