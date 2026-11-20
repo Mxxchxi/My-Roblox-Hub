@@ -650,8 +650,8 @@ assert(not first.sell and first.sellPhase=="OFF", "sell route OFF did not stop")
 -- LIVE V0.17 REGRESSION: Auto Collect just opened MineGui/ChestFrame,
 -- then Auto Sell was enabled. Chest modal makes TeleportButton hidden.
 -- Allow Take All to settle instead of prematurely declaring Teleport missing.
-local activeChest=instance("Frame")
-activeChest.Name="ChestFrame";activeChest.Visible=true;activeChest.Parent=mineGui
+local activeChest=nativeChest
+activeChest.Visible=true
 local teleBeforeHandoff=teleClicks
 teleport.Visible=false
 findButton("AutoSell").Activated:Fire()
