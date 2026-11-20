@@ -1479,7 +1479,10 @@ local function nativeAutoSellState(button)
     return "UNKNOWN"
 end
 
-local function tryNativeAutoSell()
+-- A toggle is clicked only when its current ON/OFF state is explicitly
+-- readable. Without that evidence a click could disable an already active
+-- Auto Sell, so report unknown rather than guessing.
+local function setNativeAutoSell(desired)
     if type(firesignal) ~= "function" then return false, "FIRESIGNAL_UNAVAILABLE" end
     local buttons, labels = scanNativeAutoSell()
     if #buttons == 0 then
@@ -1501,25 +1504,33 @@ local function tryNativeAutoSell()
     local button = choice.button
     controller.sellTarget = describe(button)
     controller.sellEvent = choice.event
-    controller.sellInitialState = nativeAutoSellState(button)
-    controller.sellLastObservedState = controller.sellInitialState
+    local state = nativeAutoSellState(button)
+    controller.sellInitialState = state
+    controller.sellLastObservedState = state
 
-    if controller.sellInitialState == "ON" then
+    if state == desired then
         controller.sellSent = true
-        return true, "AUTO_SELL_UI_ALREADY_ON (selling not verified)"
+        return true, "AUTO_SELL_UI_ALREADY_" .. desired .. " (ore sales not verified)"
+    end
+    if state == "UNKNOWN" then
+        return false, "AUTO_SELL_STATE_UNKNOWN (no toggle sent)"
     end
 
-    -- One signal per enable cycle at most: clicking an unknown toggle twice
-    -- may turn it back OFF. Never infer an ore sale from firesignal returning OK.
+    -- At most one signal per enable/disable action, never assume that pcall
+    -- means server accepted the sale or that a currency balance changed.
     controller.sellSent = true
     controller.sellAttempts = controller.sellAttempts + 1
     local ok, err = pcall(firesignal, button[choice.event])
     if ok then
         controller.sellCallsOK = controller.sellCallsOK + 1
         controller.sellLastObservedState = nativeAutoSellState(button)
-        return true, "AUTO_SELL_TOGGLE_SENT (selling not verified)"
+        return true, "AUTO_SELL_SWITCH_TO_" .. desired .. "_SENT (selling unverified)"
     end
     return false, "AUTO_SELL_SIGNAL_ERROR: " .. tostring(err)
+end
+
+local function tryNativeAutoSell()
+    return setNativeAutoSell("ON")
 end
 
 local function resolveUpgradeFeedback(now)
@@ -1879,10 +1890,13 @@ connect(sellButton.Activated, function()
         scanNativeAutoSell()
         writeLog("AUTO SELL ORES armed (native Chest Auto Sell only; no game panel opens).")
     else
-        -- Do not blindly flip a native toggle when its current state is unknown.
-        -- OFF only stops hub automation; the game's own toggle may remain ON.
-        controller.sellStage = "OFF (game Auto Sell state may persist)"
-        writeLog("AUTO SELL ORES monitor OFF. If native Auto Sell was enabled, verify and disable it in-game.")
+        local ok, stage = setNativeAutoSell("OFF")
+        controller.sellStage = stage
+        if not ok then
+            writeLog("AUTO SELL ORES monitor OFF; native state not verified: " .. stage)
+        else
+            writeLog("AUTO SELL ORES disable request: " .. stage)
+        end
     end
     refreshStatus()
 end)
