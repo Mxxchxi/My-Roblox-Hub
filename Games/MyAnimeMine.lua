@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.4 (Take All feedback and click-event diagnostics)
+-- My Roblox Hub | My Anime Mine v0.5 (Chest item-count feedback)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -52,6 +52,10 @@ local controller = {
     takeAllAttempts = 0,
     takeAllPending = nil,
     takeAllNoChange = 0,
+    takeAllNotDecreased = 0,
+    lastChestCountBefore = nil,
+    lastChestCountAfter = nil,
+    lastChestCountDelta = nil,
     takeAllOutcome = "NOT TESTED",
     takeAllLastEvent = "none",
     takeAllMethodIndex = 1,
@@ -206,7 +210,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.4 | Select your plot. Collect tracks Take All UI feedback; no reward proof yet.",
+    Text = "V0.5 | Compare Chest item count before/after Take All. Inventory confirmation still required.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -576,6 +580,30 @@ local function chestSnapshot(button)
     return table.concat(fields, " | ")
 end
 
+-- Extract the left-hand item count from the Chest label, e.g. "15/183.9K Items".
+-- This is a UI metric, NOT the player's inventory or confirmed reward.
+local function chestItemCount(button)
+    local root = button
+    while root and root ~= playerGui and root.Name ~= "ChestFrame" do
+        root = root.Parent
+    end
+    if not root or root == playerGui then return nil end
+    for _, node in ipairs(root:GetDescendants()) do
+        if node:IsA("TextLabel") or node:IsA("TextButton") then
+            local text = tostring(node.Text or "")
+            if text:lower():find("items", 1, true) then
+                local count = text:match("^%s*([%d,]+)%s*/")
+                if count then
+                    local cleaned = count:gsub(",", "")
+                    local parsed = tonumber(cleaned)
+                    if parsed then return parsed end
+                end
+            end
+        end
+    end
+    return nil
+end
+
 local function takeAllConnections(button)
     local counts = { Activated = "?", MouseButton1Click = "?" }
     if type(getconnections) ~= "function" then return counts end
@@ -613,34 +641,67 @@ local function settleTakeAll(now)
     local pending = controller.takeAllPending
     if not pending or now - pending.sentAt < 2.5 then return end
     controller.takeAllPending = nil
+
     local visible = pending.button.Parent and isVisible(pending.button)
-    local newSnapshot = pending.button.Parent and chestSnapshot(pending.button) or "BUTTON_REMOVED"
-    if not visible then
-        controller.takeAllOutcome = "BUTTON_HIDDEN (not verified ore)"
-        controller.takeAllNoChange = 0
-    elseif newSnapshot ~= pending.before then
-        controller.takeAllOutcome = "CHEST_UI_CHANGED (not verified ore)"
+    local afterSnapshot = pending.button.Parent and chestSnapshot(pending.button) or "BUTTON_REMOVED"
+    local afterCount = pending.button.Parent and chestItemCount(pending.button) or nil
+    local beforeCount = pending.beforeCount
+    controller.lastChestCountBefore = beforeCount
+    controller.lastChestCountAfter = afterCount
+    controller.lastChestCountDelta = nil
+    local countDecrease = false
+
+    if beforeCount ~= nil and afterCount ~= nil then
+        local delta = afterCount - beforeCount
+        controller.lastChestCountDelta = delta
+        if delta < 0 then
+            countDecrease = true
+            controller.takeAllOutcome = "CHEST_COUNT_DECREASED (possible collection, NOT inventory proof)"
+        elseif delta > 0 then
+            controller.takeAllOutcome = "CHEST_COUNT_INCREASED (possible mining/refill)"
+        else
+            controller.takeAllOutcome = "CHEST_COUNT_UNCHANGED"
+        end
+    elseif not visible then
+        controller.takeAllOutcome = "BUTTON_HIDDEN (count unavailable)"
+    elseif afterSnapshot ~= pending.before then
+        controller.takeAllOutcome = "CHEST_UI_CHANGED (item count unavailable)"
+    else
+        controller.takeAllOutcome = "NO_CHEST_UI_CHANGE (item count unavailable)"
+    end
+
+    if countDecrease then
+        controller.takeAllNotDecreased = 0
         controller.takeAllNoChange = 0
     else
-        controller.takeAllOutcome = "NO_CHEST_UI_CHANGE"
-        controller.takeAllNoChange = controller.takeAllNoChange + 1
-        controller.takeAllMethodIndex = controller.takeAllMethodIndex == 1 and 2 or 1
+        controller.takeAllNotDecreased = controller.takeAllNotDecreased + 1
+        if afterSnapshot == pending.before then
+            controller.takeAllNoChange = controller.takeAllNoChange + 1
+        else
+            controller.takeAllNoChange = 0
+        end
+        -- Keep the event with an actual connection rather than alternating away from it.
+        if type(getconnections) ~= "function" then
+            controller.takeAllMethodIndex = controller.takeAllMethodIndex == 1 and 2 or 1
+        end
     end
+
     writeLog("Take All feedback: " .. controller.takeAllOutcome ..
-        " | event=" .. pending.event .. " | no-change=" .. controller.takeAllNoChange)
+        " | chest count " .. tostring(beforeCount) .. " -> " .. tostring(afterCount) ..
+        " | event=" .. pending.event ..
+        " | without-count-decrease=" .. controller.takeAllNotDecreased)
     if controller.collect and
-        (controller.takeAllNoChange >= 2 or controller.takeAllAttempts >= 6) then
+        (controller.takeAllNotDecreased >= 3 or controller.takeAllAttempts >= 6) then
         controller.collect = false
         stopWalking()
-        controller.collectionStage = "PAUSED: Take All result unverified. Inspect chest/ore and COPY TARGET DIAGNOSTICS."
-        writeLog("Auto Collect PAUSED to avoid repeatedly clicking Take All without confirmed effect.")
+        controller.collectionStage = "PAUSED: Take All has no verified inventory result. Inspect chest and inventory."
+        writeLog("Auto Collect PAUSED after bounded Take All checks. Compare actual inventory manually.")
     end
 end
-
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.4 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.5 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect))
     append(("Targets: rocks=%d prompts=%d TakeAll=%d"):format(
@@ -669,12 +730,17 @@ local function diagnosticReport()
     append("TakeAll feedback=" .. tostring(controller.takeAllOutcome) ..
         " | lastEvent=" .. tostring(controller.takeAllLastEvent) ..
         " | noChange=" .. tostring(controller.takeAllNoChange) ..
+        " | withoutCountDecrease=" .. tostring(controller.takeAllNotDecreased) ..
         " | pending=" .. tostring(controller.takeAllPending ~= nil))
+    append("Chest count before=" .. tostring(controller.lastChestCountBefore) ..
+        " after=" .. tostring(controller.lastChestCountAfter) ..
+        " delta=" .. tostring(controller.lastChestCountDelta))
     if button then
         local connections = takeAllConnections(button)
         append("TakeAll event connections (getconnections; '?' means unavailable): Activated=" ..
             tostring(connections.Activated) .. " MouseButton1Click=" ..
             tostring(connections.MouseButton1Click))
+        append("Chest count NOW=" .. tostring(chestItemCount(button)) .. " (UI count, not inventory)")
         append("Chest UI labels (read-only, truncated): " .. chestSnapshot(button):sub(1, 1600))
     end
     append("Executor: fireclickdetector=" .. tostring(type(fireclickdetector) == "function")
@@ -691,7 +757,7 @@ local function diagnosticReport()
         local item = controller.takeAllButtons[i]
         append("TakeAll " .. i .. ": " .. describe(item) .. " | visible=" .. tostring(isVisible(item)))
     end
-    append("NOTE: UI feedback is weak evidence only. Verify actual ore/inventory manually.")
+    append("NOTE: Chest count change is NOT inventory proof; mining/refill can happen during the click. Verify actual inventory manually.")
     return table.concat(out, "\n")
 end
 
@@ -749,6 +815,10 @@ connect(collectButton.Activated, function()
     controller.collect = not controller.collect
     if controller.collect then
         controller.takeAllNoChange = 0
+        controller.takeAllNotDecreased = 0
+        controller.lastChestCountBefore = nil
+        controller.lastChestCountAfter = nil
+        controller.lastChestCountDelta = nil
         controller.takeAllPending = nil
         controller.takeAllMethodIndex = 1
         controller.takeAllAttempts = 0
@@ -788,7 +858,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.4 started | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.5 started | toggles OFF | PlaceId 79389059854988")
 writeLog("Set your plot near UpgradeClick, then enable Auto Collect; enable Walk to Chest to approach.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
@@ -845,17 +915,26 @@ task.spawn(function()
                     controller.takeAllLastEvent = eventName
                     controller.takeAllAttempts = controller.takeAllAttempts + 1
                     local snapshot = chestSnapshot(button)
-                    local ok, err = pcall(firesignal, button[eventName])
-                    if ok then
-                        controller.takeAllActions = controller.takeAllActions + 1
-                        controller.takeAllPending = {
-                            button = button, before = snapshot, sentAt = now, event = eventName,
-                        }
-                        action = "TAKE ALL dispatched (" .. eventName .. ") " .. describe(button) ..
-                            " | connections=" .. tostring(counts[eventName])
+                    local beforeCount = chestItemCount(button)
+                    -- Avoid clicking an already-empty chest.
+                    if beforeCount == 0 then
+                        controller.takeAllAttempts = controller.takeAllAttempts - 1
+                        controller.collectionStage = "Chest empty: wait for mined items"
+                        action = "CHEST EMPTY, Take All not dispatched"
                     else
-                        action = "Take All " .. eventName .. " ERROR " .. tostring(err)
-                        controller.takeAllOutcome = "DISPATCH_ERROR"
+                        local ok, err = pcall(firesignal, button[eventName])
+                        if ok then
+                            controller.takeAllActions = controller.takeAllActions + 1
+                            controller.takeAllPending = {
+                                button = button, before = snapshot, beforeCount = beforeCount,
+                                sentAt = now, event = eventName,
+                            }
+                            action = "TAKE ALL dispatched (" .. eventName .. ") " .. describe(button) ..
+                                " | connections=" .. tostring(counts[eventName])
+                        else
+                            action = "Take All " .. eventName .. " ERROR " .. tostring(err)
+                            controller.takeAllOutcome = "DISPATCH_ERROR"
+                        end
                     end
                 end
             else
