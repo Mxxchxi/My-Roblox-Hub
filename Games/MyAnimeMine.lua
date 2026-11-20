@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.15 (SellStand-bound SellFrame SellButton)
+-- My Roblox Hub | My Anime Mine v0.16 (Select All then Sell at SellStand)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -53,6 +53,12 @@ local controller = {
     sellLastDistance = nil,
     sellMoveTarget = nil,
     sellActionTarget = "none",
+    sellSelectAllTarget = "none",
+    sellSelectAllAttempts = 0,
+    sellSelectAllCallsOK = 0,
+    sellSelectAllSent = false,
+    sellSelectAllAt = 0,
+    sellSelectAllEvent = "none",
     sellNoGameUIPurchase = true,
     sellCandidates = {},
     sellLabels = {},
@@ -317,7 +323,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.15 | Shops > SellStand > verified SellFrame/SellButton.",
+    Text = "V0.16 | Shops > SellStand > Select All > Sell.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -1682,12 +1688,69 @@ end
 -- SellStand/GingerbreadKeeper/UpperTorso/SellPrompt opened
 -- MineGui/SellFrame/Content/SellButton (MouseButton1Click listener 1).
 -- The bare SellButton is only actionable after this exact vendor interaction.
-local function validatedSellStandSession()
-    return controller.sell and controller.sellPhase == "SELL_MENU"
+local function sellMenuSessionReady()
+    return controller.sell
+        and (controller.sellPhase == "SELECT_ALL" or controller.sellPhase == "SELL_MENU")
         and controller.sellVendorAttempts >= 1
         and type(controller.sellVendorPath) == "string"
+        and (controller.sellVendorPath:find("SellStand/", 1, true) ~= nil
+            or controller.sellVendorPath:find("SellItemsStand/", 1, true) ~= nil)
+end
+
+local function validatedSellStandSession()
+    return sellMenuSessionReady()
         and controller.sellVendorPath:find(
             "SellStand/GingerbreadKeeper/UpperTorso/SellPrompt", 1, true) ~= nil
+end
+
+local function knownOreSellFrame()
+    local mine = playerGui:FindFirstChild("MineGui")
+    local frame = mine and mine:FindFirstChild("SellFrame")
+    if not frame or not isVisible(frame) then return nil, nil end
+    local content = frame:FindFirstChild("Content")
+    if not content or not isVisible(content) then return nil, nil end
+    -- The seller must not be reused for pets, equipment, or other inventory.
+    for _, item in ipairs(frame:GetDescendants()) do
+        if item:IsA("TextLabel") or item:IsA("TextButton") then
+            local t=normalizeLabel(item.Name.." "..textOf(item))
+            if t:find("sellcharacters",1,true)
+                or t:find("sellunits",1,true)
+                or t:find("sellpets",1,true)
+                or t:find("sellequipment",1,true)
+                or t:find("sellweapons",1,true) then return nil,nil end
+        end
+    end
+    return frame, content
+end
+
+local function sellSelectAllButton()
+    if not sellMenuSessionReady() then return nil, 0 end
+    local frame, content = knownOreSellFrame()
+    if not frame or not content then return nil,0 end
+    local candidates={}
+    for _, button in ipairs(content:GetDescendants()) do
+        if gameGuiButton(button) and isVisible(button) and not isPremiumAction(button) then
+            local name = normalizeLabel(button.Name)
+            local label = normalizeLabel(textOf(button))
+            local matches = name == "selectall" or name == "selectallbutton"
+                or name == "selectallores" or name == "selectalloresbutton"
+                or label == "selectall" or label == "selectallores"
+            -- Game layouts may render the text on a nested TextLabel.
+            if not matches then
+                for _, child in ipairs(button:GetDescendants()) do
+                    if child:IsA("TextLabel") then
+                        local inner = normalizeLabel(textOf(child))
+                        if inner == "selectall" or inner == "selectallores" then
+                            matches=true
+                            break
+                        end
+                    end
+                end
+            end
+            if matches then candidates[#candidates+1] = button end
+        end
+    end
+    return #candidates==1 and candidates[1] or nil, #candidates
 end
 
 local function isExactSellStandButton(button)
@@ -1696,22 +1759,13 @@ local function isExactSellStandButton(button)
     local content=button.Parent
     local frame=content and content.Parent
     local mine=frame and frame.Parent
-    if not content or content.Name ~= "Content"
-        or not frame or frame.Name ~= "SellFrame"
-        or not mine or mine.Name ~= "MineGui" or mine.Parent ~= playerGui
-        or isPremiumAction(button) then return false end
-    -- Exclude non-ore sale UI if this frame is ever reused.
-    for _, item in ipairs(frame:GetDescendants()) do
-        if item:IsA("TextLabel") or item:IsA("TextButton") then
-            local t=normalizeLabel(item.Name.." "..textOf(item))
-            if t:find("sellcharacters",1,true)
-                or t:find("sellunits",1,true)
-                or t:find("sellpets",1,true)
-                or t:find("sellequipment",1,true)
-                or t:find("sellweapons",1,true) then return false end
-        end
-    end
-    return validatedSellStandSession()
+    local safeFrame, safeContent=knownOreSellFrame()
+    return content and content.Name == "Content"
+        and frame and frame.Name == "SellFrame"
+        and mine and mine.Name == "MineGui" and mine.Parent == playerGui
+        and safeFrame == frame and safeContent ~= nil
+        and not isPremiumAction(button)
+        and validatedSellStandSession()
 end
 
 local function oreSellButton()
@@ -1842,7 +1896,7 @@ local function shopSellStep(now)
         if vendor.distance <= required then
             sellStopWalk()
             if vendor.type == "marker" then
-                sellSetPhase("SELL_MENU","Reached Sell stand marker; checking touch-opened Sell GUI",now)
+                sellSetPhase("SELECT_ALL","Reached Sell stand marker; locating Select All",now)
                 return
             end
             if vendor.maxRange <= 0 then
@@ -1859,7 +1913,7 @@ local function shopSellStep(now)
                 return
             end
             controller.sellVendorAttempts = controller.sellVendorAttempts + 1
-            if ok then sellSetPhase("SELL_MENU","Sell stand interaction sent; looking for ore-only Sell action",now)
+            if ok then sellSetPhase("SELECT_ALL","Sell stand opened; locating Select All",now)
             else sellSetPhase("PAUSED","Sell stand action error: "..tostring(reason),now) end
             return
         end
@@ -1897,7 +1951,40 @@ local function shopSellStep(now)
         controller.sellStage = ("Walking to Sell Items %.1f studs"):format(vendor.distance)
         return
     end
+    if phase == "SELECT_ALL" then
+        local selectAll,count=sellSelectAllButton()
+        if selectAll then
+            controller.sellSelectAllTarget=describe(selectAll)
+            controller.sellSelectAllAttempts=controller.sellSelectAllAttempts+1
+            local ok,reason=sellClick(selectAll)
+            controller.sellSelectAllEvent=reason
+            if ok then
+                controller.sellSelectAllCallsOK=controller.sellSelectAllCallsOK+1
+                controller.sellSelectAllSent=true
+                controller.sellSelectAllAt=now
+                sellSetPhase("SELL_MENU","Select All click sent ("..reason.."); next: Sell",now)
+            else
+                sellSetPhase("PAUSED","Select All click error: "..reason,now)
+            end
+        elseif count>1 then
+            sellSetPhase("PAUSED","Multiple Select All controls in SellFrame; no click",now)
+        elseif now-controller.sellPhaseAt>14 then
+            sellSetPhase("PAUSED","Select All not found in SellFrame/Content; no Sell sent",now)
+        else
+            controller.sellStage="Waiting for Select All in SellFrame"
+        end
+        return
+    end
     if phase == "SELL_MENU" then
+        if not controller.sellSelectAllSent or controller.sellSelectAllCallsOK < 1 then
+            sellSetPhase("PAUSED","Sell refused: Select All was not dispatched",now)
+            return
+        end
+        -- Allow the game to apply the selection before selling.
+        if now-controller.sellSelectAllAt < 0.8 then
+            controller.sellStage="Waiting for Select All selection to settle"
+            return
+        end
         local action,count,kind = oreSellButton()
         if action then
             controller.sellActionTarget = describe(action)
@@ -1944,7 +2031,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.15 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.16 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -2098,7 +2185,7 @@ end
 
 local function sellRouteDiagnosticReport()
     local lines={
-        "MY ANIME MINE V0.15 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.16 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
         "PlaceId="..tostring(game.PlaceId)..
             " | autoSell="..tostring(controller.sell)..
             " | autoCollect="..tostring(controller.collect)..
@@ -2158,7 +2245,7 @@ end
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.15 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.16 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
@@ -2363,6 +2450,13 @@ connect(sellButton.Activated, function()
         controller.sellWalkAttempts = 0
         controller.sellVendorPath = "none"
         controller.sellActionTarget = "none"
+        controller.sellSelectAllTarget = "none"
+        controller.sellSelectAllAttempts = 0
+        controller.sellSelectAllCallsOK = 0
+        controller.sellSelectAllSent = false
+        controller.sellSelectAllAt = 0
+        controller.sellSelectAllEvent = "none"
+        controller.sellActionKind = nil
         controller.sellWarpOrigin = nil
         local now = os.clock()
         controller.sellStartedAt = now
@@ -2470,7 +2564,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.15 started | validated SellStand button | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.16 started | Select All before Sell | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
