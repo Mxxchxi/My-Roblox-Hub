@@ -1,4 +1,4 @@
-# My Anime Mine (v0.11)
+# My Anime Mine (v0.12)
 
 - Roblox game: https://www.roblox.com/games/79389059854988/My-Anime-Mine
 - PlaceId: `79389059854988`
@@ -14,17 +14,17 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 
 ## Features and limitations
 
-- **V0.11 live-log fix:** The actual game Inventory opener is a **TextButton named `TextButton` inside `MineGui/HotbarFrame/Content/Container/InventoryButton`**, with one `MouseButton1Click` listener. The script now recognizes this precise ancestry and can attempt to open Inventory when Auto Equip Best is ON. Opening Inventory is not proof that the game exposes or applies Equip Best; capture fresh target diagnostics after the menu appears.
-- **Miner Holder selection:** Live diagnostics on MinePlot3 showed 17 Holder UpgradeClicks; M4 and M5 were ~23.9 studs away with a 24-stud activation range, and nine holders had range 0. The script now processes a newly detected Plot in the same Auto Upgrade tick and records the last tick and Holder click target to distinguish a startup status from failure. Range 0 is never clicked or approached.
-- **Game-wide Upgrades are distinct:** `MineGui/LeftBar/Content/Container/UpgradesButton` opens a separate `MineGui/UpgradesFrame` containing Tap, Chest capacity, Miner slots, Hauler slots and Slot damage upgrades. This V0.11 miner Stats toggle **does not purchase from that menu**. The menu is listed in diagnostics for later explicit selection, avoiding unexpected spending on unrelated upgrades.
-- The diagnostic now lists meaningful hidden Inventory/Equip/Upgrade controls without being crowded out by dozens of repeated hidden Inventory cards.
+- **Headless-only Equip/Upgrade (V0.12):** when AUTO EQUIP BEST or AUTO UPGRADE STATS is ON, the hub never attempts to open the game's Inventory, Stats, Holders, or Upgrades panels. Auto Collect remains unchanged.
+- **Equip Best without showing a game panel:** if a *game-native* Equip Best button and a real click listener are already loaded under `MineGui/InventoryFrame` (even when that frame is hidden), the hub can emit that existing signal without displaying Inventory. This is only a best-effort client-side dispatch and may not produce an equipment change; no success is inferred.
+- **Upgrade without showing a game panel:** this requires the game's actual server command and parameters. They are **not contained in existing diagnostics**. The hub does NOT make up Remote arguments or silently click Holder/Stats/Buy controls. It reports `HEADLESS_PROTOCOL_UNKNOWN` until the correct API is identified.
+- **Remote discovery:** `COPY EQUIP / UPGRADE TARGETS` includes a read-only list of plausible RemoteEvents/RemoteFunctions from ReplicatedStorage. Discovery does not call `FireServer` or `InvokeServer`, and a name alone does not establish a safe argument signature.
 
 
-- **V0.11 troubleshooting:** **COPY EQUIP / UPGRADE TARGETS** now includes all visible game TextButtons and ImageButtons (up to 70), hidden UI candidates (up to 70), button paths/context, and every detected Holder's real distance and MaxActivationDistance. If Equip Best is still not found, open the game's Inventory manually and recopy diagnostics to identify its real button hierarchy; do not guess server remote calls.
-- **Auto Upgrade movement:** the script scans all selected-plot `Holders/*/UpgradeClick` detectors directly even when outside activation range and approaches a nearby Holder with bounded natural `Humanoid:MoveTo` (up to 120 studs, 11s no-progress cutoff). Auto Collect is briefly suspended *only during the approach* to avoid conflicting movement commands and resumes afterward. Holder ownership remains based on the auto-selected plot and is not independently verified.
-- **AUTO EQUIP BEST** (OFF by default): searches for the game's Equip Best GUI control and triggers its existing click listener periodically. When not visible, tries opening the game's Inventory menu once per enable cycle. No undocumented remote signatures are used. The click and equipment changes require live verification.
-- **AUTO UPGRADE STATS** (OFF by default): tries UpgradeClick detectors on miners (Holders) in the selected plot, opens the miner's Stats tab when detected, and selects only character Damage, Speed, and Mining Speed upgrade GUI controls. Excludes candidates with Robux, gamepass, premium, purchase, shop, or research hints, and does not automate Research Tree purchases. Clicking a game UI upgrade can spend in-game currency; no Robux actions are intentionally targeted. The script pauses after three unchanged UI attempts or 80 attempts per cycle. The live GUI hierarchy is not yet confirmed and may require adapting from an in-game diagnostic.
-- Two independent toggles leave the previously working Auto Collect behavior unchanged. When a Chest is open these new workflows defer UI actions.
+- **Historical V0.11 diagnostics:** The game's textless Hotbar Inventory launcher and a separate UpgradesButton were identified, but V0.12 does not automatically click them. A prior Plot inspection found Holder detectors, but V0.12 no longer approaches or clicks them in headless mode.
+- **Target diagnostics:** copy visible/hidden GUI control paths and read-only remote names to identify a direct backend protocol without guessing a purchase method.
+- **AUTO EQUIP BEST** (OFF by default): checks already-loaded game-native hidden Equip Best listeners without clicking the Inventory opener. Never opens Inventory in V0.12; if no listener exists, reports HEADLESS_TARGET_UNKNOWN. Any equipment change still needs live verification.
+- **AUTO UPGRADE STATS** (OFF by default): runs in headless discovery mode. It does not open a Holder or Stats window and does not buy upgrades until the game's exact server-side upgrade command and parameters can be verified. This prevents guessing routes for purchases involving game currency or premium products.
+- Two independent toggles leave the previously working Auto Collect behavior unchanged. Headless action probes do not navigate to Holder or open any game GUI window.
 - **COPY EQUIP / UPGRADE TARGETS** reports candidate game GUI paths, readable labels, click listener counts, selected holder, action stages, and dispatch statistics. If a target is missing or an upgrade does not take effect, paste this copied report.
 
 
@@ -55,6 +55,10 @@ For reporting a failure: enter the actual game, select SCAN GAME, select COPY LO
 ## Regression checklist
 
 - [ ] UI loads when entering My Anime Mine.
+- [ ] Enabling Auto Equip/Upgrade does not click InventoryButton, UpgradesButton, Holder UpgradeClick or Stats tab automatically.
+- [ ] A hidden native MineGui/InventoryFrame Equip Best button with an attached listener can receive a signal without opening the frame.
+- [ ] Unknown headless upgrade commands produce HEADLESS_PROTOCOL_UNKNOWN and do not invoke remotes or spend game currency.
+- [ ] COPY EQUIP / UPGRADE TARGETS includes read-only headless Remote names and reports whether a hidden native Equip Best listener exists.
 - [ ] Actual MineGui Hotbar InventoryButton/TextButton is recognized and clicked through MouseButton1Click when Auto Equip is ON and an Equip Best button is not already visible.
 - [ ] Upgrade continues target discovery immediately after plot selection; the diagnostic records the latest worker tick and Holder click attempted.
 - [ ] Base UpgradesButton is identified as a separate read-only target, not purchased automatically from miner Stats mode.

@@ -24,7 +24,15 @@ local function instance(className)
     local props = {ClassName = className, Name = className, Visible = true, Enabled = true, children = {}, events = {}}
     local obj = {}
     local methods = {}
-    function methods:IsA(kind) return kind == props.ClassName end
+    function methods:IsA(kind)
+        if kind == props.ClassName then return true end
+        if kind == "GuiObject" then
+            return props.ClassName == "Frame" or props.ClassName == "TextButton"
+                or props.ClassName == "ImageButton" or props.ClassName == "TextLabel"
+                or props.ClassName == "ImageLabel"
+        end
+        return false
+    end
     function methods:GetChildren()
         local list = {}
         for _, value in ipairs(props.children) do list[#list + 1] = value end
@@ -165,7 +173,7 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking}"
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip}"
     local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
     return assert(env.MyAnimeMineHubController), helpers
 end
@@ -254,6 +262,25 @@ leftContainer.Parent = leftContent
 local baseUpgradeLauncher = instance("TextButton")
 baseUpgradeLauncher.Name = "UpgradesButton"; baseUpgradeLauncher.Parent = leftContainer
 
+-- Game-native hidden Equip Best button: simulate a loaded client callback
+-- that can be fired without displaying the InventoryFrame.
+local hiddenInventoryFrame = instance("Frame")
+hiddenInventoryFrame.Name = "InventoryFrame"
+hiddenInventoryFrame.Visible = false
+hiddenInventoryFrame.Parent = mineGui
+local hiddenEquipBest = instance("TextButton")
+hiddenEquipBest.Name = "EquipBestButton"
+hiddenEquipBest.Text = "Equip Best"
+hiddenEquipBest.Parent = hiddenInventoryFrame
+local hiddenEquipClicks = 0
+hiddenEquipBest.MouseButton1Click:Connect(function()
+    hiddenEquipClicks = hiddenEquipClicks + 1
+end)
+-- Read-only discovery can inspect a remote but must never invoke it.
+local candidateRemote = instance("RemoteEvent")
+candidateRemote.Name = "EquipBestRemote"
+candidateRemote.Parent = replicatedStorage
+
 local statsGui = instance("ScreenGui")
 statsGui.Name = "UnitGui"
 statsGui.Parent = playerGui
@@ -314,6 +341,24 @@ assert(okEquip and equipEvent == "MouseButton1Click" and equipClicks == 1,
 local realOk, _, realEvent = helpers.dispatchGameButton(realInventoryLauncher)
 assert(realOk and realEvent == "MouseButton1Click" and realInventoryClicks == 1,
        "actual MineGui Hotbar InventoryButton/TextButton must dispatch GUI click")
+local availableHidden = helpers.hiddenEquipBestCandidates()
+assert(#availableHidden == 1 and availableHidden[1] == hiddenEquipBest,
+       "headless lookup must find a game-native hidden Equip Best callback")
+local openerClicksBefore = realInventoryClicks
+local hiddenOk, hiddenStatus = helpers.tryHeadlessEquip()
+assert(hiddenOk and hiddenStatus:find("HIDDEN_EQUIP_SIGNAL_SENT", 1, true)
+       and hiddenEquipClicks == 1 and realInventoryClicks == openerClicksBefore
+       and hiddenInventoryFrame.Visible == false,
+       "headless equip must NOT open Inventory or use its opener")
+local remoteList = helpers.headlessRemotes()
+assert(#remoteList == 1 and remoteList[1].name == "EquipBestRemote",
+       "headless remote discovery must report real names without invoking them")
+findButton("ActionDiagnostics").Activated:Fire()
+assert(clipboard:find("HEADLESS REMOTE DISCOVERY", 1, true)
+       and clipboard:find("EquipBestRemote", 1, true)
+       and clipboard:find("Headless loaded Equip Best buttons=1", 1, true),
+       "headless diagnostic missing remote and hidden-target details")
+
 local okUpgrade, _, upgradeEvent = helpers.dispatchGameButton(upgradeDamage)
 assert(okUpgrade and upgradeEvent == "MouseButton1Click" and damageClicks == 1,
        "Upgrade signal did not trigger real game click handler")
@@ -567,4 +612,4 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.11 actual MineGui Inventory launcher, Upgrades menu scan, Holder, Equip, Collect")
+print("PASS My Anime Mine V0.12 headless hidden Equip Best, read-only Remotes, and unchanged Collect lifecycle")
