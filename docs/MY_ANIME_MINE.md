@@ -1,4 +1,4 @@
-# My Anime Mine (v0.7)
+# My Anime Mine (v0.8)
 
 - Roblox game: https://www.roblox.com/games/79389059854988/My-Anime-Mine
 - PlaceId: `79389059854988`
@@ -17,12 +17,12 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 - Scans nearby `ClickDetector` instances associated with rock/ore names.
 - Scans nearby `ProximityPrompt` instances associated with collecting/chests.
 - Auto Mine attempts nearby `fireclickdetector` interactions on a timer **only when manually enabled**.
-- Auto Collect targets the **explicitly selected plot only**. From near your own plot upgrade marker, click **SET MY PLOT**, and confirm the suggested `MinePlotN`. Enable **AUTO COLLECT**. At close range it attempts the selected plot ChestPrompt and a visible **Take All** button via executor interaction APIs. For a distant chest, separately turn **WALK TO CHEST: ON** to allow bounded natural `Humanoid:MoveTo` (no teleport, limited to 145 studs with blocked detection).
+- **AUTO PLOT + AUTO WALK:** the script automatically chooses a nearby `MinePlotN` using the closest matching Chest and UpgradeClick marker, provided there is no ambiguous second candidate. It locks the selection for the session; it does **not** prove ownership. On **AUTO COLLECT: ON**, walking to that selected plot Chest is automatically enabled. It uses natural `Humanoid:MoveTo` (no teleport, bounded 145 studs, stops Collect after 11 seconds without movement progress). The manual `SET MY PLOT` and `WALK TO CHEST` controls have been removed.
 - Includes SCAN GAME, COPY LOG and **COPY TARGET DIAGNOSTICS** with target/range details, Take All signal connection counts (`Activated` and `MouseButton1Click`), a read-only Chest UI text snapshot, event method, and post-dispatch feedback. When `getconnections` is unavailable, the script alternates these two button signal types after inconclusive attempts.
-- Automation toggles and walking start **OFF**. The plot selection must be made each session. Close with X to stop workers and movement; rerun replaces the previous UI.
+- Automation toggles and walking start **OFF**. A plot is auto-discovered on startup, retrying when world objects load. Stand within 65 studs of your own upgrade marker and 75 studs of its Chest; if several plots are too close to distinguish, selection stays unset until you move closer. Close with X to stop workers and movement; rerun replaces the previous UI.
 - Press **LeftAlt** to minimize or restore the main window. When minimized, click the small **MY ANIME MINE [+]** restore control near the upper-left corner to reopen. Hiding the window leaves active automation toggles untouched. RightAlt does nothing.
 - Does **not** invoke undocumented remotes, buy items, sell ores/characters, auto-summon, assign crew, auto-upgrade research, or teleport.
-- Plot selection is based on proximity to an `UpgradeClick` detector, **not verified ownership**. Stand near your own plot and verify the plot number before turning on automation. If the Chest is unreachable, movement times out and turns WALK TO CHEST OFF rather than teleporting.
+- Plot selection is based on proximity to an `UpgradeClick` detector **and** ChestPrompt, **not verified ownership**. Stand near your own plot and inspect the auto-selected Plot number before enabling Auto Collect; it will not switch plots while operating. If walking stalls or MoveTo fails, automation turns OFF rather than teleporting or repeatedly walking forever.
 - A Take All signal call is evaluated after 2.5 seconds. A manually clicked Take All also closes the Chest, so automatic `CHEST_CLOSED_AFTER_TAKE_ALL` is no longer treated as an immediate failure. The script ignores stale closed-GUI values, waits **12 seconds** before attempting to open the selected Plot Chest again, and compares the fresh item count with its pre-click count. A lower count suggests collection but **does not prove inventory credit**; mining may occur concurrently. It pauses after **two inconclusive reopen comparisons** or **six Take All dispatches** per enable cycle, and still pauses after three unchanged open-Chest readings. Re-enable Auto Collect to reset the test cycle.
 - Interactions are experimental: the live game might mine through proprietary server remotes/UI rather than exposed detectors/prompts. A detected interaction **is not proof** of an ore/reward gain. The function is a starting point for in-game diagnostics, not a verified auto-farm.
 - Auto Mine requires `fireclickdetector`; Auto Collect requires `fireproximityprompt` or `firesignal` executor support. Successful function calls are **not** proof of an ore reward.
@@ -52,8 +52,8 @@ For reporting a failure: enter the actual game, select SCAN GAME, select COPY LO
 - [ ] Check the real inventory/ore after manual and automatic Take All; closing and count changes only provide UI evidence.
 - [ ] After Take All, verify actual ore balance manually; successful signal calls and visual UI changes alone are not proof.
 - [ ] Repeated unchanged GUI dispatches pause Auto Collect instead of endlessly firing signals.
-- [ ] SET MY PLOT only selects a nearby upgrade marker; confirm own plot.
+- [ ] Auto Plot requires a nearby UpgradeClick and matching ChestPrompt and leaves ownership unverified. Ambiguous/remote plots remain unselected.
 - [ ] Auto Collect does not target chests in unselected plots.
-- [ ] WALK TO CHEST approaches the selected chest with natural movement or reports a block; OFF stops movement.
+- [ ] Auto Collect ON automatically enables bounded walking; OFF stops walking; blocked or failed movement turns it OFF.
 - [ ] Executor exposes interaction functions and the selected rock/chest actually changes in-game.
 - [ ] Existing Roll A Stickman and Steal An Egg UIs still open from the same loader.
