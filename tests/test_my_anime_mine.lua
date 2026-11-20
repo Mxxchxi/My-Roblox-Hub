@@ -170,6 +170,23 @@ assert(clipboard and clipboard:find("TakeAll visible: ", 1, true), "target diagn
 findButton("AutoMine").Activated:Fire()
 findButton("AutoCollect").Activated:Fire()
 assert(first.mine and first.collect, "toggles not responsive")
+
+local main = assert(playerGui:FindFirstChild("MyAnimeMineHub"):FindFirstChild("Main"))
+local restore = findButton("RestoreWindow")
+assert(main.Visible and not restore.Visible and not first.minimized, "window should start expanded")
+local alt = {KeyCode = env.Enum.KeyCode.LeftAlt}
+input.InputBegan:Fire({KeyCode = env.Enum.KeyCode.RightAlt}, false)
+assert(main.Visible, "RightAlt must not minimize")
+input.InputBegan:Fire(alt, true)
+assert(main.Visible, "processed LeftAlt must not minimize")
+input.InputBegan:Fire(alt, false)
+assert(not main.Visible and restore.Visible and first.minimized, "LeftAlt did not minimize")
+assert(first.mine and first.collect, "minimizing must not change automation toggles")
+restore.Activated:Fire()
+assert(main.Visible and not restore.Visible and not first.minimized, "restore chip did not expand")
+input.InputBegan:Fire(alt, false)
+input.InputBegan:Fire(alt, false)
+assert(main.Visible and not restore.Visible, "LeftAlt must toggle open and closed")
 local second = run()
 assert(not first.running and second.running, "rerun did not clean up previous controller")
 local count = 0
@@ -178,7 +195,9 @@ for _, child in ipairs(playerGui:GetChildren()) do
 end
 assert(count == 1, "duplicate UI after rerun")
 assert(not second.mine and not second.collect, "rerun must begin OFF")
+assert(not second.minimized and findButton("RestoreWindow").Visible == false,
+    "rerun must restore expanded UI")
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine GUI startup, chest discovery, diagnostics, toggle, rerun, and cleanup")
+print("PASS My Anime Mine GUI startup, LeftAlt minimize/restore, automation retention, rerun, and cleanup")
