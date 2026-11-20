@@ -231,6 +231,29 @@ equipBest.Parent = inventoryGui
 local equipClicks = 0
 equipBest.MouseButton1Click:Connect(function() equipClicks = equipClicks + 1 end)
 
+-- Real V0.10 runtime GUI path supplied by the user: button text is empty,
+-- but the clickable TextButton is a descendant of InventoryButton.
+local mineGui = instance("ScreenGui"); mineGui.Name = "MineGui"; mineGui.Parent = playerGui
+local hotbarFrame = instance("Frame"); hotbarFrame.Name = "HotbarFrame"
+hotbarFrame.Parent = mineGui
+local hotbarContent = instance("Frame"); hotbarContent.Name = "Content"
+hotbarContent.Parent = hotbarFrame
+local hotbarContainer = instance("Frame"); hotbarContainer.Name = "Container"
+hotbarContainer.Parent = hotbarContent
+local inventoryFolder = instance("Frame"); inventoryFolder.Name = "InventoryButton"
+inventoryFolder.Parent = hotbarContainer
+local realInventoryLauncher = instance("TextButton")
+realInventoryLauncher.Name = "TextButton"; realInventoryLauncher.Text = ""
+realInventoryLauncher.Parent = inventoryFolder
+local realInventoryClicks = 0
+realInventoryLauncher.MouseButton1Click:Connect(function() realInventoryClicks = realInventoryClicks + 1 end)
+local leftBar = instance("Frame"); leftBar.Name = "LeftBar"; leftBar.Parent = mineGui
+local leftContent = instance("Frame"); leftContent.Name = "Content"; leftContent.Parent = leftBar
+local leftContainer = instance("Frame"); leftContainer.Name = "Container"
+leftContainer.Parent = leftContent
+local baseUpgradeLauncher = instance("TextButton")
+baseUpgradeLauncher.Name = "UpgradesButton"; baseUpgradeLauncher.Parent = leftContainer
+
 local statsGui = instance("ScreenGui")
 statsGui.Name = "UnitGui"
 statsGui.Parent = playerGui
@@ -270,8 +293,11 @@ upgradeResearch.Parent = researchRow
 helpers.scanActionButtons()
 assert(#first.equipCandidates == 1 and first.equipCandidates[1] == equipBest,
        "did not identify visible Equip Best game button")
-assert(#first.inventoryCandidates == 1 and first.inventoryCandidates[1] == inventoryOpen,
-       "did not identify Inventory opener")
+assert(#first.inventoryCandidates == 2 and first.inventoryCandidates[1] == inventoryOpen
+       and first.inventoryCandidates[2] == realInventoryLauncher,
+       "did not identify both named and actual textless Inventory openers")
+assert(#first.guiUpgradeMenu == 1 and first.guiUpgradeMenu[1] == baseUpgradeLauncher,
+       "found global Upgrades menu should stay read-only (not miner Stats)")
 assert(#first.statsCandidates == 1 and first.statsCandidates[1] == statsTab,
        "did not discover Stats tab")
 assert(helpers.isUpgradeAction(upgradeDamage) and helpers.isUpgradeAction(upgradeSpeed),
@@ -285,6 +311,9 @@ assert(#first.upgradeCandidates == 2 and helpers.statContext(upgradeDamage) == "
 local okEquip, _, equipEvent = helpers.dispatchGameButton(equipBest)
 assert(okEquip and equipEvent == "MouseButton1Click" and equipClicks == 1,
        "Equip Best signal did not trigger real game click handler")
+local realOk, _, realEvent = helpers.dispatchGameButton(realInventoryLauncher)
+assert(realOk and realEvent == "MouseButton1Click" and realInventoryClicks == 1,
+       "actual MineGui Hotbar InventoryButton/TextButton must dispatch GUI click")
 local okUpgrade, _, upgradeEvent = helpers.dispatchGameButton(upgradeDamage)
 assert(okUpgrade and upgradeEvent == "MouseButton1Click" and damageClicks == 1,
        "Upgrade signal did not trigger real game click handler")
@@ -321,13 +350,15 @@ hiddenEquip.Name = "EquipBestButton"
 hiddenEquip.Text = "Equip Best"
 hiddenEquip.Parent = hiddenGui
 helpers.scanActionButtons()
-assert(#first.inventoryCandidates == 2 and #first.equipCandidates == 1,
+assert(#first.inventoryCandidates == 3 and #first.equipCandidates == 1,
        "icon-only Inventory discovery failed or hidden Equip leaked into candidates")
 findButton("ActionDiagnostics").Activated:Fire()
 assert(clipboard:find("class=ImageButton", 1, true)
        and clipboard:find("HIDDEN GAME GUI CANDIDATES", 1, true)
-       and clipboard:find("SecondaryInventory", 1, true),
-       "expanded button diagnostic omitted icon-only or hidden GUI")
+       and clipboard:find("SecondaryInventory", 1, true)
+       and clipboard:find("GameUpgradesMenu", 1, true)
+       and clipboard:find("InventoryButton/TextButton", 1, true),
+       "expanded button diagnostic omitted real launcher, global Upgrades, or hidden GUI")
 findButton("Scan").Activated:Fire()
 findButton("CopyLog").Activated:Fire()
 assert(clipboard and clipboard:find("PlaceId 79389059854988", 1, true), "copy log unavailable")
@@ -536,4 +567,4 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.10 GUI image/hidden scan, Holder distance+MoveTo, Equip, Collect and UI lifecycle")
+print("PASS My Anime Mine V0.11 actual MineGui Inventory launcher, Upgrades menu scan, Holder, Equip, Collect")
