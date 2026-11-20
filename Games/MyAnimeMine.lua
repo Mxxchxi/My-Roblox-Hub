@@ -1890,8 +1890,12 @@ local function shopSellStep(now)
             controller.sellStage="Waiting briefly for Chest UI to settle"
             return
         end
-        controller.sellChestHandoffState=controller.sellHandoffChestEmpty
-            and "CHEST_EMPTY" or "COLLECT_FINISHED"
+        if controller.sellHandoffNeedsCollect then
+            controller.sellChestHandoffState=controller.sellHandoffChestEmpty
+                and "CHEST_EMPTY" or "COLLECT_FINISHED"
+        else
+            controller.sellChestHandoffState="CHEST_CLOSED"
+        end
         stopWalking()
         sellSetPhase("TELEPORT_OPEN","Chest clear; searching Teleport > Shops",now)
         return
