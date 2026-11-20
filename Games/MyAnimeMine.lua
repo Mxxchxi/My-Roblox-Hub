@@ -1028,20 +1028,21 @@ local function scanActionButtons()
             if gameGuiButton(item) and isVisible(item) then
                 count = count + 1
                 local label = normalizeLabel(actionLabel(item))
-                local named = normalizeLabel(item.Name .. " " .. textOf(item))
+                local named = normalizeLabel(item.Name)
+                local buttonText = normalizeLabel(textOf(item))
                 if label:find("equipbest", 1, true)
                     or named:find("bestcrew", 1, true) then
                     equip[#equip + 1] = item
                 elseif named == "inventory" or named == "inventorybutton"
                     or named == "openinventory" or named == "inventorytoggle"
-                    or named == "inventoryicon" then
+                    or named == "inventoryicon" or buttonText == "inventory" then
                     inventory[#inventory + 1] = item
                 end
                 if isUpgradeAction(item) then
                     upgrades[#upgrades + 1] = item
                 end
                 if named == "stats" or named == "statsbutton"
-                    or named == "statstab" then
+                    or named == "statstab" or buttonText == "stats" then
                     stats[#stats + 1] = item
                 end
             end
@@ -1074,7 +1075,11 @@ local function dispatchGameButton(button)
     if not button or not button.Parent or not isVisible(button) then
         return false, "GUI button hidden", "none"
     end
-    local event = chooseTakeAllEvent(button)
+    local event, connections = chooseTakeAllEvent(button)
+    if connections.Activated == 0 and connections.MouseButton1Click == 0
+        or (connections.Activated == "?" and connections.MouseButton1Click == "?") then
+        event = "MouseButton1Click"
+    end
     local ok, err = pcall(firesignal, button[event])
     return ok, ok and "dispatch only; result unverified" or tostring(err), event
 end
