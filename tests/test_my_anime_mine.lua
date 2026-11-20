@@ -173,7 +173,7 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, sellStopWalk=sellStopWalk, validatedSellStandSession=validatedSellStandSession, isExactSellStandButton=isExactSellStandButton, sellSelectAllButton=sellSelectAllButton, knownOreSellFrame=knownOreSellFrame}"
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, sellStopWalk=sellStopWalk, gameChestFrame=gameChestFrame, teleportLauncherCandidates=teleportLauncherCandidates, validatedSellStandSession=validatedSellStandSession, isExactSellStandButton=isExactSellStandButton, sellSelectAllButton=sellSelectAllButton, knownOreSellFrame=knownOreSellFrame}"
     local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
     return assert(env.MyAnimeMineHubController), helpers
 end
@@ -594,8 +594,11 @@ end
 local nativeClicksBefore=nativeSellClicks
 assert(helpers.shopsTeleportLauncher() == teleport, "TeleportButton not found")
 findButton("AutoSell").Activated:Fire()
-assert(first.sell and first.sellPhase=="TELEPORT_OPEN",
-       "Auto Sell must arm Shops route instead of native Chest Game Pass")
+assert(first.sell and first.sellPhase=="CHEST_HANDOFF",
+       "Auto Sell must check for an open Chest before touching Teleport")
+helpers.shopSellStep(8)
+assert(first.sellPhase=="TELEPORT_OPEN",
+       "no visible MineGui Chest and no pending Take All should permit Teleport")
 helpers.shopSellStep(10)
 assert(teleClicks==1 and first.sellPhase=="SHOPS_PICK",
        "route must open Teleport destination")
@@ -635,7 +638,7 @@ assert(clipboard:find("SHOP SELL ROUTE",1,true)
        and clipboard:find("Ore-only Sell candidates=",1,true),
        "sale route must expose warp/vendor/sell diagnostics")
 findButton("SellDiagnostics").Activated:Fire()
-assert(clipboard:find("V0.17 SHOP SELL ROUTE",1,true)
+assert(clipboard:find("V0.18 SHOP SELL ROUTE",1,true)
        and clipboard:find("Shops destination candidates=",1,true)
        and clipboard:find("Explicit ore-only Sell controls=",1,true)
        and clipboard:find("Select All clicks=1/1",1,true)
@@ -643,6 +646,59 @@ assert(clipboard:find("V0.17 SHOP SELL ROUTE",1,true)
        "dedicated COPY SELL ROUTE diagnostic missing route outcomes")
 findButton("AutoSell").Activated:Fire()
 assert(not first.sell and first.sellPhase=="OFF", "sell route OFF did not stop")
+
+-- LIVE V0.17 REGRESSION: Auto Collect just opened MineGui/ChestFrame,
+-- then Auto Sell was enabled. Chest modal makes TeleportButton hidden.
+-- Allow Take All to settle instead of prematurely declaring Teleport missing.
+local activeChest=instance("Frame")
+activeChest.Name="ChestFrame";activeChest.Visible=true;activeChest.Parent=mineGui
+local teleBeforeHandoff=teleClicks
+teleport.Visible=false
+findButton("AutoSell").Activated:Fire()
+assert(first.sell and first.sellPhase=="CHEST_HANDOFF", "initial Chest handoff phase missing")
+helpers.shopSellStep(30)
+assert(first.sellPhase=="CHEST_HANDOFF" and first.sellWarpAttempts==0
+       and teleClicks==teleBeforeHandoff and first.sellChestHandoffState=="CHEST_OPEN",
+       "must wait while Chest is open, not click or fail Teleport")
+findButton("SellDiagnostics").Activated:Fire()
+assert(clipboard:find("chestOpen=true",1,true)
+       and clipboard:find("TeleportButton candidates=1",1,true)
+       and clipboard:find("visible=false",1,true),
+       "copy sell route should show open Chest and hidden Teleport control")
+activeChest.Visible=false
+first.takeAllPending={sentAt=30}
+helpers.shopSellStep(32)
+assert(first.sellPhase=="CHEST_HANDOFF"
+       and first.sellChestHandoffState=="TAKE_ALL_PENDING"
+       and teleClicks==teleBeforeHandoff,
+       "must not interrupt unfinished Take All feedback after Chest closes")
+first.takeAllPending=nil
+teleport.Visible=true
+helpers.shopSellStep(34)
+assert(first.sellPhase=="TELEPORT_OPEN" and first.sellChestHandoffState=="CHEST_CLOSED",
+       "Chest closed and Take All settled should release Shops teleport")
+helpers.shopSellStep(36)
+assert(first.sellPhase=="SHOPS_PICK" and teleClicks==teleBeforeHandoff+1,
+       "after handoff, actual Teleport should be clicked normally")
+findButton("AutoSell").Activated:Fire()
+assert(not first.sell and first.sellPhase=="OFF", "sell handoff did not cancel safely")
+teleMenu.Visible=false
+
+-- If TeleportButton still exists but another panel hides it,
+-- diagnose that distinction instead of falsely saying NOT FOUND.
+teleport.Visible=false
+findButton("AutoSell").Activated:Fire()
+helpers.shopSellStep(43)
+assert(first.sellPhase=="TELEPORT_OPEN", "closed Chest should advance to Teleport")
+helpers.shopSellStep(45)
+assert(first.sellPhase=="TELEPORT_OPEN"
+       and first.sellStage:find("exists but hidden",1,true),
+       "hidden Teleport should be distinguished from an absent one")
+helpers.shopSellStep(61)
+assert(first.sellPhase=="PAUSED" and first.sellStage:find("hidden",1,true),
+       "hidden Teleport should safely pause after a bounded timeout")
+findButton("AutoSell").Activated:Fire()
+teleport.Visible=true
 
 -- V0.14 REAL RUNTIME LOG: GingerbreadKeeper's SellPrompt opens a
 -- visible MineGui/SellFrame/Content/SellButton with one MouseButton1Click
@@ -952,4 +1008,4 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.17 sale audit: selected SellFrame-only, touch-only complete flow, unverified SENT status, Collect regression")
+print("PASS My Anime Mine V0.18 Chest handoff before Shops, pending Take All, hidden Teleport diagnostics, safe selling and Collect regression")
