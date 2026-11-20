@@ -662,9 +662,8 @@ assert(first.sellPhase=="DONE" and first.sellActionKind=="CONFIRMED_SELL_STAND"
        and exactClicks==1 and wrongClicks==0 and genericSells==beforeAll,
        "SellButton should dispatch once; never wrong-context or generic Sell All")
 findButton("SellDiagnostics").Activated:Fire()
-assert(clipboard:find("validated SellStand",1,true)
-       or clipboard:find("Validated SellStand session=true",1,true),
-       "sell diagnostics must show confirmed SellStand session")
+assert(clipboard:find("Last sale mode=CONFIRMED_SELL_STAND",1,true),
+       "post-sale diagnostics must preserve last confirmed SellStand action mode")
 local forbidden=instance("TextLabel")
 forbidden.Name="ForbiddenSale";forbidden.Text="Sell Characters";forbidden.Parent=sellScreen
 first.sellPhase="SELL_MENU"
