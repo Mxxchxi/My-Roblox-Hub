@@ -220,8 +220,8 @@ assert(clipboard and clipboard:find("TakeAll visible: ", 1, true), "target diagn
 assert(clipboard:find("TakeAll event connections", 1, true),
        "Take All event connections not present in diagnostic")
 
--- The nearest chest belongs to MinePlot8, but only the explicitly marked MinePlot7 may be used.
-findButton("SetPlot").Activated:Fire()
+-- Nearest Chest belongs to Plot8 (no upgrade marker), while Plot7 has both.
+-- The automatic selector must choose Plot7, without manual buttons.
 assert(not first.selectedPlot, "plot selected without character")
 local character=instance("Model");character.Parent=workspace;player.Character=character
 local root=instance("BasePart");root.Name="HumanoidRootPart"
@@ -229,21 +229,25 @@ root.Position=vector(0,0,0);root.Parent=character
 createPlot("MinePlot8", 3, false)
 createPlot("MinePlot7", 40, true)
 findButton("Scan").Activated:Fire()
-findButton("SetPlot").Activated:Fire()
-assert(first.selectedPlot == "MinePlot7", "did not select proximity upgrade plot")
+assert(first.selectedPlot == "MinePlot7", "auto selector failed to choose the verified near-Plot candidate")
+local hub = playerGui:FindFirstChild("MyAnimeMineHub")
+assert(hub:FindFirstChild("Main"):FindFirstChild("AutoPlotStatus"),
+       "missing automatic plot/walk status")
+for _, name in ipairs({"SetPlot", "WalkToChest"}) do
+    for _, child in ipairs(hub:GetDescendants()) do
+        assert(child.Name ~= name, "unneeded manual button remains: " .. name)
+    end
+end
 findButton("Diagnostics").Activated:Fire()
 assert(clipboard:find("Selected chest=",1,true) and
        clipboard:find("MinePlot7",1,true) and clipboard:find("dist=40.0 maxRange=10.0",1,true),
        "selected plot chest distance/range diagnostics missing")
-local walk = findButton("WalkToChest")
-walk.Activated:Fire()
-assert(first.walkToChest, "auto walk toggle did not enable")
-walk.Activated:Fire()
-assert(not first.walkToChest, "auto walk toggle did not disable")
+assert(not first.walkToChest, "walking must remain OFF before Auto Collect")
 
 findButton("AutoMine").Activated:Fire()
 findButton("AutoCollect").Activated:Fire()
-assert(first.mine and first.collect, "toggles not responsive")
+assert(first.mine and first.collect and first.walkToChest,
+       "Auto Collect must automatically enable bounded walking")
 
 local main = assert(playerGui:FindFirstChild("MyAnimeMineHub"):FindFirstChild("Main"))
 local restore = findButton("RestoreWindow")
@@ -294,8 +298,9 @@ findButton("Diagnostics").Activated:Fire()
 assert(clipboard:find("Chest count before=12 after=12 delta=0", 1, true),
        "count delta not present in copied diagnostics")
 findButton("AutoCollect").Activated:Fire()
-assert(first.collect and first.takeAllNotDecreased == 0 and first.takeAllOutcome == "NOT TESTED",
-       "reenabling Collect should reset bounded feedback state")
+assert(first.collect and first.walkToChest and first.takeAllNotDecreased == 0
+       and first.takeAllOutcome == "NOT TESTED",
+       "reenabling Collect must restore automatic walking and reset feedback state")
 -- A hidden Chest may still have stale count text. That must never be reported
 -- as a live unchanged Chest, and Auto Collect must pause rather than reopen it.
 chestCountLabel.Text = "30/183.9K Items"
@@ -369,8 +374,9 @@ assert(count == 1, "duplicate UI after rerun")
 assert(not second.mine and not second.collect, "rerun must begin OFF")
 assert(not second.minimized and findButton("RestoreWindow").Visible == false,
     "rerun must restore expanded UI")
-assert(not second.selectedPlot and not second.walkToChest, "rerun should clear plot and movement")
+assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
+       "rerun should auto-detect the nearby Plot while leaving walking OFF")
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.7 close/reopen cooldown, count feedback, manual click watch, and UI lifecycle")
+print("PASS My Anime Mine V0.8 auto plot discovery, auto walk with Collect, Chest checks, manual watch and UI lifecycle")
