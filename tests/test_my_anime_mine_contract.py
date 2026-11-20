@@ -28,11 +28,17 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn("previous:Stop()", SOURCE)
         self.assertIn("local function diagnosticReport()", SOURCE)
         self.assertIn("local function findTakeAll()", SOURCE)
+        self.assertIn("local function choosePlotNearPlayer()", SOURCE)
+        self.assertIn("local function selectedChest()", SOURCE)
+        self.assertIn("local function approachChest(", SOURCE)
+        self.assertIn("walkToChest = false", SOURCE)
+        self.assertIn("selectedPlot = nil", SOURCE)
 
     def test_diagnostic_and_conservative_interactions(self):
-        for token in ("SCAN GAME", "COPY LOG", "COPY TARGET DIAGNOSTICS", "ClickDetector", "ProximityPrompt",
+        for token in ("SCAN GAME", "COPY LOG", "COPY TARGET DIAGNOSTICS", "SET MY PLOT", "WALK TO CHEST", "ClickDetector", "ProximityPrompt",
                       "fireclickdetector", "fireproximityprompt", "firesignal", "setclipboard"):
             self.assertIn(token, SOURCE)
+        self.assertIn("minePlotName(prompt) == controller.selectedPlot", SOURCE)
         self.assertNotIn(":FireServer(", SOURCE)
         self.assertNotIn(":InvokeServer(", SOURCE)
         self.assertNotIn("loadstring(", SOURCE)

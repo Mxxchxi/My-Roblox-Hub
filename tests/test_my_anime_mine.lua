@@ -48,6 +48,12 @@ local function instance(className)
         return nil
     end
     function methods:WaitForChild(name) return self:FindFirstChild(name) end
+    function methods:FindFirstChildOfClass(name)
+        for _, child in ipairs(props.children) do
+            if child:IsA(name) then return child end
+        end
+        return nil
+    end
     function methods:IsDescendantOf(parent)
         local current = self.Parent
         while current do
@@ -156,6 +162,28 @@ local function findButton(name)
     error("Button not found: " .. name)
 end
 
+local function vector(x,y,z)
+    return setmetatable({X=x,Y=y,Z=z}, {
+        __sub = function(a,b)
+            local dx,dy,dz=a.X-b.X,a.Y-b.Y,a.Z-b.Z
+            return {Magnitude=math.sqrt(dx*dx+dy*dy+dz*dz)}
+        end,
+        __tostring=function(a) return ("%.1f, %.1f, %.1f"):format(a.X,a.Y,a.Z) end,
+    })
+end
+local function createPlot(name, chestX, withUpgrade)
+    local plot=instance("Folder");plot.Name=name;plot.Parent=workspace
+    local chest=instance("Folder");chest.Name="Chest";chest.Parent=plot
+    local base=instance("BasePart");base.Name="ChestBase";base.Position=vector(chestX,0,0);base.Parent=chest
+    local prompt=instance("ProximityPrompt");prompt.Name="ChestPrompt"
+    prompt.ActionText="Open";prompt.MaxActivationDistance=10;prompt.Enabled=true;prompt.Parent=base
+    if withUpgrade then
+        local upgrade=instance("BasePart");upgrade.Name="UpgradePart"
+        upgrade.Position=vector(23,0,0);upgrade.Parent=plot
+        local det=instance("ClickDetector");det.Name="UpgradeClick";det.MaxActivationDistance=32;det.Parent=upgrade
+    end
+end
+
 local first = run()
 assert(playerGui:FindFirstChild("MyAnimeMineHub"), "UI was not mounted")
 assert(not first.mine and not first.collect, "auto toggles must start OFF")
@@ -166,6 +194,27 @@ findButton("CopyLog").Activated:Fire()
 assert(clipboard and clipboard:find("PlaceId 79389059854988", 1, true), "copy log unavailable")
 findButton("Diagnostics").Activated:Fire()
 assert(clipboard and clipboard:find("TakeAll visible: ", 1, true), "target diagnostics missing")
+
+-- The nearest chest belongs to MinePlot8, but only the explicitly marked MinePlot7 may be used.
+findButton("SetPlot").Activated:Fire()
+assert(not first.selectedPlot, "plot selected without character")
+local character=instance("Model");character.Parent=workspace;player.Character=character
+local root=instance("BasePart");root.Name="HumanoidRootPart"
+root.Position=vector(0,0,0);root.Parent=character
+createPlot("MinePlot8", 3, false)
+createPlot("MinePlot7", 40, true)
+findButton("Scan").Activated:Fire()
+findButton("SetPlot").Activated:Fire()
+assert(first.selectedPlot == "MinePlot7", "did not select proximity upgrade plot")
+findButton("Diagnostics").Activated:Fire()
+assert(clipboard:find("Selected chest=",1,true) and
+       clipboard:find("MinePlot7",1,true) and clipboard:find("dist=40.0 maxRange=10.0",1,true),
+       "selected plot chest distance/range diagnostics missing")
+local walk = findButton("WalkToChest")
+walk.Activated:Fire()
+assert(first.walkToChest, "auto walk toggle did not enable")
+walk.Activated:Fire()
+assert(not first.walkToChest, "auto walk toggle did not disable")
 
 findButton("AutoMine").Activated:Fire()
 findButton("AutoCollect").Activated:Fire()
@@ -197,7 +246,8 @@ assert(count == 1, "duplicate UI after rerun")
 assert(not second.mine and not second.collect, "rerun must begin OFF")
 assert(not second.minimized and findButton("RestoreWindow").Visible == false,
     "rerun must restore expanded UI")
+assert(not second.selectedPlot and not second.walkToChest, "rerun should clear plot and movement")
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine GUI startup, LeftAlt minimize/restore, automation retention, rerun, and cleanup")
+print("PASS My Anime Mine V0.3 plot-bound Chest, distance diagnostics, walk toggle, LeftAlt and lifecycle")

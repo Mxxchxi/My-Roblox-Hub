@@ -1,10 +1,10 @@
--- My Roblox Hub | My Anime Mine v0.2 (chest discovery + action diagnostics)
+-- My Roblox Hub | My Anime Mine v0.3 (bound plot + chest approach + collection)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
--- Auto Collect tries nearby collection prompts and visible Take All GUI buttons.
+-- Auto Collect uses only the player's explicitly selected plot, then opens its chest and clicks Take All.
 -- Mining in this game is normally performed by placed characters.
--- Both are OFF by default; no purchases, selling, or teleporting are performed.
+-- All automatic features start OFF. Auto Walk is separately opt-in; no purchases, selling, or teleporting.
 
 if game.PlaceId ~= 79389059854988 then
     warn("[My Anime Mine] Wrong PlaceId: " .. tostring(game.PlaceId))
@@ -36,6 +36,14 @@ local controller = {
     mine = false,
     collect = false,
     minimized = false,
+    walkToChest = false,
+    selectedPlot = nil,
+    collectionStage = "Set your plot near its UpgradeClick",
+    moveTarget = nil,
+    moveStarted = 0,
+    movePreviousDistance = nil,
+    moveProgressAt = 0,
+    moveAttempts = 0,
     mineActions = 0,
     collectActions = 0,
     takeAllActions = 0,
@@ -75,6 +83,14 @@ function controller:Stop()
     self.running = false
     self.mine = false
     self.collect = false
+    self.walkToChest = false
+    if self.moveTarget then
+        local character = player.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if humanoid and root then pcall(function() humanoid:MoveTo(root.Position) end) end
+        self.moveTarget = nil
+    end
     for _, connection in ipairs(self.connections) do
         pcall(function() connection:Disconnect() end)
     end
@@ -107,8 +123,8 @@ local gui = make("ScreenGui", playerGui, {
 })
 controller.gui = gui
 local panel = make("Frame", gui, {
-    Name = "Main", Size = UDim2.fromOffset(510, 425),
-    Position = UDim2.new(0.5, -255, 0.5, -212),
+    Name = "Main", Size = UDim2.fromOffset(510, 482),
+    Position = UDim2.new(0.5, -255, 0.5, -241),
     BackgroundColor3 = palette.background, BorderSizePixel = 0,
 })
 make("UICorner", panel, { CornerRadius = UDim.new(0, 12) })
@@ -184,30 +200,32 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.2 | Characters mine automatically. Collect from Chest / Take All. Actions are experimental.",
+    Text = "V0.3 | Set your plot near UpgradeClick. Enable Auto Collect; Auto Walk is optional.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
 local scanButton = button("Scan", "SCAN GAME", 16, 158, 230, 38)
 local copyButton = button("CopyLog", "COPY LOG", 264, 158, 230, 38)
 local detailButton = button("Diagnostics", "COPY TARGET DIAGNOSTICS", 16, 205, 478, 38)
+local setPlotButton = button("SetPlot", "SET MY PLOT", 16, 250, 230, 38)
+local walkButton = button("WalkToChest", "WALK TO CHEST: OFF", 264, 250, 230, 38)
 local statusLabel = make("TextLabel", panel, {
-    Name = "Status", Position = UDim2.fromOffset(17, 251),
-    Size = UDim2.fromOffset(478, 43),
+    Name = "Status", Position = UDim2.fromOffset(17, 299),
+    Size = UDim2.fromOffset(478, 51),
     BackgroundTransparency = 1, Font = Enum.Font.Code, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.accent, Text = "Discovering...",
 })
 make("TextLabel", panel, {
-    Name = "LogTitle", Position = UDim2.fromOffset(16, 298),
+    Name = "LogTitle", Position = UDim2.fromOffset(16, 360),
     Size = UDim2.fromOffset(478, 20),
     BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 13,
     TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = palette.text,
     Text = "LOG / DIAGNOSTICS",
 })
 local logFrame = make("Frame", panel, {
-    Name = "LogPanel", Position = UDim2.fromOffset(16, 321),
-    Size = UDim2.fromOffset(478, 89), BackgroundColor3 = palette.panel,
+    Name = "LogPanel", Position = UDim2.fromOffset(16, 383),
+    Size = UDim2.fromOffset(478, 88), BackgroundColor3 = palette.panel,
     BorderSizePixel = 0,
 })
 make("UICorner", logFrame, { CornerRadius = UDim.new(0, 6) })
@@ -414,16 +432,144 @@ local function findTakeAll()
     return nil
 end
 
+
+-- A plot is chosen explicitly by standing near its own upgrade marker.
+-- This avoids attempting to open other players' chests by accident.
+local function minePlotName(instance)
+    local cursor = instance
+    for _ = 1, 10 do
+        if not cursor then break end
+        if tostring(cursor.Name):match("^MinePlot%d+$") then
+            return tostring(cursor.Name)
+        end
+        cursor = cursor.Parent
+    end
+    return nil
+end
+
+local function choosePlotNearPlayer()
+    local root = rootPart()
+    if not root then return nil, nil, "Character/HumanoidRootPart missing" end
+    local best, bestDistance = nil, 65
+    for _, detector in ipairs(controller.detectors) do
+        if detector.Parent and detector.Name:lower():find("upgrade", 1, true) then
+            local plotName = minePlotName(detector)
+            local pos = positionOf(detector)
+            if plotName and pos then
+                local dist = (pos - root.Position).Magnitude
+                if dist < bestDistance then
+                    best, bestDistance = plotName, dist
+                end
+            end
+        end
+    end
+    if not best then
+        return nil, nil, "No UpgradeClick within 65 studs. Stand near your own plot then SCAN GAME."
+    end
+    return best, bestDistance, nil
+end
+
+local function selectedChest()
+    if not controller.selectedPlot then return nil, nil, "Plot not selected" end
+    local root = rootPart()
+    if not root then return nil, nil, "Character/HumanoidRootPart missing" end
+    local closest, closestDistance = nil, math.huge
+    for _, prompt in ipairs(controller.prompts) do
+        if prompt.Parent and prompt:IsDescendantOf(workspace)
+            and minePlotName(prompt) == controller.selectedPlot
+            and (prompt.Name == "ChestPrompt" or
+                 tostring(prompt.ActionText):lower() == "open") then
+            local pos = positionOf(prompt)
+            if pos then
+                local d = (pos - root.Position).Magnitude
+                if d < closestDistance then
+                    closest, closestDistance = prompt, d
+                end
+            end
+        end
+    end
+    if not closest then
+        return nil, nil, "ChestPrompt not found for " .. controller.selectedPlot
+    end
+    return closest, closestDistance, nil
+end
+
+local function chestRange(prompt)
+    return math.max(1, tonumber(prompt.MaxActivationDistance) or 10)
+end
+
+local function stopWalking()
+    if not controller.moveTarget then return end
+    controller.moveTarget = nil
+    controller.movePreviousDistance = nil
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local root = rootPart()
+    if humanoid and root then pcall(function() humanoid:MoveTo(root.Position) end) end
+end
+
+-- Bounded, natural MoveTo. No teleport and no cross-plot routing.
+-- Stop when blocked rather than repeatedly trying to walk forever.
+local function approachChest(prompt, distance, now)
+    if not controller.walkToChest then return "Walk is OFF" end
+    if distance > 145 then return ("Chest %.1f studs away; limit 145"):format(distance) end
+    if not prompt.Enabled then return "ChestPrompt disabled" end
+    local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+    local pos = positionOf(prompt)
+    if not humanoid or not pos or humanoid.Health <= 0 then
+        return "Humanoid or chest position unavailable"
+    end
+    if controller.moveTarget ~= prompt then
+        stopWalking()
+        controller.moveTarget = prompt
+        controller.moveStarted = now
+        controller.moveProgressAt = now
+        controller.movePreviousDistance = distance
+    end
+    if distance + 1 < (controller.movePreviousDistance or math.huge) then
+        controller.movePreviousDistance = distance
+        controller.moveProgressAt = now
+    end
+    if now - controller.moveProgressAt > 11 then
+        stopWalking()
+        controller.walkToChest = false
+        return "WALK BLOCKED after 11s. Walk OFF; move closer manually."
+    end
+    if now - (controller.lastMoveCommand or 0) >= 1.8 then
+        controller.lastMoveCommand = now
+        controller.moveAttempts = controller.moveAttempts + 1
+        local ok, err = pcall(function() humanoid:MoveTo(pos) end)
+        if not ok then
+            stopWalking()
+            controller.walkToChest = false
+            return "MoveTo failed: " .. tostring(err)
+        end
+    end
+    return ("Walking to %s Chest %.1f studs (range %.1f)"):format(
+        controller.selectedPlot, distance, chestRange(prompt))
+end
+
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.2 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.3 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect))
     append(("Targets: rocks=%d prompts=%d TakeAll=%d"):format(
         #controller.detectors, #controller.prompts, #controller.takeAllButtons))
     local root = rootPart()
     append("Root=" .. (root and tostring(root.Position) or "NOT FOUND"))
+    local nearPlot, plotDistance, plotReason = choosePlotNearPlayer()
+    append("Plot selected=" .. tostring(controller.selectedPlot) ..
+        " (manual proximity selection; ownership NOT verified)")
+    append("Closest upgrade plot=" .. (nearPlot and
+        (nearPlot .. (" dist=%.1f"):format(plotDistance)) or tostring(plotReason)))
+    local chest, chestDistance, chestReason = selectedChest()
+    append("Selected chest=" .. (chest and
+        (describe(chest) .. (" dist=%.1f maxRange=%.1f enabled=%s"):format(
+            chestDistance, chestRange(chest), tostring(chest.Enabled))) or tostring(chestReason)))
+    append("Auto Walk=" .. tostring(controller.walkToChest) .. " | stage=" ..
+        tostring(controller.collectionStage) .. " | MoveTo attempts=" .. controller.moveAttempts)
     local nearMine, distMine, whyMine = nearest(controller.detectors, 70)
     local nearCollect, distCollect, whyCollect = nearest(controller.prompts, 30)
     append("Mine candidate: " .. (nearMine and
@@ -455,12 +601,13 @@ local function refreshStatus()
     collectButton.Text = "AUTO COLLECT: " .. (controller.collect and "ON" or "OFF")
     mineButton.BackgroundColor3 = controller.mine and palette.accent or palette.button
     collectButton.BackgroundColor3 = controller.collect and palette.accent or palette.button
-    statusLabel.Text = ("Rock: %d | Prompt: %d | TakeAll: %d | dispatch mine %d / collect %d / chest %d\nExecutor: click %s | prompt %s | signal %s"):format(
+    setPlotButton.Text = "MY PLOT: " .. tostring(controller.selectedPlot or "NOT SET")
+    walkButton.Text = "WALK TO CHEST: " .. (controller.walkToChest and "ON" or "OFF")
+    walkButton.BackgroundColor3 = controller.walkToChest and palette.accent or palette.button
+    statusLabel.Text = ("Rock: %d | Chest prompt: %d | TakeAll: %d | calls %d/%d/%d\nStage: %s"):format(
         #controller.detectors, #controller.prompts, #controller.takeAllButtons,
         controller.mineActions, controller.collectActions, controller.takeAllActions,
-        type(fireclickdetector) == "function" and "YES" or "NO",
-        type(fireproximityprompt) == "function" and "YES" or "NO",
-        type(firesignal) == "function" and "YES" or "NO")
+        tostring(controller.collectionStage):sub(1, 86))
 end
 
 connect(mineButton.Activated, function()
@@ -473,12 +620,37 @@ connect(mineButton.Activated, function()
         " | characters normally mine rocks without clicking them")
     refreshStatus()
 end)
+connect(setPlotButton.Activated, function()
+    scan(false)
+    local plotName, distance, reason = choosePlotNearPlayer()
+    if plotName then
+        controller.selectedPlot = plotName
+        controller.collectionStage = "Plot set: " .. plotName .. " (check ownership yourself)"
+        stopWalking()
+        writeLog(("Plot marked: %s (upgrade marker %.1f studs away; ownership NOT verified)"):format(
+            plotName, distance))
+    else
+        writeLog("Set plot failed: " .. tostring(reason))
+    end
+    refreshStatus()
+end)
+connect(walkButton.Activated, function()
+    controller.walkToChest = not controller.walkToChest
+    if not controller.walkToChest then stopWalking() end
+    writeLog("Walk to Chest " .. (controller.walkToChest and "ON" or "OFF") ..
+        " | no teleport; only selected plot")
+    refreshStatus()
+end)
 connect(collectButton.Activated, function()
     if type(fireproximityprompt) ~= "function" and type(firesignal) ~= "function" then
         writeLog("Auto Collect unavailable: requires fireproximityprompt or firesignal")
         return
     end
     controller.collect = not controller.collect
+    if not controller.collect then
+        stopWalking()
+        controller.collectionStage = "OFF"
+    end
     writeLog("Auto Collect " .. (controller.collect and "ON" or "OFF") ..
         " | tries collection prompts and visible Take All buttons")
     refreshStatus()
@@ -509,8 +681,8 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.2 started | toggles OFF | PlaceId 79389059854988")
-writeLog("Characters mine automatically. Chest Take All may be required to claim ore.")
+writeLog("My Anime Mine v0.3 started | toggles OFF | PlaceId 79389059854988")
+writeLog("Set your plot near UpgradeClick, then enable Auto Collect; enable Walk to Chest to approach.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
 refreshStatus()
@@ -548,34 +720,59 @@ task.spawn(function()
                 end
             end
         end
-        if controller.collect and now - lastCollect >= 2 then
+        if controller.collect and now - lastCollect >= 1.25 then
             lastCollect = now
-            local target, dist, reason = nearest(controller.prompts, 30)
             local action = "none"
-            if target and type(fireproximityprompt) == "function" then
-                controller.collectAttempts = controller.collectAttempts + 1
-                local ok, err = pcall(fireproximityprompt, target)
-                if ok then
-                    controller.collectActions = controller.collectActions + 1
-                    action = "PROMPT " .. describe(target) .. (" (%.1f studs)"):format(dist)
-                else writeLog("Collect prompt ERROR: " .. tostring(err)) end
-            end
             local button = findTakeAll()
-            if button and type(firesignal) == "function" then
-                controller.takeAllAttempts = controller.takeAllAttempts + 1
-                local ok, err = pcall(firesignal, button.Activated)
-                if ok then
-                    controller.takeAllActions = controller.takeAllActions + 1
-                    action = "TAKE ALL " .. describe(button)
-                else writeLog("Take All ERROR: " .. tostring(err)) end
-            elseif button and type(firesignal) ~= "function" then
-                action = "Take All button visible but firesignal unavailable"
+            if not controller.selectedPlot then
+                controller.collectionStage = "Select MY PLOT near your UpgradeClick first"
+            elseif button and type(firesignal) == "function" then
+                -- Chest UI can be accessed once it is open, without requiring movement.
+                stopWalking()
+                controller.collectionStage = "Take All visible"
+                if now - (controller.lastTakeAll or 0) >= 3 then
+                    controller.lastTakeAll = now
+                    controller.takeAllAttempts = controller.takeAllAttempts + 1
+                    local ok, err = pcall(firesignal, button.Activated)
+                    if ok then
+                        controller.takeAllActions = controller.takeAllActions + 1
+                        action = "TAKE ALL " .. describe(button)
+                    else
+                        action = "Take All ERROR " .. tostring(err)
+                    end
+                end
+            else
+                local chest, dist, reason = selectedChest()
+                if not chest then
+                    stopWalking()
+                    controller.collectionStage = tostring(reason)
+                elseif chest.Enabled == false then
+                    stopWalking()
+                    controller.collectionStage = "ChestPrompt disabled in " .. controller.selectedPlot
+                elseif dist <= chestRange(chest) then
+                    stopWalking()
+                    controller.collectionStage = "Opening " .. controller.selectedPlot .. " Chest"
+                    if type(fireproximityprompt) == "function"
+                        and now - (controller.lastOpen or 0) >= 3 then
+                        controller.lastOpen = now
+                        controller.collectAttempts = controller.collectAttempts + 1
+                        local ok, err = pcall(fireproximityprompt, chest)
+                        if ok then
+                            controller.collectActions = controller.collectActions + 1
+                            action = ("OPEN CHEST %s (%.1f studs; waiting for Take All)"):format(
+                                describe(chest), dist)
+                        else
+                            action = "Chest open ERROR " .. tostring(err)
+                        end
+                    end
+                else
+                    controller.collectionStage = approachChest(chest, dist, now)
+                end
             end
-            local idleReason = action == "none" and
-                (reason or "No active collection prompt") or action
-            if idleReason ~= lastCollectReason or now - lastCollectLog >= 10 then
-                lastCollectLog, lastCollectReason = now, idleReason
-                writeLog("Collect: " .. idleReason .. " | prompt-dispatch=" ..
+            local message = action ~= "none" and action or controller.collectionStage
+            if message ~= lastCollectReason or now - lastCollectLog >= 10 then
+                lastCollectLog, lastCollectReason = now, message
+                writeLog("Collect: " .. message .. " | prompt-dispatch=" ..
                     controller.collectActions .. " chest-dispatch=" .. controller.takeAllActions)
             end
         end
