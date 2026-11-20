@@ -1423,6 +1423,105 @@ local function tryHeadlessEquip()
     return false, "NO_ACTIVE_EQUIP_BEST_LISTENER"
 end
 
+-- Auto Sell is confined to the game's ChestFrame and never touches
+-- inventory cards, pets, character sales, or global shop purchases.
+-- It only attempts a preloaded native Chest Auto Sell control, whether
+-- its panel happens to be visible or hidden; no new game window is opened.
+local function scanNativeAutoSell()
+    local buttons, labels = {}, {}
+    for _, item in ipairs(playerGui:GetDescendants()) do
+        if gameGuiAncestorNamed(item, "MineGui")
+            and gameGuiAncestorNamed(item, "ChestFrame") then
+            if item:IsA("TextLabel") and
+                normalizeLabel(textOf(item)):find("autosell", 1, true) then
+                if #labels < 24 then labels[#labels + 1] = item end
+            elseif gameGuiButton(item) then
+                local named = normalizeLabel(item.Name)
+                local label = normalizeLabel(actionLabel(item))
+                local parent = item.Parent
+                local parentName = parent and normalizeLabel(parent.Name) or ""
+                local isSellControl = named:find("autosell", 1, true)
+                    or label:find("autosell", 1, true)
+                    or parentName:find("autosell", 1, true)
+                if isSellControl
+                    and not isPremiumAction(item)
+                    and not gameGuiAncestorNamed(item, "Shop")
+                    and not gameGuiAncestorNamed(item, "Gamepass")
+                    and not gameGuiAncestorNamed(item, "Premium") then
+                    buttons[#buttons + 1] = item
+                end
+            end
+        end
+    end
+    controller.sellCandidates, controller.sellLabels = buttons, labels
+    return buttons, labels
+end
+
+-- Only an explicit UI indication is accepted as ON/OFF. A color or a signal
+-- dispatch is not an authoritative sell-state indicator.
+local function nativeAutoSellState(button)
+    local label = actionLabel(button):lower()
+    if label:match("auto%s*sell%s*[:%-]?%s*on%s*$") then return "ON" end
+    if label:match("auto%s*sell%s*[:%-]?%s*off%s*$") then return "OFF" end
+    local status = textOf(button):lower():gsub("^%s+", ""):gsub("%s+$", "")
+    if status == "on" or status == "enabled" then return "ON" end
+    if status == "off" or status == "disabled" then return "OFF" end
+    local parent = button.Parent
+    if parent then
+        for _, sibling in ipairs(parent:GetChildren()) do
+            if sibling:IsA("TextLabel") then
+                local text = textOf(sibling):lower():gsub("^%s+", ""):gsub("%s+$", "")
+                if text == "on" or text == "enabled" then return "ON" end
+                if text == "off" or text == "disabled" then return "OFF" end
+            end
+        end
+    end
+    return "UNKNOWN"
+end
+
+local function tryNativeAutoSell()
+    if type(firesignal) ~= "function" then return false, "FIRESIGNAL_UNAVAILABLE" end
+    local buttons, labels = scanNativeAutoSell()
+    if #buttons == 0 then
+        return false, #labels > 0 and "AUTO_SELL_LABEL_ONLY_NO_BUTTON"
+            or "AUTO_SELL_CHEST_CONTROL_NOT_FOUND"
+    end
+    local ready = {}
+    for _, button in ipairs(buttons) do
+        local counts = takeAllConnections(button)
+        if type(counts.MouseButton1Click) == "number" and counts.MouseButton1Click > 0 then
+            ready[#ready + 1] = {button=button, event="MouseButton1Click"}
+        elseif type(counts.Activated) == "number" and counts.Activated > 0 then
+            ready[#ready + 1] = {button=button, event="Activated"}
+        end
+    end
+    if #ready == 0 then return false, "AUTO_SELL_NO_CONFIRMED_LISTENER" end
+    if #ready > 1 then return false, "AUTO_SELL_AMBIGUOUS_ACTIVE_BUTTONS" end
+    local choice = ready[1]
+    local button = choice.button
+    controller.sellTarget = describe(button)
+    controller.sellEvent = choice.event
+    controller.sellInitialState = nativeAutoSellState(button)
+    controller.sellLastObservedState = controller.sellInitialState
+
+    if controller.sellInitialState == "ON" then
+        controller.sellSent = true
+        return true, "AUTO_SELL_UI_ALREADY_ON (selling not verified)"
+    end
+
+    -- One signal per enable cycle at most: clicking an unknown toggle twice
+    -- may turn it back OFF. Never infer an ore sale from firesignal returning OK.
+    controller.sellSent = true
+    controller.sellAttempts = controller.sellAttempts + 1
+    local ok, err = pcall(firesignal, button[choice.event])
+    if ok then
+        controller.sellCallsOK = controller.sellCallsOK + 1
+        controller.sellLastObservedState = nativeAutoSellState(button)
+        return true, "AUTO_SELL_TOGGLE_SENT (selling not verified)"
+    end
+    return false, "AUTO_SELL_SIGNAL_ERROR: " .. tostring(err)
+end
+
 local function resolveUpgradeFeedback(now)
     local pending = controller.upgradePending
     if not pending or now - pending.started < 2.7 then return end
