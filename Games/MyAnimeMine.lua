@@ -1667,6 +1667,9 @@ local function sellVendorTargets()
         end
     end
     table.sort(list, function(a,b)
+        -- Favor actual interaction over signs/marker parts.
+        local aa,bb = a.type=="marker", b.type=="marker"
+        if aa ~= bb then return not aa end
         if a.distance ~= b.distance then return a.distance < b.distance end
         return describe(a.target) < describe(b.target)
     end)
@@ -1947,7 +1950,30 @@ local function actionDiagnosticReport()
     addButtons("Upgrade", controller.upgradeCandidates)
     addButtons("GameUpgradesMenu (read-only, not auto-purchased)", controller.guiUpgradeMenu)
     local sellButtons, sellLabels = scanNativeAutoSell()
-    lines[#lines + 1] = "Native Chest Auto Sell: enabled=" .. tostring(controller.sell) ..
+    local tele = shopsTeleportLauncher()
+    local shopsWarp, shopsCount = shopsWarpDestination()
+    local vendorOptions = sellVendorTargets()
+    local sellAction, sellActionCount = oreSellButton()
+    lines[#lines+1] = "SHOP SELL ROUTE: phase="..tostring(controller.sellPhase)..
+        " | stage="..tostring(controller.sellStage)..
+        " | warpAttempts="..controller.sellWarpAttempts..
+        " | ShopsClicks="..controller.sellShopsAttempts..
+        " | walks="..controller.sellWalkAttempts..
+        " | vendorInteractions="..controller.sellVendorAttempts..
+        " | sells="..controller.sellCallsOK.."/"..controller.sellAttempts
+    lines[#lines+1] = "TeleportButton="..(tele and describe(tele) or "NOT FOUND")..
+        " | Shops candidates="..shopsCount..
+        " | selected Shops="..(shopsWarp and describe(shopsWarp) or "NONE")
+    lines[#lines+1] = "Sell vendor candidates="..#vendorOptions
+    for i=1,math.min(16,#vendorOptions) do
+        local v=vendorOptions[i]
+        lines[#lines+1] = ("Vendor[%d]: %s | kind=%s | dist=%.1f | range=%.1f"):format(
+            i,describe(v.target),v.type,v.distance,v.maxRange)
+    end
+    lines[#lines+1] = "Ore-only Sell candidates="..sellActionCount..
+        " | ready="..(sellAction and describe(sellAction) or "NONE")
+    lines[#lines+1] = "Generic Sell/Select All buttons are NOT auto-clicked: they may sell miners."
+    lines[#lines + 1] = "Native Chest Auto Sell (legacy, not used by route): enabled=" .. tostring(controller.sell) ..
         " | stage=" .. tostring(controller.sellStage) ..
         " | target=" .. tostring(controller.sellTarget) ..
         " | event=" .. tostring(controller.sellEvent) ..
@@ -2020,7 +2046,7 @@ local function actionDiagnosticReport()
             textOf(button):sub(1, 45), nearbyButtonContext(button):sub(1, 75))
     end
     lines[#lines + 1] =
-        "NOTE: Auto Sell targets ONLY the native Chest auto-sell toggle; signal calls and UI labels do not prove ore sales. No extra game panel or unverified Remote opened/invoked."
+        "NOTE: Shop-route Auto Sell requires Shops warp, Sell Items stand, and explicit ORE-ONLY Sell. Never auto-clicks generic Sell All or uses the Auto Sell Game Pass."
     return table.concat(lines, "\n")
 end
 
@@ -2032,11 +2058,15 @@ local function diagnosticReport()
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
         " autoEquip=" .. tostring(controller.equip) .. " autoUpgrade=" .. tostring(controller.upgrade))
-    append("Native Chest Auto Sell=" .. tostring(controller.sellStage) ..
-        " | target=" .. tostring(controller.sellTarget) ..
-        " | event=" .. tostring(controller.sellEvent) ..
-        " | dispatched=" .. tostring(controller.sellSent) ..
-        " | callsOK=" .. tostring(controller.sellCallsOK) ..
+    append("Shop Sell=" .. tostring(controller.sell) ..
+        " | phase=" .. tostring(controller.sellPhase) ..
+        " | stage=" .. tostring(controller.sellStage) ..
+        " | warp=" .. tostring(controller.sellWarpAttempts) ..
+        " / Shops=" .. tostring(controller.sellShopsAttempts) ..
+        " / vendor=" .. tostring(controller.sellVendorAttempts) ..
+        " / walk=" .. tostring(controller.sellWalkAttempts) ..
+        " | vendorTarget=" .. tostring(controller.sellVendorPath) ..
+        " | sellClicks=" .. tostring(controller.sellCallsOK) ..
         "/" .. tostring(controller.sellAttempts))
     append(("Targets: rocks=%d prompts=%d TakeAll=%d"):format(
         #controller.detectors, #controller.prompts, #controller.takeAllButtons))
@@ -2131,7 +2161,7 @@ local function refreshStatus()
     autoPlotLabel.Text = "PLOT AUTO: " .. tostring(controller.selectedPlot or "SEARCHING") ..
         "  |  WALK AUTO: " .. (controller.walkToChest and "ON" or "OFF")
     manualWatchButton.Text = "WATCH TAKE ALL: " .. (controller.watchManual and "ON" or "OFF")
-    sellButton.Text = "AUTO SELL ORES: " .. (controller.sell and "ON" or "OFF")
+    sellButton.Text = "AUTO SELL ORES: " .. (controller.sell and "ROUTING" or "OFF")
     sellButton.BackgroundColor3 = controller.sell and palette.accent or palette.button
     manualWatchButton.BackgroundColor3 = controller.watchManual and palette.accent or palette.button
     equipButton.Text = "AUTO EQUIP BEST: " .. (controller.equip and "ON" or "OFF")
@@ -2217,27 +2247,28 @@ connect(actionDiagnosticsButton.Activated, function()
 end)
 connect(sellButton.Activated, function()
     controller.sell = not controller.sell
+    sellStopWalk()
     if controller.sell then
-        controller.sellStage = "WAITING_FOR_NATIVE_CHEST_AUTO_SELL"
         controller.sellSent = false
         controller.sellAttempts = 0
         controller.sellCallsOK = 0
-        controller.sellTarget = "none"
-        controller.sellEvent = "none"
-        controller.sellInitialState = "UNKNOWN"
-        controller.sellLastObservedState = "UNKNOWN"
-        controller.sellNextScanAt = 0
-        controller.sellLastStageLog = ""
-        scanNativeAutoSell()
-        writeLog("AUTO SELL ORES armed (native Chest Auto Sell only; no game panel opens).")
+        controller.sellWarpAttempts = 0
+        controller.sellShopsAttempts = 0
+        controller.sellVendorAttempts = 0
+        controller.sellWalkAttempts = 0
+        controller.sellVendorPath = "none"
+        controller.sellActionTarget = "none"
+        controller.sellWarpOrigin = nil
+        local now = os.clock()
+        controller.sellStartedAt = now
+        sellSetPhase("TELEPORT_OPEN","Searching Teleport > Shops destination",now)
+        -- Stop the old Chest walking command; it will remain paused
+        -- during the user-requested sale route, and resume after OFF.
+        stopWalking()
     else
-        local ok, stage = setNativeAutoSell("OFF")
-        controller.sellStage = stage
-        if not ok then
-            writeLog("AUTO SELL ORES monitor OFF; native state not verified: " .. stage)
-        else
-            writeLog("AUTO SELL ORES disable request: " .. stage)
-        end
+        controller.sellPhase = "OFF"
+        controller.sellStage = "OFF (shop route stopped)"
+        writeLog("SHOP SELL OFF. Auto Collect can resume after returning to your Plot.")
     end
     refreshStatus()
 end)
@@ -2375,20 +2406,12 @@ task.spawn(function()
             scanActionButtons()
         end
 
-        -- A native Auto Sell toggle is a per-session setup operation, not
-        -- a button to spam. Recheck only while searching and never toggle twice.
-        if controller.sell and not controller.sellSent
-            and not controller.watchManual and now >= controller.sellNextScanAt then
-            controller.sellNextScanAt = now + 4
-            local ok, stage = tryNativeAutoSell()
-            controller.sellStage = stage
-            if controller.sellLastStageLog ~= stage then
-                controller.sellLastStageLog = stage
-                writeLog("AUTO SELL ORES: " .. stage .. " | target=" ..
-                    tostring(controller.sellTarget) ..
-                    " | callsOK=" .. tostring(controller.sellCallsOK) ..
-                    " (game currency increase NOT verified)")
-            end
+        -- Keep Auto Collect's existing implementation intact. Shop
+        -- navigation is a separate route and owns movement only while armed.
+        if controller.sell and not controller.watchManual
+            and now - (controller.sellLastTick or 0) >= 1.7 then
+            controller.sellLastTick = now
+            shopSellStep(now)
         end
 
         -- V0.12: no automatic game UI windows. An actual loaded hidden
@@ -2440,7 +2463,8 @@ task.spawn(function()
         end
         -- Holder travel gets a short exclusive movement window. The working
         -- Auto Collect loop is otherwise unchanged and resumes afterward.
-        if controller.collect and not controller.upgradeWalkTarget
+        if controller.collect and not controller.sell
+            and not controller.upgradeWalkTarget
             and now >= (controller.upgradeBusyUntil or 0)
             and now - lastCollect >= 1.25 then
             lastCollect = now
