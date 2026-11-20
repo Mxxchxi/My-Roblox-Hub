@@ -605,6 +605,16 @@ assert(clipboard:find("V0.14 SHOP SELL ROUTE",1,true)
        "dedicated COPY SELL ROUTE diagnostic missing route outcomes")
 findButton("AutoSell").Activated:Fire()
 assert(not first.sell and first.sellPhase=="OFF", "sell route OFF did not stop")
+-- Some sell stands are touch-operated. Walking onto the named stand
+-- must be allowed even if it has no ProximityPrompt.
+sellPrompt.Parent=nil
+first.sell=true
+first.sellPhase="VENDOR_WALK"
+root.Position=vector(579,0,0)
+helpers.shopSellStep(24)
+assert(first.sellPhase=="SELL_MENU", "touch-only Sell Items stand should enter Sell GUI detection")
+first.sell=false
+first.sellPhase="OFF"
 root.Position=vector(0,0,0)
 sellScreen.Visible=false
 
