@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.13 (opt-in native Chest Auto Sell target discovery)
+-- My Roblox Hub | My Anime Mine v0.14 (warp Shops then walk to ore sell stall)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -37,6 +37,23 @@ local controller = {
     collect = false,
     sell = false,
     sellStage = "OFF",
+    sellPhase = "OFF",
+    sellWarpAttempts = 0,
+    sellShopsAttempts = 0,
+    sellVendorAttempts = 0,
+    sellWalkAttempts = 0,
+    sellStartedAt = 0,
+    sellPhaseAt = 0,
+    sellWarpOrigin = nil,
+    sellVendorPath = "none",
+    sellVendorDistance = nil,
+    sellMenuButtons = {},
+    sellLastMoveAt = 0,
+    sellLastProgressAt = 0,
+    sellLastDistance = nil,
+    sellMoveTarget = nil,
+    sellActionTarget = "none",
+    sellNoGameUIPurchase = true,
     sellCandidates = {},
     sellLabels = {},
     sellAttempts = 0,
@@ -162,6 +179,12 @@ function controller:Stop()
     self.mine = false
     self.collect = false
     self.sell = false
+    if self.sellMoveTarget then
+        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if humanoid and root then pcall(function() humanoid:MoveTo(root.Position) end) end
+        self.sellMoveTarget = nil
+    end
     self.equip = false
     self.upgrade = false
     self.walkToChest = false
@@ -294,7 +317,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.13 | Auto Sell ores uses the native Chest control only. No extra game panels.",
+    Text = "V0.14 | Auto Sell Ores: warp Shops > walk to sell stand > sell ores only.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -1557,7 +1580,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.13 EQUIP / UPGRADE TARGETS + AUTO SELL | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.14 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -1686,7 +1709,7 @@ end
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.13 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.14 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
@@ -1983,7 +2006,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.13 started | native Chest Auto Sell | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.14 started | warp Shops then Sell Ores | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
