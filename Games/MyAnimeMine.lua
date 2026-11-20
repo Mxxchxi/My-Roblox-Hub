@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.6 (hidden-Chest and manual Take All diagnostics)
+-- My Roblox Hub | My Anime Mine v0.7 (chest close/reopen outcome tracking)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -69,6 +69,11 @@ local controller = {
     takeAllLastEvent = "none",
     takeAllMethodIndex = 1,
     takeAllNextAt = 0,
+    takeAllReopenAt = 0,
+    takeAllClosedBeforeCount = nil,
+    takeAllReopenStatus = "NOT TESTED",
+    takeAllUnverifiedReopens = 0,
+    takeAllCooldownSeconds = 12,
     detectors = {},
     prompts = {},
     takeAllButtons = {},
@@ -225,7 +230,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.6 | Diagnose closed Chest vs unchanged items. Watch a normal manual Take All.",
+    Text = "V0.7 | Manual Take All closes Chest normally. Reopen checks after cooldown; no reward proof.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -671,7 +676,11 @@ local function settleTakeAll(now)
     local closed = not visible
 
     if closed then
-        controller.takeAllOutcome = "CHEST_CLOSED (old UI count ignored; inventory unknown)"
+        controller.takeAllOutcome = "CHEST_CLOSED_AFTER_TAKE_ALL (matches manual UI; inventory unknown)"
+        controller.takeAllClosedBeforeCount = beforeCount
+        controller.takeAllReopenAt = now + controller.takeAllCooldownSeconds
+        controller.takeAllReopenStatus = "WAITING_FOR_REOPEN"
+        controller.collectionStage = "Chest closed; cooldown before reopening"
     elseif beforeCount ~= nil and afterCount ~= nil then
         local delta = afterCount - beforeCount
         controller.lastChestCountDelta = delta
@@ -692,7 +701,7 @@ local function settleTakeAll(now)
     if decreased then
         controller.takeAllNotDecreased = 0
         controller.takeAllNoChange = 0
-    else
+    elseif not closed then
         controller.takeAllNotDecreased = controller.takeAllNotDecreased + 1
         if not closed and afterSnapshot == pending.before then
             controller.takeAllNoChange = controller.takeAllNoChange + 1
@@ -708,14 +717,47 @@ local function settleTakeAll(now)
         " | chest count " .. tostring(beforeCount) .. " -> " .. tostring(afterCount) ..
         " | event=" .. pending.event ..
         " | without-count-decrease=" .. controller.takeAllNotDecreased)
-    if controller.collect and (closed or controller.takeAllNotDecreased >= 3
+    if controller.collect and (controller.takeAllNotDecreased >= 3
         or controller.takeAllAttempts >= 6) then
         controller.collect = false
         stopWalking()
-        controller.collectionStage = closed
-            and "PAUSED: Chest closed after Take All. Compare manual behavior and inventory."
-            or "PAUSED: Chest count did not decrease. Compare manual behavior and inventory."
-        writeLog("Auto Collect PAUSED; will not automatically reopen or spam a hidden Chest.")
+        controller.collectionStage = "PAUSED: Insufficient Chest evidence or max dispatches. Check inventory."
+        writeLog("Auto Collect PAUSED after bounded Take All attempts.")
+    elseif closed and controller.collect then
+        writeLog("Chest closing matches manual Take All. Auto Collect will check the Chest again after cooldown.")
+    end
+end
+
+-- Check a *freshly reopened* Chest. Unlike the stale hidden UI,
+-- this provides a new count that can be compared with the previous session.
+local function observeReopenedChest(button)
+    if controller.takeAllClosedBeforeCount == nil then return end
+    local before = controller.takeAllClosedBeforeCount
+    controller.takeAllClosedBeforeCount = nil
+    controller.takeAllReopenAt = 0
+    local after = chestItemCount(button)
+    if after == nil then
+        controller.takeAllReopenStatus = "REOPEN_COUNT_UNAVAILABLE"
+        controller.takeAllUnverifiedReopens = controller.takeAllUnverifiedReopens + 1
+    elseif after < before then
+        controller.takeAllReopenStatus = "REOPEN_COUNT_LOWER (possible collection, not inventory proof)"
+        controller.takeAllUnverifiedReopens = 0
+        controller.takeAllNotDecreased = 0
+    else
+        controller.takeAllReopenStatus = after == before
+            and "REOPEN_COUNT_UNCHANGED" or "REOPEN_COUNT_HIGHER (possible mining)"
+        controller.takeAllUnverifiedReopens = controller.takeAllUnverifiedReopens + 1
+    end
+    controller.lastReopenBefore = before
+    controller.lastReopenAfter = after
+    writeLog("Chest reopened: " .. controller.takeAllReopenStatus ..
+        " | previously " .. tostring(before) .. " now " .. tostring(after) ..
+        " | inconclusive=" .. controller.takeAllUnverifiedReopens)
+    if controller.collect and controller.takeAllUnverifiedReopens >= 2 then
+        controller.collect = false
+        stopWalking()
+        controller.collectionStage = "PAUSED: Reopened Chest did not show a lower count twice."
+        writeLog("Auto Collect PAUSED. Compare actual inventory before continuing.")
     end
 end
 
@@ -795,7 +837,7 @@ end
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.6 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.7 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect))
     append(("Targets: rocks=%d prompts=%d TakeAll=%d"):format(
@@ -829,6 +871,13 @@ local function diagnosticReport()
     append("Chest count before=" .. tostring(controller.lastChestCountBefore) ..
         " after=" .. tostring(controller.lastChestCountAfter) ..
         " delta=" .. tostring(controller.lastChestCountDelta))
+    append("Reopen status=" .. tostring(controller.takeAllReopenStatus) ..
+        " | previousCount=" .. tostring(controller.lastReopenBefore) ..
+        " currentCount=" .. tostring(controller.lastReopenAfter) ..
+        " | inconclusive=" .. tostring(controller.takeAllUnverifiedReopens))
+    append("Reopen cooldown=" .. tostring(controller.takeAllCooldownSeconds) ..
+        "s | waiting=" .. tostring(controller.takeAllReopenAt > os.clock()) ..
+        " | expectedNextCountFrom=" .. tostring(controller.takeAllClosedBeforeCount))
     append("Manual watch=" .. tostring(controller.watchManual) ..
         " | manualClickCount=" .. tostring(controller.manualClickCount) ..
         " | pending=" .. tostring(controller.manualPending ~= nil))
@@ -858,7 +907,7 @@ local function diagnosticReport()
         local item = controller.takeAllButtons[i]
         append("TakeAll " .. i .. ": " .. describe(item) .. " | visible=" .. tostring(isVisible(item)))
     end
-    append("NOTE: hidden Chest counts are stale. Neither UI count changes nor manual events prove inventory credits.")
+    append("NOTE: manual Take All closes Chest too; post-reopen count is only a proxy. Actual inventory is still unverified.")
     return table.concat(out, "\n")
 end
 
@@ -947,6 +996,12 @@ connect(collectButton.Activated, function()
         controller.takeAllMethodIndex = 1
         controller.takeAllAttempts = 0
         controller.takeAllOutcome = "NOT TESTED"
+        controller.takeAllReopenAt = 0
+        controller.takeAllClosedBeforeCount = nil
+        controller.takeAllReopenStatus = "NOT TESTED"
+        controller.takeAllUnverifiedReopens = 0
+        controller.lastReopenBefore = nil
+        controller.lastReopenAfter = nil
     end
     if not controller.collect then
         stopWalking()
@@ -982,7 +1037,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.6 started | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.7 started | toggles OFF | PlaceId 79389059854988")
 writeLog("Set your plot near UpgradeClick, then enable Auto Collect; enable Walk to Chest to approach.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
@@ -1030,7 +1085,16 @@ task.spawn(function()
             local button = findTakeAll()
             if not controller.selectedPlot then
                 controller.collectionStage = "Select MY PLOT near your UpgradeClick first"
+            elseif now < controller.takeAllReopenAt then
+                controller.collectionStage = ("Chest closed normally; reopen in %.1fs"):format(
+                    controller.takeAllReopenAt - now)
             elseif button and type(firesignal) == "function" then
+                -- A visible Chest after cooldown is the only nonstale count
+                -- used to judge the prior Take All attempt.
+                if controller.takeAllClosedBeforeCount ~= nil then
+                    observeReopenedChest(button)
+                end
+                if controller.collect then
                 -- Do not assume a success return from firesignal means a server-side reward.
                 stopWalking()
                 controller.collectionStage = controller.takeAllPending and
@@ -1062,6 +1126,7 @@ task.spawn(function()
                             controller.takeAllOutcome = "DISPATCH_ERROR"
                         end
                     end
+                end
                 end
             else
                 local chest, dist, reason = selectedChest()
