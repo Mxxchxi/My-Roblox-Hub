@@ -1,4 +1,4 @@
-# My Anime Mine (v0.10)
+# My Anime Mine (v0.11)
 
 - Roblox game: https://www.roblox.com/games/79389059854988/My-Anime-Mine
 - PlaceId: `79389059854988`
@@ -14,7 +14,13 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 
 ## Features and limitations
 
-- **V0.10 troubleshooting:** **COPY EQUIP / UPGRADE TARGETS** now includes all visible game TextButtons and ImageButtons (up to 70), hidden UI candidates (up to 70), button paths/context, and every detected Holder's real distance and MaxActivationDistance. If Equip Best is still not found, open the game's Inventory manually and recopy diagnostics to identify its real button hierarchy; do not guess server remote calls.
+- **V0.11 live-log fix:** The actual game Inventory opener is a **TextButton named `TextButton` inside `MineGui/HotbarFrame/Content/Container/InventoryButton`**, with one `MouseButton1Click` listener. The script now recognizes this precise ancestry and can attempt to open Inventory when Auto Equip Best is ON. Opening Inventory is not proof that the game exposes or applies Equip Best; capture fresh target diagnostics after the menu appears.
+- **Miner Holder selection:** Live diagnostics on MinePlot3 showed 17 Holder UpgradeClicks; M4 and M5 were ~23.9 studs away with a 24-stud activation range, and nine holders had range 0. The script now processes a newly detected Plot in the same Auto Upgrade tick and records the last tick and Holder click target to distinguish a startup status from failure. Range 0 is never clicked or approached.
+- **Game-wide Upgrades are distinct:** `MineGui/LeftBar/Content/Container/UpgradesButton` opens a separate `MineGui/UpgradesFrame` containing Tap, Chest capacity, Miner slots, Hauler slots and Slot damage upgrades. This V0.11 miner Stats toggle **does not purchase from that menu**. The menu is listed in diagnostics for later explicit selection, avoiding unexpected spending on unrelated upgrades.
+- The diagnostic now lists meaningful hidden Inventory/Equip/Upgrade controls without being crowded out by dozens of repeated hidden Inventory cards.
+
+
+- **V0.11 troubleshooting:** **COPY EQUIP / UPGRADE TARGETS** now includes all visible game TextButtons and ImageButtons (up to 70), hidden UI candidates (up to 70), button paths/context, and every detected Holder's real distance and MaxActivationDistance. If Equip Best is still not found, open the game's Inventory manually and recopy diagnostics to identify its real button hierarchy; do not guess server remote calls.
 - **Auto Upgrade movement:** the script scans all selected-plot `Holders/*/UpgradeClick` detectors directly even when outside activation range and approaches a nearby Holder with bounded natural `Humanoid:MoveTo` (up to 120 studs, 11s no-progress cutoff). Auto Collect is briefly suspended *only during the approach* to avoid conflicting movement commands and resumes afterward. Holder ownership remains based on the auto-selected plot and is not independently verified.
 - **AUTO EQUIP BEST** (OFF by default): searches for the game's Equip Best GUI control and triggers its existing click listener periodically. When not visible, tries opening the game's Inventory menu once per enable cycle. No undocumented remote signatures are used. The click and equipment changes require live verification.
 - **AUTO UPGRADE STATS** (OFF by default): tries UpgradeClick detectors on miners (Holders) in the selected plot, opens the miner's Stats tab when detected, and selects only character Damage, Speed, and Mining Speed upgrade GUI controls. Excludes candidates with Robux, gamepass, premium, purchase, shop, or research hints, and does not automate Research Tree purchases. Clicking a game UI upgrade can spend in-game currency; no Robux actions are intentionally targeted. The script pauses after three unchanged UI attempts or 80 attempts per cycle. The live GUI hierarchy is not yet confirmed and may require adapting from an in-game diagnostic.
@@ -29,7 +35,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 - Includes SCAN GAME, COPY LOG and **COPY TARGET DIAGNOSTICS** with target/range details, Take All signal connection counts (`Activated` and `MouseButton1Click`), a read-only Chest UI text snapshot, event method, and post-dispatch feedback. When `getconnections` is unavailable, the script alternates these two button signal types after inconclusive attempts.
 - Automation toggles and walking start **OFF**. A plot is auto-discovered on startup, retrying when world objects load. Stand within 65 studs of your own upgrade marker and 75 studs of its Chest; if several plots are too close to distinguish, selection stays unset until you move closer. Close with X to stop workers and movement; rerun replaces the previous UI.
 - Press **LeftAlt** to minimize or restore the main window. When minimized, click the small **MY ANIME MINE [+]** restore control near the upper-left corner to reopen. Hiding the window leaves active automation toggles untouched. RightAlt does nothing.
-- Does **not** invoke undocumented remotes, buy items, sell ores/characters, auto-summon, assign crew, auto-upgrade research, or teleport.
+- Does **not** invoke undocumented remotes, buy premium items, sell ores/characters, auto-summon, assign crew, auto-upgrade research, or teleport. Enabling miner stat upgrades may spend ordinary in-game currency.
 - Plot selection is based on proximity to an `UpgradeClick` detector **and** ChestPrompt, **not verified ownership**. Stand near your own plot and inspect the auto-selected Plot number before enabling Auto Collect; it will not switch plots while operating. If walking stalls or MoveTo fails, automation turns OFF rather than teleporting or repeatedly walking forever.
 - A Take All signal call is evaluated after 2.5 seconds. A manually clicked Take All also closes the Chest, so automatic `CHEST_CLOSED_AFTER_TAKE_ALL` is no longer treated as an immediate failure. The script ignores stale closed-GUI values, waits **12 seconds** before attempting to open the selected Plot Chest again, and compares the fresh item count with its pre-click count. A lower count suggests collection but **does not prove inventory credit**; mining may occur concurrently. It pauses after **two inconclusive reopen comparisons** or **six Take All dispatches** per enable cycle, and still pauses after three unchanged open-Chest readings. Re-enable Auto Collect to reset the test cycle.
 - Interactions are experimental: the live game might mine through proprietary server remotes/UI rather than exposed detectors/prompts. A detected interaction **is not proof** of an ore/reward gain. The function is a starting point for in-game diagnostics, not a verified auto-farm.
@@ -49,6 +55,10 @@ For reporting a failure: enter the actual game, select SCAN GAME, select COPY LO
 ## Regression checklist
 
 - [ ] UI loads when entering My Anime Mine.
+- [ ] Actual MineGui Hotbar InventoryButton/TextButton is recognized and clicked through MouseButton1Click when Auto Equip is ON and an Equip Best button is not already visible.
+- [ ] Upgrade continues target discovery immediately after plot selection; the diagnostic records the latest worker tick and Holder click attempted.
+- [ ] Base UpgradesButton is identified as a separate read-only target, not purchased automatically from miner Stats mode.
+- [ ] Hidden GUI diagnostic skips repeated inventory Card buttons so Equip and upgrade controls remain discoverable.
 - [ ] If no Equip Best candidate is visible, copy the complete game GUI Button[]/Hidden[] paths; icon-only toolbar inventory controls are detected where their context is identifiable.
 - [ ] Out-of-range selected-plot Holder UpgradeClick reports distance/max range and moves within range naturally, without teleporting or entering another plot.
 - [ ] Auto Collect V0.8 behavior continues normally whenever upgrade navigation is inactive.
