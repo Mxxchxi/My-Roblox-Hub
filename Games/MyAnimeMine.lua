@@ -2729,6 +2729,7 @@ local function canCollectDuringSell()
     return not controller.sell
         or (controller.sellPhase == "CHEST_HANDOFF"
             and controller.sellHandoffNeedsCollect
+            and controller.takeAllActions <= controller.sellHandoffBaselineTakeAllActions
             and not controller.sellHandoffTakeAllObserved
             and not controller.sellHandoffChestEmpty)
 end
