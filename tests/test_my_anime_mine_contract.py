@@ -33,9 +33,12 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn("local function approachChest(", SOURCE)
         self.assertIn("walkToChest = false", SOURCE)
         self.assertIn("selectedPlot = nil", SOURCE)
+        self.assertIn("local function chestSnapshot(button)", SOURCE)
+        self.assertIn("local function takeAllConnections(button)", SOURCE)
+        self.assertIn("local function settleTakeAll(now)", SOURCE)
 
     def test_diagnostic_and_conservative_interactions(self):
-        for token in ("SCAN GAME", "COPY LOG", "COPY TARGET DIAGNOSTICS", "SET MY PLOT", "WALK TO CHEST", "ClickDetector", "ProximityPrompt",
+        for token in ("SCAN GAME", "COPY LOG", "COPY TARGET DIAGNOSTICS", "SET MY PLOT", "WALK TO CHEST", "MouseButton1Click", "getconnections", "ClickDetector", "ProximityPrompt",
                       "fireclickdetector", "fireproximityprompt", "firesignal", "setclipboard"):
             self.assertIn(token, SOURCE)
         self.assertIn("minePlotName(prompt) == controller.selectedPlot", SOURCE)
