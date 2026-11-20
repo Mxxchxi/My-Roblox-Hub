@@ -13,4 +13,9 @@ return {
         script = "Games/StealAnEgg_Diagnostics.lua",
         uiName = "EggDiagnostics",
     },
+    [79389059854988] = {
+        name = "My Anime Mine (V0.1)",
+        script = "Games/MyAnimeMine.lua",
+        uiName = "MyAnimeMineHub",
+    },
 }
