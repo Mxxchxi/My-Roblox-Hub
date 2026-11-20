@@ -919,6 +919,276 @@ local function settleManualTakeAll(now)
         " | inventory NOT verified")
 end
 
+
+-- GUI-only automation. No undocumented remotes or speculative purchase APIs.
+local function gameGuiButton(node)
+    return (node:IsA("TextButton") or node:IsA("ImageButton"))
+        and not node:IsDescendantOf(gui)
+end
+
+local function textOf(node)
+    local ok, value = pcall(function() return node.Text end)
+    return ok and tostring(value or "") or ""
+end
+
+local function normalizeLabel(value)
+    return tostring(value or ""):lower():gsub("[^%w]", "")
+end
+
+local function actionLabel(button)
+    local parts = { tostring(button.Name), textOf(button) }
+    local n = 0
+    for _, child in ipairs(button:GetDescendants()) do
+        n = n + 1
+        if child:IsA("TextLabel") or child:IsA("TextButton") then
+            parts[#parts + 1] = textOf(child)
+        end
+        if n >= 24 then break end
+    end
+    return table.concat(parts, " ")
+end
+
+local function statContext(button)
+    -- Check the narrowest row first so that one Stats panel with three rows
+    -- does not make every upgrade appear to be for Damage.
+    local cursor = button
+    for _ = 1, 4 do
+        if not cursor or cursor == playerGui then break end
+        local bits = {tostring(cursor.Name)}
+        for _, child in ipairs(cursor:GetChildren()) do
+            if child:IsA("TextLabel") then
+                bits[#bits + 1] = textOf(child)
+            end
+        end
+        local value = normalizeLabel(table.concat(bits, " "))
+        if value:find("miningspeed", 1, true) then return "Mining Speed" end
+        if value:find("damage", 1, true) or value:find("dmg", 1, true) then
+            return "Damage"
+        end
+        if value:find("speed", 1, true) then return "Speed" end
+        cursor = cursor.Parent
+    end
+    return nil
+end
+
+local function inCrewStats(button)
+    local cursor = button
+    local hasStats = false
+    local excluded = false
+    for _ = 1, 7 do
+        if not cursor or cursor == playerGui then break end
+        local name = normalizeLabel(cursor.Name)
+        if name:find("stats", 1, true) or name:find("unitupgrade", 1, true)
+            or name:find("characterupgrade", 1, true) or
+            name:find("holderupgrade", 1, true) then
+            hasStats = true
+        end
+        if name:find("research", 1, true) or name:find("shop", 1, true)
+            or name:find("gamepass", 1, true) or name:find("premium", 1, true)
+            or name:find("purchase", 1, true) then
+            excluded = true
+        end
+        cursor = cursor.Parent
+    end
+    return hasStats and not excluded
+end
+
+local function isPremiumAction(button)
+    local label = actionLabel(button):lower()
+    return label:find("robux", 1, true) ~= nil
+        or label:find("r$", 1, true) ~= nil
+        or label:find("gamepass", 1, true) ~= nil
+        or label:find("premium", 1, true) ~= nil
+        or label:find("product", 1, true) ~= nil
+end
+
+local function isUpgradeAction(button)
+    if not inCrewStats(button) or isPremiumAction(button) then return false end
+    local stat = statContext(button)
+    if not stat then return false end
+    local name = normalizeLabel(button.Name)
+    local textKey = normalizeLabel(textOf(button))
+    if textKey:find("max", 1, true) or textKey:find("locked", 1, true)
+        or textKey:find("notenough", 1, true) then return false end
+    local action = name:find("upgrade", 1, true) or
+        name:find("levelup", 1, true) or name:find("buy", 1, true) or
+        textKey:find("upgrade", 1, true) or textKey:find("levelup", 1, true)
+    if not action then return false end
+    local ok, interactable = pcall(function() return button.Interactable end)
+    if ok and interactable == false then return false end
+    return true
+end
+
+local function scanActionButtons()
+    local equip, inventory, upgrades, stats = {}, {}, {}, {}
+    local count = 0
+    local ok, err = pcall(function()
+        for _, item in ipairs(playerGui:GetDescendants()) do
+            if gameGuiButton(item) and isVisible(item) then
+                count = count + 1
+                local label = normalizeLabel(actionLabel(item))
+                local named = normalizeLabel(item.Name .. " " .. textOf(item))
+                if label:find("equipbest", 1, true)
+                    or named:find("bestcrew", 1, true) then
+                    equip[#equip + 1] = item
+                elseif named == "inventory" or named == "inventorybutton"
+                    or named == "openinventory" or named == "inventorytoggle"
+                    or named == "inventoryicon" then
+                    inventory[#inventory + 1] = item
+                end
+                if isUpgradeAction(item) then
+                    upgrades[#upgrades + 1] = item
+                end
+                if named == "stats" or named == "statsbutton"
+                    or named == "statstab" then
+                    stats[#stats + 1] = item
+                end
+            end
+        end
+    end)
+    if not ok then
+        writeLog("Equip/Upgrade GUI scan ERROR: " .. tostring(err))
+        return
+    end
+    controller.equipCandidates = equip
+    controller.inventoryCandidates = inventory
+    controller.upgradeCandidates = upgrades
+    controller.statsCandidates = stats
+    controller.actionGuiCount = count
+end
+
+local function firstAvailable(list)
+    for _, item in ipairs(list) do
+        if item.Parent and isVisible(item) and not isPremiumAction(item) then
+            return item
+        end
+    end
+    return nil
+end
+
+local function dispatchGameButton(button)
+    if type(firesignal) ~= "function" then
+        return false, "firesignal unavailable", "none"
+    end
+    if not button or not button.Parent or not isVisible(button) then
+        return false, "GUI button hidden", "none"
+    end
+    local event = chooseTakeAllEvent(button)
+    local ok, err = pcall(firesignal, button[event])
+    return ok, ok and "dispatch only; result unverified" or tostring(err), event
+end
+
+local function upgradeRowSnapshot(button)
+    local parent = button and button.Parent
+    if not parent then return "ROW_GONE" end
+    local values = {tostring(parent.Name)}
+    for _, child in ipairs(parent:GetDescendants()) do
+        if child:IsA("TextLabel") or child:IsA("TextButton") then
+            values[#values + 1] = tostring(child.Name) .. "=" .. textOf(child)
+        end
+        if #values >= 30 then break end
+    end
+    return table.concat(values, "|"):sub(1, 1200)
+end
+
+local function nextHolderDetector()
+    if not controller.selectedPlot then return nil, nil end
+    local root = rootPart()
+    if not root then return nil, nil end
+    local holders = {}
+    for _, detector in ipairs(controller.detectors) do
+        if detector.Parent and detector.Name == "UpgradeClick"
+            and minePlotName(detector) == controller.selectedPlot
+            and describe(detector):lower():find("holders", 1, true) then
+            local point = positionOf(detector)
+            if point then
+                local distance = (point - root.Position).Magnitude
+                local range = tonumber(detector.MaxActivationDistance) or 65
+                if distance <= math.min(65, range) then
+                    holders[#holders + 1] = {detector = detector, distance = distance}
+                end
+            end
+        end
+    end
+    table.sort(holders, function(a, b)
+        return describe(a.detector) < describe(b.detector)
+    end)
+    if #holders == 0 then return nil, nil end
+    local index = (controller.holderIndex - 1) % #holders + 1
+    controller.holderIndex = index + 1
+    return holders[index].detector, holders[index].distance
+end
+
+local function resolveUpgradeFeedback(now)
+    local pending = controller.upgradePending
+    if not pending or now - pending.started < 2.7 then return end
+    controller.upgradePending = nil
+    local current = upgradeRowSnapshot(pending.button)
+    if current ~= pending.before then
+        controller.upgradeNoChange = 0
+        controller.upgradeStage = "Stats UI changed (upgrade not verified)"
+    else
+        controller.upgradeNoChange = controller.upgradeNoChange + 1
+        controller.upgradeStage = "Stats UI unchanged " .. controller.upgradeNoChange .. "/3"
+    end
+    writeLog("Upgrade feedback: " .. controller.upgradeStage ..
+        " | " .. pending.stat .. " | event=" .. pending.event)
+    if controller.upgradeNoChange >= 3 then
+        controller.upgrade = false
+        controller.upgradeStage = "PAUSED: no Stats UI change after 3 attempts"
+        writeLog("AUTO UPGRADE paused; use COPY EQUIP / UPGRADE TARGETS.")
+    end
+end
+
+local function actionDiagnosticReport()
+    scanActionButtons()
+    local lines = {
+        "MY ANIME MINE V0.9 EQUIP / UPGRADE TARGETS | " .. os.date("%H:%M:%S"),
+        "PlaceId=" .. tostring(game.PlaceId) ..
+            " | plot=" .. tostring(controller.selectedPlot) ..
+            " | equip=" .. tostring(controller.equip) ..
+            " upgrade=" .. tostring(controller.upgrade),
+        ("GUI visible buttons=%d | equip=%d inventory=%d stats=%d statUpgrades=%d"):format(
+            controller.actionGuiCount or 0,
+            #controller.equipCandidates, #controller.inventoryCandidates,
+            #controller.statsCandidates, #controller.upgradeCandidates),
+        "Equip stage=" .. tostring(controller.equipStage) ..
+            " | attempts=" .. controller.equipAttempts ..
+            " callsOK=" .. controller.equipActions ..
+            " inventoryOpens=" .. controller.inventoryOpenAttempts,
+        "Upgrade stage=" .. tostring(controller.upgradeStage) ..
+            " | attempts=" .. controller.upgradeAttempts ..
+            " callsOK=" .. controller.upgradeActions ..
+            " unchanged=" .. controller.upgradeNoChange ..
+            " holderClicks=" .. controller.holderActions .. "/" .. controller.holderAttempts,
+        "Selected holder=" .. (controller.openedHolder and describe(controller.openedHolder) or "none"),
+        "Executor: firesignal=" .. tostring(type(firesignal) == "function") ..
+            " fireclickdetector=" .. tostring(type(fireclickdetector) == "function") ..
+            " getconnections=" .. tostring(type(getconnections) == "function"),
+    }
+    local function addButtons(name, items)
+        for i = 1, math.min(16, #items) do
+            local button = items[i]
+            local connections = takeAllConnections(button)
+            lines[#lines + 1] = name .. "[" .. i .. "]: " .. describe(button)
+                .. " | label=" .. actionLabel(button):sub(1, 90)
+                .. " | stat=" .. tostring(statContext(button))
+                .. " | clickedListeners=" .. tostring(connections.MouseButton1Click)
+                .. " activatedListeners=" .. tostring(connections.Activated)
+        end
+    end
+    addButtons("EquipBest", controller.equipCandidates)
+    addButtons("Inventory", controller.inventoryCandidates)
+    addButtons("Stats", controller.statsCandidates)
+    addButtons("Upgrade", controller.upgradeCandidates)
+    local holder, distance = nextHolderDetector()
+    lines[#lines + 1] = "Holder candidate=" .. (holder and
+        (describe(holder) .. (" distance=%.1f"):format(distance)) or "NONE IN RANGE")
+    lines[#lines + 1] =
+        "NOTE: button dispatch/click does not prove Equip or stat change; no paid Robux actions are targeted."
+    return table.concat(lines, "\n")
+end
+
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
