@@ -1171,32 +1171,114 @@ local function upgradeRowSnapshot(button)
     return table.concat(values, "|"):sub(1, 1200)
 end
 
-local function nextHolderDetector(peek)
-    if not controller.selectedPlot then return nil, nil end
+-- Read holder ClickDetectors directly from the world, not just the rock scan.
+-- The game's upgrade detector can be outside its own MaxActivationDistance,
+-- in which case report it and approach naturally instead of saying "not found".
+local function holderTargets()
     local root = rootPart()
-    if not root then return nil, nil end
-    local holders = {}
-    for _, detector in ipairs(controller.detectors) do
-        if detector.Parent and detector.Name == "UpgradeClick"
-            and minePlotName(detector) == controller.selectedPlot
-            and describe(detector):lower():find("holders", 1, true) then
-            local point = positionOf(detector)
-            if point then
-                local distance = (point - root.Position).Magnitude
-                local range = tonumber(detector.MaxActivationDistance) or 65
-                if distance <= math.min(65, range) then
-                    holders[#holders + 1] = {detector = detector, distance = distance}
+    local items = {}
+    if not controller.selectedPlot or not root then return items end
+    for _, detector in ipairs(workspace:GetDescendants()) do
+        if detector:IsA("ClickDetector") and detector.Name == "UpgradeClick"
+            and minePlotName(detector) == controller.selectedPlot then
+            local node, isHolder = detector.Parent, false
+            for _ = 1, 7 do
+                if not node or node == workspace then break end
+                if node.Name == "Holders" then isHolder = true; break end
+                node = node.Parent
+            end
+            if isHolder then
+                local pos = positionOf(detector)
+                if pos then
+                    local distance = (pos - root.Position).Magnitude
+                    local allowed = tonumber(detector.MaxActivationDistance) or 10
+                    items[#items + 1] = {
+                        detector = detector, distance = distance,
+                        allowed = allowed, inRange = allowed > 0 and distance <= allowed,
+                    }
                 end
             end
         end
     end
-    table.sort(holders, function(a, b)
+    table.sort(items, function(a, b)
+        if a.distance ~= b.distance then return a.distance < b.distance end
         return describe(a.detector) < describe(b.detector)
     end)
-    if #holders == 0 then return nil, nil end
-    local index = (controller.holderIndex - 1) % #holders + 1
+    return items
+end
+
+local function nextHolderDetector(peek)
+    local items = holderTargets()
+    local ready = {}
+    for _, item in ipairs(items) do
+        if item.inRange then ready[#ready + 1] = item end
+    end
+    if #ready == 0 then return nil, nil, items[1] end
+    local index = (controller.holderIndex - 1) % #ready + 1
     if not peek then controller.holderIndex = index + 1 end
-    return holders[index].detector, holders[index].distance
+    return ready[index].detector, ready[index].distance, items[1]
+end
+
+local function stopUpgradeWalking()
+    if not controller.upgradeWalkTarget then return end
+    controller.upgradeWalkTarget = nil
+    controller.upgradeWalkLastDistance = nil
+    local char = player.Character
+    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+    local root = rootPart()
+    if humanoid and root then
+        pcall(function() humanoid:MoveTo(root.Position) end)
+    end
+end
+
+local function approachUpgradeHolder(target, now)
+    if not target then
+        return "No Holder UpgradeClick on selected plot"
+    end
+    if target.allowed <= 0 then
+        return "Holder UpgradeClick disabled (max range 0)"
+    end
+    if target.distance > 120 then
+        return ("Holder too far (%.1f studs, limit 120)"):format(target.distance)
+    end
+    local char = player.Character
+    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+    local pos = positionOf(target.detector)
+    if not humanoid or not pos or humanoid.Health <= 0 then
+        return "Cannot walk: Humanoid or holder position missing"
+    end
+    if controller.upgradeWalkTarget ~= target.detector then
+        stopUpgradeWalking()
+        stopWalking() -- surrender a previous Chest MoveTo; Auto Collect remains ON
+        controller.upgradeWalkTarget = target.detector
+        controller.upgradeWalkLastDistance = target.distance
+        controller.upgradeWalkProgressAt = now
+        controller.upgradeWalkLastCommand = 0
+        controller.upgradeWalkLastTarget = describe(target.detector)
+        writeLog(("Upgrade walking to %s (%.1f studs, click range %.1f)"):format(
+            controller.upgradeWalkLastTarget, target.distance, target.allowed))
+    end
+    if target.distance + 0.75 < (controller.upgradeWalkLastDistance or math.huge) then
+        controller.upgradeWalkLastDistance = target.distance
+        controller.upgradeWalkProgressAt = now
+    end
+    if now - controller.upgradeWalkProgressAt > 11 then
+        stopUpgradeWalking()
+        controller.upgrade = false
+        return "PAUSED: holder walk blocked for 11s (Auto Collect unaffected)"
+    end
+    if now - controller.upgradeWalkLastCommand >= 1.8 then
+        controller.upgradeWalkLastCommand = now
+        controller.upgradeWalkAttempts = controller.upgradeWalkAttempts + 1
+        local ok, err = pcall(function() humanoid:MoveTo(pos) end)
+        if not ok then
+            stopUpgradeWalking()
+            controller.upgrade = false
+            return "PAUSED: Holder MoveTo ERROR: " .. tostring(err)
+        end
+    end
+    controller.upgradeBusyUntil = now + 3.5
+    return ("Walking to holder %.1f / %.1f studs"):format(target.distance, target.allowed)
 end
 
 local function resolveUpgradeFeedback(now)
