@@ -130,6 +130,10 @@ local takeAllLabel = instance("TextLabel")
 takeAllLabel.Name = "Caption"
 takeAllLabel.Text = "Take All"
 takeAllLabel.Parent = takeAllButton
+local chestCountLabel = instance("TextLabel")
+chestCountLabel.Name = "Label"
+chestCountLabel.Text = "15/183.9K Items"
+chestCountLabel.Parent = contentFrame
 local firedTakeAll = 0
 local mouseClickHandled = 0
 takeAllButton.MouseButton1Click:Connect(function() mouseClickHandled = mouseClickHandled + 1 end)
@@ -161,7 +165,7 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll}"
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll}"
     local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
     return assert(env.MyAnimeMineHubController), helpers
 end
@@ -204,6 +208,10 @@ assert(event == "MouseButton1Click" and counts.MouseButton1Click == 1
        and counts.Activated == 0, "click event with live connection not selected")
 assert(helpers.chestSnapshot(takeAllButton):find("Take All", 1, true),
        "chest snapshot missing Take All label")
+assert(helpers.chestItemCount(takeAllButton) == 15, "Chest count parser did not read 15/183.9K Items")
+chestCountLabel.Text = "1,250/183.9K Items"
+assert(helpers.chestItemCount(takeAllButton) == 1250, "Chest count parser did not support commas")
+chestCountLabel.Text = "15/183.9K Items"
 findButton("Scan").Activated:Fire()
 findButton("CopyLog").Activated:Fire()
 assert(clipboard and clipboard:find("PlaceId 79389059854988", 1, true), "copy log unavailable")
@@ -253,20 +261,41 @@ assert(main.Visible and not restore.Visible and not first.minimized, "restore ch
 input.InputBegan:Fire(alt, false)
 input.InputBegan:Fire(alt, false)
 assert(main.Visible and not restore.Visible, "LeftAlt must toggle open and closed")
--- A dispatch alone is not proof. No visible GUI change must pause collection.
-first.takeAllPending = {button = takeAllButton, before = helpers.chestSnapshot(takeAllButton),
-    sentAt = 1, event = "MouseButton1Click"}
+-- A count decrease is useful Chest UI evidence, but NOT confirmed inventory gain.
+first.takeAllPending = {
+    button = takeAllButton, before = helpers.chestSnapshot(takeAllButton),
+    beforeCount = 15, sentAt = 1, event = "MouseButton1Click",
+}
 first.takeAllAttempts = 1
+chestCountLabel.Text = "9/183.9K Items"
 helpers.settleTakeAll(10)
-assert(first.takeAllOutcome == "NO_CHEST_UI_CHANGE" and first.collect,
-       "first inconclusive Take All should not stop collect")
-first.takeAllPending = {button = takeAllButton, before = helpers.chestSnapshot(takeAllButton),
-    sentAt = 11, event = "Activated"}
+assert(first.takeAllOutcome:find("CHEST_COUNT_DECREASED", 1, true)
+       and first.lastChestCountDelta == -6 and first.takeAllNotDecreased == 0,
+       "count decrease should be recorded without confirming inventory")
+chestCountLabel.Text = "12/183.9K Items"
+first.takeAllPending = {
+    button = takeAllButton, before = helpers.chestSnapshot(takeAllButton),
+    beforeCount = 9, sentAt = 11, event = "MouseButton1Click",
+}
 helpers.settleTakeAll(20)
-assert(first.takeAllNoChange == 2 and not first.collect, "repeated unchanged chest must pause collect")
+assert(first.takeAllOutcome:find("CHEST_COUNT_INCREASED", 1, true)
+       and first.takeAllNotDecreased == 1 and first.collect,
+       "Chest count increase should be treated as ambiguous mining")
+for i = 2, 3 do
+    first.takeAllPending = {
+        button = takeAllButton, before = helpers.chestSnapshot(takeAllButton),
+        beforeCount = 12, sentAt = 20 + i, event = "MouseButton1Click",
+    }
+    helpers.settleTakeAll(30 + i)
+end
+assert(first.takeAllNotDecreased == 3 and not first.collect,
+       "three calls without count decrease must pause Auto Collect")
+findButton("Diagnostics").Activated:Fire()
+assert(clipboard:find("Chest count before=12 after=12 delta=0", 1, true),
+       "count delta not present in copied diagnostics")
 findButton("AutoCollect").Activated:Fire()
-assert(first.collect and first.takeAllNoChange == 0 and first.takeAllOutcome == "NOT TESTED",
-       "reenabling Collect should reset feedback state")
+assert(first.collect and first.takeAllNotDecreased == 0 and first.takeAllOutcome == "NOT TESTED",
+       "reenabling Collect should reset bounded feedback state")
 local second = run()
 assert(not first.running and second.running, "rerun did not clean up previous controller")
 local count = 0
@@ -281,4 +310,4 @@ assert(not second.selectedPlot and not second.walkToChest, "rerun should clear p
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.4 event detection, feedback pause, plot-bound Chest, LeftAlt and lifecycle")
+print("PASS My Anime Mine V0.5 Chest item-count feedback, bounded attempts, plot and Alt lifecycle")
