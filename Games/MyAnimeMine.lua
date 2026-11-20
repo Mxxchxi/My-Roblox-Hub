@@ -1350,6 +1350,7 @@ local function actionDiagnosticReport()
             " callsOK=" .. controller.equipActions ..
             " inventoryOpens=" .. controller.inventoryOpenAttempts,
         "Upgrade stage=" .. tostring(controller.upgradeStage) ..
+            " | lastTick=" .. tostring(controller.upgradeLastTick) ..
             " | attempts=" .. controller.upgradeAttempts ..
             " callsOK=" .. controller.upgradeActions ..
             " unchanged=" .. controller.upgradeNoChange ..
@@ -1561,6 +1562,9 @@ connect(upgradeButton.Activated, function()
     if controller.upgrade then
         stopUpgradeWalking()
         controller.upgradeStage = "Finding selected-plot miner Stats"
+        controller.upgradeLastTick = nil
+        controller.lastHolderProbe = "none"
+        controller.lastHolderProbeInRange = "none"
         controller.upgradeAttempts = 0
         controller.upgradeNoChange = 0
         controller.upgradePending = nil
@@ -1744,10 +1748,12 @@ task.spawn(function()
                         " | equip result NOT verified")
                 elseif not best and inventory and controller.inventoryOpenAttempts < 1 then
                     controller.inventoryOpenAttempts = controller.inventoryOpenAttempts + 1
+                    controller.inventoryLastTarget = describe(inventory)
                     local ok, result, event = dispatchGameButton(inventory)
-                    controller.equipStage = ok and "Opening Inventory UI" or result
+                    controller.equipStage = ok and "Inventory click sent; scanning for Equip Best"
+                        or ("Inventory click ERROR: " .. result)
                     writeLog("AUTO EQUIP: " .. controller.equipStage .. " | event=" .. event ..
-                        " | " .. describe(inventory))
+                        " | " .. controller.inventoryLastTarget .. " | NOT proof Inventory opened")
                 elseif not best then
                     controller.equipStage = "Equip Best not visible; COPY EQUIP / UPGRADE TARGETS"
                 end
@@ -1757,9 +1763,10 @@ task.spawn(function()
         if controller.upgradePending then resolveUpgradeFeedback(now) end
         if controller.upgrade and not controller.watchManual and now - lastUpgradeTick >= 3.5 then
             lastUpgradeTick = now
+            controller.upgradeLastTick = now
+            if not controller.selectedPlot then autoSelectPlot() end
             if not controller.selectedPlot then
-                autoSelectPlot()
-                controller.upgradeStage = "Waiting for nearby plot"
+                controller.upgradeStage = "Waiting for nearby plot (not acquired)"
             elseif findTakeAll() then
                 controller.upgradeStage = "Waiting for Chest to close"
             elseif controller.upgradePending then
@@ -1811,6 +1818,8 @@ task.spawn(function()
                         controller.upgradeBusyUntil = now + 6
                         controller.holderNextAt = now + 23
                         controller.holderAttempts = controller.holderAttempts + 1
+                        controller.lastHolderProbe = describe(detector)
+                        controller.lastHolderProbeInRange = ("%.1f studs"):format(distance)
                         local ok, err = pcall(fireclickdetector, detector)
                         if ok then
                             controller.holderActions = controller.holderActions + 1
