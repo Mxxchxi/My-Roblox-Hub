@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.16 (Select All then Sell at SellStand)
+-- My Roblox Hub | My Anime Mine v0.17 (sell-route audit: scoped actions, touch authorization, state clarity)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -41,6 +41,7 @@ local controller = {
     sellWarpAttempts = 0,
     sellShopsAttempts = 0,
     sellVendorAttempts = 0,
+    sellVendorTouched = false,
     sellWalkAttempts = 0,
     sellStartedAt = 0,
     sellPhaseAt = 0,
@@ -323,7 +324,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.16 | Shops > SellStand > Select All > Sell.",
+    Text = "V0.17 | Shops > SellStand > Select All > Sell; verify ore and money manually.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -1689,12 +1690,16 @@ end
 -- MineGui/SellFrame/Content/SellButton (MouseButton1Click listener 1).
 -- The bare SellButton is only actionable after this exact vendor interaction.
 local function sellMenuSessionReady()
-    return controller.sell
-        and (controller.sellPhase == "SELECT_ALL" or controller.sellPhase == "SELL_MENU")
-        and controller.sellVendorAttempts >= 1
-        and type(controller.sellVendorPath) == "string"
-        and (controller.sellVendorPath:find("SellStand/", 1, true) ~= nil
-            or controller.sellVendorPath:find("SellItemsStand/", 1, true) ~= nil)
+    if not controller.sell
+        or (controller.sellPhase ~= "SELECT_ALL" and controller.sellPhase ~= "SELL_MENU")
+        or type(controller.sellVendorPath) ~= "string" then return false end
+    local location=controller.sellVendorPath
+    local validPath = location:find("/SellStand/",1,true) ~= nil
+        or location:find("/SellItemsStand/",1,true) ~= nil
+        or location:match("/SellStand$") ~= nil
+        or location:match("/SellItemsStand$") ~= nil
+    return validPath
+        and (controller.sellVendorAttempts >= 1 or controller.sellVendorTouched == true)
 end
 
 local function validatedSellStandSession()
@@ -1769,18 +1774,21 @@ local function isExactSellStandButton(button)
 end
 
 local function oreSellButton()
+    -- Even explicitly named Sell Ores buttons must belong to the current
+    -- authorized SellFrame. Do not click a similarly named button in Shop,
+    -- Inventory, or another player's UI.
+    if not sellMenuSessionReady() then return nil,0,"SESSION_NOT_VERIFIED" end
+    local frame=knownOreSellFrame()
+    if not frame then return nil,0,"SELLFRAME_NOT_VISIBLE" end
     local candidates={}
-    for _,button in ipairs(playerGui:GetDescendants()) do
+    for _,button in ipairs(frame:GetDescendants()) do
         if gameGuiButton(button) and isVisible(button) and not isPremiumAction(button) then
             local name=normalizeLabel(button.Name)
             local label=normalizeLabel(textOf(button))
             local explicit=name=="sellores" or name=="sellore"
                 or name=="sellallores" or name=="selloresbutton"
                 or label=="sellores" or label=="sellallores"
-            if explicit and (gameGuiAncestorNamed(button,"MineGui")
-                or gameGuiAncestorNamed(button,"SellGui")
-                or gameGuiAncestorNamed(button,"SellFrame")
-                or gameGuiAncestorNamed(button,"SellMenu")) then
+            if explicit then
                 candidates[#candidates+1]={button=button,kind="EXPLICIT_ORES"}
             elseif isExactSellStandButton(button) then
                 candidates[#candidates+1]={button=button,kind="CONFIRMED_SELL_STAND"}
@@ -1896,7 +1904,8 @@ local function shopSellStep(now)
         if vendor.distance <= required then
             sellStopWalk()
             if vendor.type == "marker" then
-                sellSetPhase("SELECT_ALL","Reached Sell stand marker; locating Select All",now)
+                controller.sellVendorTouched=true
+                sellSetPhase("SELECT_ALL","Reached Sell stand marker; checking for SellFrame Select All",now)
                 return
             end
             if vendor.maxRange <= 0 then
@@ -1994,7 +2003,7 @@ local function shopSellStep(now)
             controller.sellAttempts = controller.sellAttempts+1
             if ok then
                 controller.sellCallsOK = controller.sellCallsOK+1
-                sellSetPhase("DONE","Sell "..kind.." dispatched ("..reason.."); currency NOT verified",now)
+                sellSetPhase("DONE","Sell "..kind.." sent ("..reason.."); ore/currency UNVERIFIED, return to Plot manually",now)
             else
                 sellSetPhase("PAUSED","Sell Ores click error: "..reason,now)
             end
@@ -2031,7 +2040,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.16 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.17 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -2191,7 +2200,7 @@ end
 
 local function sellRouteDiagnosticReport()
     local lines={
-        "MY ANIME MINE V0.16 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.17 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
         "PlaceId="..tostring(game.PlaceId)..
             " | autoSell="..tostring(controller.sell)..
             " | autoCollect="..tostring(controller.collect)..
@@ -2210,7 +2219,8 @@ local function sellRouteDiagnosticReport()
             " | selectEvent="..tostring(controller.sellSelectAllEvent)..
             " | selectSent="..tostring(controller.sellSelectAllSent)..
             " | vendor="..tostring(controller.sellVendorPath)..
-            " | vendorDist="..tostring(controller.sellVendorDistance),
+            " | vendorDist="..tostring(controller.sellVendorDistance)..
+            " | vendorTouched="..tostring(controller.sellVendorTouched),
         "CharacterPos="..tostring(rootPart() and rootPart().Position),
     }
     local tele=shopsTeleportLauncher()
@@ -2259,7 +2269,7 @@ end
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.16 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.17 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
@@ -2369,7 +2379,10 @@ local function refreshStatus()
     autoPlotLabel.Text = "PLOT AUTO: " .. tostring(controller.selectedPlot or "SEARCHING") ..
         "  |  WALK AUTO: " .. (controller.walkToChest and "ON" or "OFF")
     manualWatchButton.Text = "WATCH TAKE ALL: " .. (controller.watchManual and "ON" or "OFF")
-    sellButton.Text = "AUTO SELL ORES: " .. (controller.sell and "ROUTING" or "OFF")
+    local sellIndicator = not controller.sell and "OFF"
+        or controller.sellPhase == "DONE" and "SENT"
+        or controller.sellPhase == "PAUSED" and "PAUSED" or "ROUTING"
+    sellButton.Text = "AUTO SELL ORES: " .. sellIndicator
     sellButton.BackgroundColor3 = controller.sell and palette.accent or palette.button
     manualWatchButton.BackgroundColor3 = controller.watchManual and palette.accent or palette.button
     equipButton.Text = "AUTO EQUIP BEST: " .. (controller.equip and "ON" or "OFF")
@@ -2463,6 +2476,7 @@ connect(sellButton.Activated, function()
         controller.sellWarpAttempts = 0
         controller.sellShopsAttempts = 0
         controller.sellVendorAttempts = 0
+        controller.sellVendorTouched = false
         controller.sellWalkAttempts = 0
         controller.sellVendorPath = "none"
         controller.sellActionTarget = "none"
@@ -2580,7 +2594,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.16 started | Select All before Sell | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.17 started | sell-route audited | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
