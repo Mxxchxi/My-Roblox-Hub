@@ -44,6 +44,7 @@ local controller = {
     upgradeAttempts = 0,
     upgradeActions = 0,
     upgradeNoChange = 0,
+    upgradeIndex = 1,
     upgradeStage = "OFF",
     upgradePending = nil,
     holderAttempts = 0,
@@ -1091,7 +1092,7 @@ local function upgradeRowSnapshot(button)
     return table.concat(values, "|"):sub(1, 1200)
 end
 
-local function nextHolderDetector()
+local function nextHolderDetector(peek)
     if not controller.selectedPlot then return nil, nil end
     local root = rootPart()
     if not root then return nil, nil end
@@ -1115,7 +1116,7 @@ local function nextHolderDetector()
     end)
     if #holders == 0 then return nil, nil end
     local index = (controller.holderIndex - 1) % #holders + 1
-    controller.holderIndex = index + 1
+    if not peek then controller.holderIndex = index + 1 end
     return holders[index].detector, holders[index].distance
 end
 
@@ -1181,7 +1182,7 @@ local function actionDiagnosticReport()
     addButtons("Inventory", controller.inventoryCandidates)
     addButtons("Stats", controller.statsCandidates)
     addButtons("Upgrade", controller.upgradeCandidates)
-    local holder, distance = nextHolderDetector()
+    local holder, distance = nextHolderDetector(true)
     lines[#lines + 1] = "Holder candidate=" .. (holder and
         (describe(holder) .. (" distance=%.1f"):format(distance)) or "NONE IN RANGE")
     lines[#lines + 1] =
@@ -1204,6 +1205,12 @@ local function diagnosticReport()
     append("Plot selected=" .. tostring(controller.selectedPlot) ..
         " (AUTO proximity selection; ownership NOT verified)")
     append("Plot selection reason=" .. tostring(controller.plotSelectionReason))
+    append("Auto Equip=" .. tostring(controller.equip) ..
+        " stage=" .. tostring(controller.equipStage) .. " calls=" ..
+        tostring(controller.equipActions) .. "/" .. tostring(controller.equipAttempts))
+    append("Auto Upgrade=" .. tostring(controller.upgrade) ..
+        " stage=" .. tostring(controller.upgradeStage) .. " calls=" ..
+        tostring(controller.upgradeActions) .. "/" .. tostring(controller.upgradeAttempts))
     append("Closest upgrade plot=" .. (nearPlot and
         (nearPlot .. (" dist=%.1f"):format(plotDistance)) or tostring(plotReason)))
     local chest, chestDistance, chestReason = selectedChest()
@@ -1300,6 +1307,59 @@ connect(mineButton.Activated, function()
         " | characters normally mine rocks without clicking them")
     refreshStatus()
 end)
+connect(equipButton.Activated, function()
+    if type(firesignal) ~= "function" then
+        writeLog("Auto Equip unavailable: executor has no firesignal")
+        return
+    end
+    controller.equip = not controller.equip
+    if controller.equip then
+        controller.inventoryOpenAttempts = 0
+        controller.equipStage = "Looking for Equip Best"
+        scanActionButtons()
+    else
+        controller.equipStage = "OFF"
+    end
+    writeLog("AUTO EQUIP BEST " .. (controller.equip and "ON" or "OFF") ..
+        " | uses visible game Inventory button only")
+    refreshStatus()
+end)
+connect(upgradeButton.Activated, function()
+    if type(firesignal) ~= "function" or type(fireclickdetector) ~= "function" then
+        writeLog("Auto Upgrade requires firesignal and fireclickdetector")
+        return
+    end
+    controller.upgrade = not controller.upgrade
+    if controller.upgrade then
+        controller.upgradeStage = "Finding selected-plot miner Stats"
+        controller.upgradeAttempts = 0
+        controller.upgradeNoChange = 0
+        controller.upgradePending = nil
+        controller.upgradeIndex = 1
+        controller.holderIndex = 1
+        controller.holderNextAt = 0
+        controller.openedHolder = nil
+        controller.statsTabAttempted = false
+        autoSelectPlot()
+        scanActionButtons()
+    else
+        controller.upgradePending = nil
+        controller.upgradeStage = "OFF"
+    end
+    writeLog("AUTO UPGRADE STATS " .. (controller.upgrade and "ON" or "OFF") ..
+        " | miner Damage, Speed, Mining Speed; game currency only")
+    refreshStatus()
+end)
+connect(actionDiagnosticsButton.Activated, function()
+    local report = actionDiagnosticReport()
+    if type(setclipboard) == "function" then
+        local ok, err = pcall(setclipboard, report)
+        writeLog(ok and "Equip/Upgrade targets copied" or ("Target copy ERROR: " .. tostring(err)))
+    else
+        print(report)
+        writeLog("Clipboard unavailable; Equip/Upgrade targets printed to console")
+    end
+end)
 connect(manualWatchButton.Activated, function()
     if not controller.watchManual and controller.collect then
         writeLog("Turn Auto Collect OFF before watching a manual Take All.")
@@ -1359,6 +1419,7 @@ connect(scanButton.Activated, function()
     writeLog("Manual scan requested")
     scan(true)
     autoSelectPlot()
+    scanActionButtons()
     refreshStatus()
 end)
 connect(detailButton.Activated, function()
@@ -1391,6 +1452,7 @@ refreshStatus()
 
 task.spawn(function()
     local lastScan, lastMine, lastCollect, lastStatus = os.clock(), 0, 0, 0
+    local lastEquipTick, lastUpgradeTick, lastActionScan = 0, 0, 0
     local lastMineReason, lastCollectReason = "", ""
     local lastAutoPlotCheck = 0
     local lastMineLog, lastCollectLog = 0, 0
@@ -1420,6 +1482,118 @@ task.spawn(function()
                 if reason ~= lastMineReason or now - lastMineLog >= 10 then
                     lastMineLog, lastMineReason = now, reason
                     writeLog("Mine idle: " .. reason .. " | scanned=" .. #controller.detectors)
+                end
+            end
+        end
+        if (controller.equip or controller.upgrade) and now - lastActionScan >= 2.8 then
+            lastActionScan = now
+            scanActionButtons()
+        end
+
+        -- Equip Best is a low-frequency action. One inventory-open attempt
+        -- per cycle avoids toggling a game menu open/closed repeatedly.
+        if controller.equip and now - lastEquipTick >= 6 then
+            lastEquipTick = now
+            if findTakeAll() then
+                controller.equipStage = "Waiting for Chest UI to close"
+            else
+                local best = firstAvailable(controller.equipCandidates)
+                local inventory = firstAvailable(controller.inventoryCandidates)
+                if best and now - (controller.lastEquipAt or 0) >= 20 then
+                    controller.lastEquipAt = now
+                    controller.equipAttempts = controller.equipAttempts + 1
+                    local ok, result, event = dispatchGameButton(best)
+                    if ok then controller.equipActions = controller.equipActions + 1 end
+                    controller.equipStage = ok and "Equip Best click dispatched" or ("Equip: " .. result)
+                    writeLog("AUTO EQUIP " .. controller.equipStage ..
+                        " | event=" .. event .. " | " .. describe(best) ..
+                        " | equip result NOT verified")
+                elseif not best and inventory and controller.inventoryOpenAttempts < 1 then
+                    controller.inventoryOpenAttempts = controller.inventoryOpenAttempts + 1
+                    local ok, result, event = dispatchGameButton(inventory)
+                    controller.equipStage = ok and "Opening Inventory UI" or result
+                    writeLog("AUTO EQUIP: " .. controller.equipStage .. " | event=" .. event ..
+                        " | " .. describe(inventory))
+                elseif not best then
+                    controller.equipStage = "Equip Best not visible; COPY EQUIP / UPGRADE TARGETS"
+                end
+            end
+        end
+
+        if controller.upgradePending then resolveUpgradeFeedback(now) end
+        if controller.upgrade and now - lastUpgradeTick >= 3.5 then
+            lastUpgradeTick = now
+            if not controller.selectedPlot then
+                autoSelectPlot()
+                controller.upgradeStage = "Waiting for nearby plot"
+            elseif findTakeAll() then
+                controller.upgradeStage = "Waiting for Chest to close"
+            elseif controller.upgradePending then
+                controller.upgradeStage = "Waiting for Stats UI feedback"
+            elseif controller.upgradeAttempts >= 80 then
+                controller.upgrade = false
+                controller.upgradeStage = "PAUSED: 80 attempted stat upgrades per cycle"
+                writeLog("AUTO UPGRADE paused after 80 attempts; inspect results before restarting.")
+            else
+                local valid = {}
+                for _, item in ipairs(controller.upgradeCandidates) do
+                    if item.Parent and isVisible(item) and isUpgradeAction(item) then
+                        valid[#valid + 1] = item
+                    end
+                end
+                if controller.openedHolder and #valid > 0 then
+                    local index = (controller.upgradeIndex - 1) % #valid + 1
+                    controller.upgradeIndex = index + 1
+                    local target = valid[index]
+                    controller.upgradeAttempts = controller.upgradeAttempts + 1
+                    local signature = upgradeRowSnapshot(target)
+                    local stat = statContext(target) or "unknown"
+                    local ok, result, event = dispatchGameButton(target)
+                    if ok then
+                        controller.upgradeActions = controller.upgradeActions + 1
+                        controller.upgradePending = {
+                            button = target, before = signature, started = now,
+                            stat = stat, event = event,
+                        }
+                    end
+                    controller.upgradeStage = ok and ("Upgrading " .. stat .. " (check pending)")
+                        or ("Upgrade ERROR: " .. result)
+                    writeLog("AUTO UPGRADE " .. controller.upgradeStage ..
+                        " | " .. describe(target) .. " | game currency only")
+                elseif controller.openedHolder and not controller.statsTabAttempted
+                    and now - controller.openedHolderAt < 25
+                    and firstAvailable(controller.statsCandidates) then
+                    local tab = firstAvailable(controller.statsCandidates)
+                    controller.statsTabAttempted = true
+                    local ok, result, event = dispatchGameButton(tab)
+                    controller.upgradeStage = ok and "Opening character Stats tab"
+                        or ("Stats tab ERROR: " .. result)
+                    writeLog("AUTO UPGRADE " .. controller.upgradeStage .. " | event=" ..
+                        event .. " | " .. describe(tab))
+                elseif now >= controller.holderNextAt then
+                    local detector, distance = nextHolderDetector()
+                    if detector then
+                        controller.holderNextAt = now + 23
+                        controller.holderAttempts = controller.holderAttempts + 1
+                        local ok, err = pcall(fireclickdetector, detector)
+                        if ok then
+                            controller.holderActions = controller.holderActions + 1
+                            controller.openedHolder = detector
+                            controller.openedHolderAt = now
+                            controller.statsTabAttempted = false
+                            controller.upgradeNoChange = 0
+                            controller.upgradeStage = ("Opening miner at %.1f studs"):format(distance)
+                        else
+                            controller.upgradeStage = "UpgradeClick ERROR: " .. tostring(err)
+                        end
+                        writeLog("AUTO UPGRADE " .. controller.upgradeStage ..
+                            " | " .. describe(detector) .. " | result NOT verified")
+                    else
+                        controller.upgradeStage =
+                            "No in-range Holder UpgradeClick on selected Plot"
+                    end
+                else
+                    controller.upgradeStage = "Waiting for miner Stats panel"
                 end
             end
         end
