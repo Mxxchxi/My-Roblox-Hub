@@ -165,7 +165,7 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll}"
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll}"
     local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
     return assert(env.MyAnimeMineHubController), helpers
 end
@@ -296,6 +296,51 @@ assert(clipboard:find("Chest count before=12 after=12 delta=0", 1, true),
 findButton("AutoCollect").Activated:Fire()
 assert(first.collect and first.takeAllNotDecreased == 0 and first.takeAllOutcome == "NOT TESTED",
        "reenabling Collect should reset bounded feedback state")
+-- A hidden Chest may still have stale count text. That must never be reported
+-- as a live unchanged Chest, and Auto Collect must pause rather than reopen it.
+chestCountLabel.Text = "30/183.9K Items"
+first.takeAllPending = {
+    button = takeAllButton,
+    before = helpers.chestSnapshot(takeAllButton),
+    beforeCount = 30,
+    sentAt = 1,
+    event = "MouseButton1Click",
+}
+gameChestGui.Enabled = false
+helpers.settleTakeAll(10)
+assert(first.takeAllOutcome:find("CHEST_CLOSED",1,true) and
+       first.lastChestCountAfter == nil and first.lastChestCountDelta == nil and
+       not first.collect, "hidden Chest must invalidate cached item counts and pause")
+gameChestGui.Enabled = true
+
+-- The manually clicked GUI button is observed only; the hub must not emit signals.
+local emittedBefore = firedTakeAll
+findButton("ManualWatch").Activated:Fire()
+assert(first.watchManual and not first.collect, "manual watch only when Auto Collect OFF")
+helpers.monitorManualButton()
+assert(first.manualMonitorButton == takeAllButton, "did not attach manual click listener")
+takeAllButton.MouseButton1Click:Fire()
+assert(first.manualClickCount == 1 and firedTakeAll == emittedBefore,
+       "manual watch must observe without emitting executor click")
+gameChestGui.Enabled = false
+helpers.settleManualTakeAll(os.clock() + 5)
+assert(first.manualOutcome:find("MANUAL_CHEST_CLOSED",1,true) and
+       first.manualAfter == nil and first.manualDelta == nil,
+       "manual hidden Chest must not reuse stale cached count")
+gameChestGui.Enabled = true
+takeAllButton.MouseButton1Click:Fire()
+assert(first.manualClickCount == 2, "manual click not observed")
+chestCountLabel.Text = "12/183.9K Items"
+helpers.settleManualTakeAll(os.clock() + 5)
+assert(first.manualOutcome == "MANUAL_CHEST_COUNT_DECREASED"
+       and first.manualDelta == -18, "manual count decrease not diagnosed")
+findButton("Diagnostics").Activated:Fire()
+assert(clipboard:find("Manual TakeAll feedback=MANUAL_CHEST_COUNT_DECREASED",1,true),
+       "manual diagnostic not included in copied report")
+findButton("AutoCollect").Activated:Fire()
+assert(not first.collect, "manual watch must block auto collection")
+findButton("ManualWatch").Activated:Fire()
+assert(not first.watchManual, "manual watch did not stop")
 local second = run()
 assert(not first.running and second.running, "rerun did not clean up previous controller")
 local count = 0
@@ -310,4 +355,4 @@ assert(not second.selectedPlot and not second.walkToChest, "rerun should clear p
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.5 Chest item-count feedback, bounded attempts, plot and Alt lifecycle")
+print("PASS My Anime Mine V0.6 stale Chest count handling, manual click watch, and plot/Alt lifecycle")
