@@ -18,7 +18,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 - **Natural navigation:** walks with `Humanoid:MoveTo` toward a grounded Sell Items prompt or stall after Shops warp. Navigation has a 185-stud target limit, a 14-second no-progress timeout, and uses only an exposed ProximityPrompt or ClickDetector when in activation range.
 - **Selling only ores:** an explicit `Sell Ores` / `Sell All Ores` button must be discovered. **Generic `Sell`, `Select All`, or `Sell All` is never dispatched automatically** because the vendor can contain characters or equipment. If the game's seller requires selecting individual ore rows before a generic Sell button, the hub pauses and the next in-game diagnostic must identify those row controls. This is incomplete until a real ore-only UI path is confirmed.
 - **Interaction with Auto Collect:** during a Shops selling route, Auto Collect's prior worker is temporarily paused to avoid competing MoveTo commands; after turning the sale switch OFF it can resume. **Return travel to the player's Plot is not yet automated** because the game's return teleport target has not been identified; from Shops, return to your Plot before resuming the mining loop.
-- **Verification:** copied `COPY EQUIP / UPGRADE TARGETS` includes `SHOP SELL ROUTE`, Teleport/Shop options, closest recognized stall, distances, and ore-only sale button candidates. A dispatched click does not prove that any ore was sold or the cash balance changed.
+- **Verification:** use the dedicated **COPY SELL ROUTE** button for a compact report of Teleport/Shop options, nearest grounded stand, walking progress, and ore-only Sell controls. The existing **COPY EQUIP / UPGRADE TARGETS** also includes sell details. A dispatched click does not prove that any ore was sold or the cash balance changed.
 - The old paid Chest Auto Sell button is documented as a **legacy diagnostic only** and is not used by the new Auto Sell toggle.
 
 - **Headless-only Equip/Upgrade (V0.14):** when AUTO EQUIP BEST or AUTO UPGRADE STATS is ON, the hub never attempts to open the game's Inventory, Stats, Holders, or Upgrades panels. Auto Collect remains unchanged.
@@ -68,7 +68,7 @@ For reporting a failure: enter the actual game, select SCAN GAME, select COPY LO
 - [ ] The sell-menu interaction is bounded to one vendor opening per route.
 - [ ] Only an explicitly ore-scoped Sell Ores button can be clicked. Generic Sell All and character/equipment controls remain untouched.
 - [ ] Auto Collect logic is unchanged and is paused while Shops route is active, not permanently disabled by this feature.
-- [ ] COPY EQUIP / UPGRADE TARGETS includes SHOP SELL ROUTE phases, Shop candidates and vendor distances, and any ore-only sale target.
+- [ ] COPY SELL ROUTE includes phase, Shops destination, vendor path/distance, and verified ore-only action, separate from full Equip/Upgrade diagnostics.
 - [ ] Enabling Auto Equip/Upgrade does not click InventoryButton, UpgradesButton, Holder UpgradeClick or Stats tab automatically.
 - [ ] A hidden native MineGui/InventoryFrame Equip Best button with an attached listener can receive a signal without opening the frame.
 - [ ] Unknown headless upgrade commands produce HEADLESS_PROTOCOL_UNKNOWN and do not invoke remotes or spend game currency.
