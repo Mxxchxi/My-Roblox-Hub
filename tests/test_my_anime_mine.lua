@@ -656,6 +656,7 @@ local teleBeforeHandoff=teleClicks
 teleport.Visible=false
 findButton("AutoSell").Activated:Fire()
 assert(first.sell and first.sellPhase=="CHEST_HANDOFF", "initial Chest handoff phase missing")
+first.sellPhaseAt=29 -- simulated elapsed time; preserve the real 24-second grace
 helpers.shopSellStep(30)
 assert(first.sellPhase=="CHEST_HANDOFF" and first.sellWarpAttempts==0
        and teleClicks==teleBeforeHandoff and first.sellChestHandoffState=="CHEST_OPEN",
