@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.12 (headless actions without game UI openers)
+-- My Roblox Hub | My Anime Mine v0.13 (opt-in native Chest Auto Sell target discovery)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -35,6 +35,19 @@ local controller = {
     running = true,
     mine = false,
     collect = false,
+    sell = false,
+    sellStage = "OFF",
+    sellCandidates = {},
+    sellLabels = {},
+    sellAttempts = 0,
+    sellCallsOK = 0,
+    sellSent = false,
+    sellTarget = "none",
+    sellEvent = "none",
+    sellInitialState = "UNKNOWN",
+    sellLastObservedState = "UNKNOWN",
+    sellNextScanAt = 0,
+    sellLastStageLog = "",
     equip = false,
     upgrade = false,
     headlessOnly = true,
@@ -148,6 +161,7 @@ function controller:Stop()
     self.running = false
     self.mine = false
     self.collect = false
+    self.sell = false
     self.equip = false
     self.upgrade = false
     self.walkToChest = false
@@ -280,7 +294,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.12 | HEADLESS ONLY: never auto-open Inventory, Stats, Holders or Upgrades UI.",
+    Text = "V0.13 | Auto Sell ores uses the native Chest control only. No extra game panels.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -300,7 +314,9 @@ local autoPlotLabel = make("TextLabel", panel, {
 make("UICorner", autoPlotLabel, { CornerRadius = UDim.new(0, 7) })
 local equipButton = button("AutoEquip", "AUTO EQUIP BEST: OFF", 16, 298, 230, 38)
 local upgradeButton = button("AutoUpgrade", "AUTO UPGRADE STATS: OFF", 264, 298, 230, 38)
-local manualWatchButton = button("ManualWatch", "WATCH MANUAL TAKE ALL: OFF", 16, 345, 478, 38)
+local sellButton = button("AutoSell", "AUTO SELL ORES: OFF", 16, 345, 230, 38)
+local manualWatchButton = button("ManualWatch", "WATCH MANUAL TAKE ALL: OFF", 264, 345, 230, 38)
+manualWatchButton.TextSize = 11
 local actionDiagnosticsButton = button("ActionDiagnostics", "COPY EQUIP / UPGRADE TARGETS", 16, 393, 478, 38)
 local statusLabel = make("TextLabel", panel, {
     Name = "Status", Position = UDim2.fromOffset(17, 437),
@@ -1431,7 +1447,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.12 EQUIP / UPGRADE TARGETS | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.13 EQUIP / UPGRADE / SELL TARGETS | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -1535,7 +1551,7 @@ end
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.12 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.13 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoEquip=" .. tostring(controller.equip) .. " autoUpgrade=" .. tostring(controller.upgrade))
@@ -1631,17 +1647,20 @@ local function refreshStatus()
     collectButton.BackgroundColor3 = controller.collect and palette.accent or palette.button
     autoPlotLabel.Text = "PLOT AUTO: " .. tostring(controller.selectedPlot or "SEARCHING") ..
         "  |  WALK AUTO: " .. (controller.walkToChest and "ON" or "OFF")
-    manualWatchButton.Text = "WATCH MANUAL TAKE ALL: " .. (controller.watchManual and "ON" or "OFF")
+    manualWatchButton.Text = "WATCH TAKE ALL: " .. (controller.watchManual and "ON" or "OFF")
+    sellButton.Text = "AUTO SELL ORES: " .. (controller.sell and "ON" or "OFF")
+    sellButton.BackgroundColor3 = controller.sell and palette.accent or palette.button
     manualWatchButton.BackgroundColor3 = controller.watchManual and palette.accent or palette.button
     equipButton.Text = "AUTO EQUIP BEST: " .. (controller.equip and "ON" or "OFF")
     upgradeButton.Text = "AUTO UPGRADE STATS: " .. (controller.upgrade and "DIAG ONLY" or "OFF")
     equipButton.BackgroundColor3 = controller.equip and palette.accent or palette.button
     upgradeButton.BackgroundColor3 = controller.upgrade and palette.accent or palette.button
-    statusLabel.Text = ("Rock %d | Chest %d | TakeAll %d | collect calls %d/%d\nEquip: %s (%d OK) | Upgrade: %s (%d OK)\nCollect: %s"):format(
+    statusLabel.Text = ("Rock %d | Chest %d | TakeAll %d | Collect calls %d/%d\nSell: %s | Equip: %s | Upgrade: %s\nCollect: %s"):format(
         #controller.detectors, #controller.prompts, #controller.takeAllButtons,
         controller.collectActions, controller.takeAllActions,
-        tostring(controller.equipStage):sub(1, 35), controller.equipActions,
-        tostring(controller.upgradeStage):sub(1, 35), controller.upgradeActions,
+        tostring(controller.sellStage):sub(1, 37),
+        tostring(controller.equipStage):sub(1, 22),
+        tostring(controller.upgradeStage):sub(1, 22),
         tostring(controller.collectionStage):sub(1, 67))
 end
 
@@ -1796,7 +1815,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.12 started | headless Equip/Upgrade | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.13 started | native Chest Auto Sell | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
