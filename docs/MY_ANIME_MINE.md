@@ -20,6 +20,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 - Auto Collect attempts nearby `fireproximityprompt` interactions, then tries a visible Chest **Take All** / Claim All / Collect All button through `firesignal` (where supported). Both methods require live verification.
 - Includes SCAN GAME (lists prompt paths and named UI buttons), COPY LOG, and **COPY TARGET DIAGNOSTICS** with range/target/reason information. Repeated unchanged scan logs are suppressed.
 - Both toggles start **OFF**. The UI and loading should work regardless of these optional executor APIs. Close with X to stop workers; rerun replaces the previous UI.
+- Press **LeftAlt** to minimize or restore the main window. When minimized, click the small **MY ANIME MINE [+]** restore control near the upper-left corner to reopen. Hiding the window leaves active automation toggles untouched. RightAlt does nothing.
 - Does **not** invoke undocumented remotes, buy items, sell ores/characters, auto-summon, assign crew, auto-upgrade research, or teleport.
 - Interactions are experimental: the live game might mine through proprietary server remotes/UI rather than exposed detectors/prompts. A detected interaction **is not proof** of an ore/reward gain. The function is a starting point for in-game diagnostics, not a verified auto-farm.
 - Auto Mine requires `fireclickdetector`; Auto Collect requires `fireproximityprompt` or `firesignal` executor support. Successful function calls are **not** proof of an ore reward.
@@ -40,6 +41,7 @@ For reporting a failure: enter the actual game, select SCAN GAME, select COPY LO
 - [ ] UI loads when entering My Anime Mine.
 - [ ] All automatic toggles begin OFF.
 - [ ] The UI can be closed and the loader can be rerun without duplicate windows.
+- [ ] LeftAlt hides and restores the window; restore chip works, and active toggles are retained.
 - [ ] SCAN GAME produces useful diagnostics, including prompt hierarchy and Take All detection.
 - [ ] COPY TARGET DIAGNOSTICS includes a candidate target/distance or missing-target reason.
 - [ ] Executor exposes interaction functions and the selected rock/chest actually changes in-game.
