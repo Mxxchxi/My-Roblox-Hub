@@ -23,6 +23,14 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn('Name = "MyAnimeMineHub"', SOURCE)
         self.assertIn("mine = false", SOURCE)
         self.assertIn("collect = false", SOURCE)
+        self.assertIn("sell = false", SOURCE)
+        self.assertIn("local function scanNativeAutoSell()", SOURCE)
+        self.assertIn("local function nativeAutoSellState(button)", SOURCE)
+        self.assertIn("local function setNativeAutoSell(desired)", SOURCE)
+        self.assertIn("local function tryNativeAutoSell()", SOURCE)
+        self.assertIn("AUTO_SELL_STATE_UNKNOWN (no toggle sent)", SOURCE)
+        self.assertIn("AUTO_SELL_AMBIGUOUS_ACTIVE_BUTTONS", SOURCE)
+        self.assertIn("Chest Auto Sell candidates=", SOURCE)
         self.assertIn("equip = false", SOURCE)
         self.assertIn("headlessOnly = true", SOURCE)
         self.assertIn("local function hiddenEquipBestCandidates()", SOURCE)
@@ -81,7 +89,7 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn("takeAllAttempts >= 6", SOURCE)
 
     def test_diagnostic_and_conservative_interactions(self):
-        for token in ("SCAN GAME", "COPY LOG", "COPY TARGET DIAGNOSTICS", "PLOT AUTO:", "WALK AUTO:", "WATCH MANUAL TAKE ALL", "AUTO EQUIP BEST", "AUTO UPGRADE STATS", "COPY EQUIP / UPGRADE TARGETS", "MouseButton1Click", "getconnections", "ClickDetector", "ProximityPrompt",
+        for token in ("SCAN GAME", "COPY LOG", "COPY TARGET DIAGNOSTICS", "PLOT AUTO:", "WALK AUTO:", "WATCH MANUAL TAKE ALL", "AUTO EQUIP BEST", "AUTO UPGRADE STATS", "AUTO SELL ORES", "COPY EQUIP / UPGRADE TARGETS", "MouseButton1Click", "getconnections", "ClickDetector", "ProximityPrompt",
                       "fireclickdetector", "fireproximityprompt", "firesignal", "setclipboard"):
             self.assertIn(token, SOURCE)
         self.assertIn("minePlotName(prompt) == controller.selectedPlot", SOURCE)
