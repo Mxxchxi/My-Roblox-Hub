@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.13 (opt-in native Chest Auto Sell target discovery)
+-- My Roblox Hub | My Anime Mine v0.14 (warp Shops then walk to ore sell stall)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -37,6 +37,23 @@ local controller = {
     collect = false,
     sell = false,
     sellStage = "OFF",
+    sellPhase = "OFF",
+    sellWarpAttempts = 0,
+    sellShopsAttempts = 0,
+    sellVendorAttempts = 0,
+    sellWalkAttempts = 0,
+    sellStartedAt = 0,
+    sellPhaseAt = 0,
+    sellWarpOrigin = nil,
+    sellVendorPath = "none",
+    sellVendorDistance = nil,
+    sellMenuButtons = {},
+    sellLastMoveAt = 0,
+    sellLastProgressAt = 0,
+    sellLastDistance = nil,
+    sellMoveTarget = nil,
+    sellActionTarget = "none",
+    sellNoGameUIPurchase = true,
     sellCandidates = {},
     sellLabels = {},
     sellAttempts = 0,
@@ -162,6 +179,12 @@ function controller:Stop()
     self.mine = false
     self.collect = false
     self.sell = false
+    if self.sellMoveTarget then
+        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if humanoid and root then pcall(function() humanoid:MoveTo(root.Position) end) end
+        self.sellMoveTarget = nil
+    end
     self.equip = false
     self.upgrade = false
     self.walkToChest = false
@@ -294,7 +317,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.13 | Auto Sell ores uses the native Chest control only. No extra game panels.",
+    Text = "V0.14 | Auto Sell Ores: warp Shops > walk to sell stand > sell ores only.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -317,7 +340,9 @@ local upgradeButton = button("AutoUpgrade", "AUTO UPGRADE STATS: OFF", 264, 298,
 local sellButton = button("AutoSell", "AUTO SELL ORES: OFF", 16, 345, 230, 38)
 local manualWatchButton = button("ManualWatch", "WATCH MANUAL TAKE ALL: OFF", 264, 345, 230, 38)
 manualWatchButton.TextSize = 11
-local actionDiagnosticsButton = button("ActionDiagnostics", "COPY EQUIP / UPGRADE TARGETS", 16, 393, 478, 38)
+local actionDiagnosticsButton = button("ActionDiagnostics", "COPY EQUIP / UPGRADE TARGETS", 16, 393, 230, 38)
+actionDiagnosticsButton.TextSize = 11
+local sellDiagnosticsButton = button("SellDiagnostics", "COPY SELL ROUTE", 264, 393, 230, 38)
 local statusLabel = make("TextLabel", panel, {
     Name = "Status", Position = UDim2.fromOffset(17, 437),
     Size = UDim2.fromOffset(478, 65),
@@ -1533,6 +1558,330 @@ local function tryNativeAutoSell()
     return setNativeAutoSell("ON")
 end
 
+
+-- Normal ore sale uses the Shops teleport destination and a physical sell
+-- stand. Do not confuse it with the paid native Chest Auto Sell Game Pass.
+local function sellSetPhase(phase, message, now)
+    controller.sellPhase = phase
+    controller.sellPhaseAt = now or os.clock()
+    controller.sellStage = message or phase
+    writeLog("SHOP SELL: " .. tostring(controller.sellStage))
+end
+
+local function sellClick(button)
+    if type(firesignal) ~= "function" then return false, "firesignal unavailable" end
+    if not button or not button.Parent then return false, "button removed" end
+    local counts = takeAllConnections(button)
+    local event
+    if type(counts.MouseButton1Click) == "number" and counts.MouseButton1Click > 0 then
+        event = "MouseButton1Click"
+    elseif type(counts.Activated) == "number" and counts.Activated > 0 then
+        event = "Activated"
+    end
+    if not event then return false, "no verified event listener" end
+    local ok, err = pcall(firesignal, button[event])
+    return ok, ok and event or tostring(err)
+end
+
+local function shopsTeleportLauncher()
+    for _, button in ipairs(playerGui:GetDescendants()) do
+        if gameGuiButton(button) and isVisible(button)
+            and button.Name == "TeleportButton"
+            and gameGuiAncestorNamed(button, "MineGui") then
+            return button
+        end
+    end
+    return nil
+end
+
+local function shopsWarpDestination()
+    local candidates = {}
+    for _, button in ipairs(playerGui:GetDescendants()) do
+        if gameGuiButton(button) then
+            local key = normalizeLabel(button.Name)
+            local textKey = normalizeLabel(textOf(button))
+            local labeled = normalizeLabel(actionLabel(button))
+            local explicit = key == "shops" or key == "shopsbutton"
+                or key == "shopsdestination" or key == "shopswarp"
+                or textKey == "shops" or textKey == "shopsteleport"
+                or labeled == "shops"
+            if explicit and not isPremiumAction(button)
+                and not gameGuiAncestorNamed(button, "ShopPurchase")
+                and not gameGuiAncestorNamed(button, "Store")
+                and (isVisible(button) or gameGuiAncestorNamed(button, "TeleportFrame")
+                    or gameGuiAncestorNamed(button, "TeleportGui")
+                    or gameGuiAncestorNamed(button, "TeleportMenu")) then
+                candidates[#candidates+1] = button
+            end
+        end
+    end
+    controller.sellMenuButtons = candidates
+    -- Never pick arbitrarily among multiple Shops buttons.
+    return #candidates == 1 and candidates[1] or nil, #candidates
+end
+
+local function sellNodePosition(item)
+    if item:IsA("BasePart") then return item.Position end
+    return positionOf(item)
+end
+
+local function sellVendorTargets()
+    local root = rootPart()
+    if not root then return {} end
+    local list = {}
+    for _, item in ipairs(workspace:GetDescendants()) do
+        local prompt = item:IsA("ProximityPrompt")
+        local detector = item:IsA("ClickDetector")
+        local marker = item:IsA("BasePart")
+        if prompt or detector or marker then
+            local title = normalizeLabel(item.Name .. " " ..
+                (prompt and tostring(item.ActionText or "") or ""))
+            local parent = item.Parent
+            local parentName = parent and normalizeLabel(parent.Name) or ""
+            local grand = parent and parent.Parent
+            local grandName = grand and normalizeLabel(grand.Name) or ""
+            local context = title .. parentName .. grandName
+            local named = context:find("sellitems",1,true)
+                or context:find("sellore",1,true)
+                or context:find("oreseller",1,true)
+                or context:find("sellstall",1,true)
+                or context:find("sellstand",1,true)
+                or context:find("sellpoint",1,true)
+            local contextual = prompt and title == "sell"
+                and (parentName:find("shop",1,true)
+                    or parentName:find("vendor",1,true)
+                    or parentName:find("sell",1,true))
+            if (named or contextual) and not context:find("gamepass",1,true)
+                and not context:find("premium",1,true)
+                and not context:find("characters",1,true) then
+                local pos = sellNodePosition(item)
+                if pos then
+                    local d = (pos - root.Position).Magnitude
+                    local maxRange = (prompt or detector)
+                        and tonumber(item.MaxActivationDistance) or 10
+                    list[#list+1] = {
+                        target=item, position=pos, distance=d,
+                        type=prompt and "prompt" or detector and "detector" or "marker",
+                        maxRange=maxRange,
+                    }
+                end
+            end
+        end
+    end
+    table.sort(list, function(a,b)
+        -- Favor actual interaction over signs/marker parts.
+        local aa,bb = a.type=="marker", b.type=="marker"
+        if aa ~= bb then return not aa end
+        if a.distance ~= b.distance then return a.distance < b.distance end
+        return describe(a.target) < describe(b.target)
+    end)
+    return list
+end
+
+local function oreSellButton()
+    local candidates = {}
+    for _, button in ipairs(playerGui:GetDescendants()) do
+        if gameGuiButton(button) and isVisible(button) and not isPremiumAction(button) then
+            local name = normalizeLabel(button.Name)
+            local label = normalizeLabel(textOf(button))
+            -- An unqualified "Sell", "Select All" or "Sell All" may liquidate
+            -- miners/equipment. Only explicitly ore-scoped actions qualify.
+            local explicit = name == "sellores" or name == "sellore"
+                or name == "sellallores" or name == "selloresbutton"
+                or label == "sellores" or label == "sellallores"
+            if explicit and (gameGuiAncestorNamed(button, "MineGui")
+                or gameGuiAncestorNamed(button, "SellGui")
+                or gameGuiAncestorNamed(button, "SellFrame")
+                or gameGuiAncestorNamed(button, "SellMenu")) then
+                candidates[#candidates+1] = button
+            end
+        end
+    end
+    return #candidates == 1 and candidates[1] or nil, #candidates
+end
+
+local function sellStopWalk()
+    if controller.sellMoveTarget then
+        local root = rootPart()
+        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if root and humanoid then pcall(function() humanoid:MoveTo(root.Position) end) end
+        controller.sellMoveTarget = nil
+    end
+end
+
+local function shopSellStep(now)
+    if not controller.sell then return end
+    local phase = controller.sellPhase
+    if phase == "DONE" or phase == "PAUSED" then return end
+    local root = rootPart()
+    if not root then
+        controller.sellStage = "Waiting for character"
+        return
+    end
+    if phase == "TELEPORT_OPEN" then
+        local shops, count = shopsWarpDestination()
+        if shops then
+            controller.sellWarpOrigin = root.Position
+            controller.sellShopsAttempts = controller.sellShopsAttempts + 1
+            controller.sellActionTarget = describe(shops)
+            local ok, reason = sellClick(shops)
+            if ok then
+                sellSetPhase("WARP_WAIT", "Shops destination clicked ("..reason..")",now)
+            else
+                sellSetPhase("PAUSED", "Shops click failed: "..reason,now)
+            end
+            return
+        end
+        local button = shopsTeleportLauncher()
+        if not button then
+            controller.sellStage = count > 1 and "Multiple Shops options; no automatic selection"
+                or "TeleportButton not found"
+            if now - controller.sellPhaseAt > 15 then
+                sellSetPhase("PAUSED", controller.sellStage, now)
+            end
+            return
+        end
+        controller.sellWarpOrigin = root.Position
+        controller.sellActionTarget = describe(button)
+        controller.sellWarpAttempts = controller.sellWarpAttempts + 1
+        local ok,reason = sellClick(button)
+        if not ok then
+            sellSetPhase("PAUSED","Teleport click failed: "..reason,now)
+        else
+            sellSetPhase("SHOPS_PICK", "Teleport opened; looking for Shops destination",now)
+        end
+        return
+    end
+    if phase == "SHOPS_PICK" or phase == "WARP_WAIT" then
+        local moved = controller.sellWarpOrigin
+            and (root.Position - controller.sellWarpOrigin).Magnitude or 0
+        if moved > 50 then
+            sellSetPhase("VENDOR_WALK",("Warp movement %.1f studs; searching Sell Items stand"):format(moved),now)
+            return
+        end
+        if phase == "SHOPS_PICK" then
+            local shops,count = shopsWarpDestination()
+            if shops then
+                controller.sellShopsAttempts = controller.sellShopsAttempts + 1
+                controller.sellActionTarget = describe(shops)
+                local ok,reason = sellClick(shops)
+                if ok then
+                    sellSetPhase("WARP_WAIT","Shops destination clicked ("..reason..")",now)
+                else
+                    sellSetPhase("PAUSED","Shops click failed: "..reason,now)
+                end
+                return
+            end
+            controller.sellStage = count > 1 and "Multiple Shops targets; diagnostics needed"
+                or "Waiting for Shops option after Teleport"
+        else
+            controller.sellStage = "Waiting to arrive at Shops"
+        end
+        if now - controller.sellPhaseAt > 14 then
+            sellSetPhase("PAUSED","Shops warp not confirmed; copy SELL ROUTE DIAGNOSTICS",now)
+        end
+        return
+    end
+    if phase == "VENDOR_WALK" then
+        local candidates = sellVendorTargets()
+        local vendor = candidates[1]
+        if not vendor then
+            controller.sellStage = "Shop warp reached; Sell Items stand target not found"
+            if now-controller.sellPhaseAt > 18 then
+                sellSetPhase("PAUSED",controller.sellStage,now)
+            end
+            return
+        end
+        controller.sellVendorPath = describe(vendor.target)
+        controller.sellVendorDistance = vendor.distance
+        if vendor.distance > 185 then
+            sellSetPhase("PAUSED",("Sell stand %.1f studs away (>185 limit)"):format(vendor.distance),now)
+            return
+        end
+        -- A touch-operated Sell stand can show its UI by walking onto its
+        -- actual BasePart. Stop only when within 3 studs of a bare marker.
+        local required = vendor.type == "marker" and 3
+            or math.max(3, math.min(10, vendor.maxRange - 1))
+        if vendor.distance <= required then
+            sellStopWalk()
+            if vendor.type == "marker" then
+                sellSetPhase("SELL_MENU","Reached Sell stand marker; checking touch-opened Sell GUI",now)
+                return
+            end
+            if vendor.maxRange <= 0 then
+                sellSetPhase("PAUSED","Sell stand interaction disabled",now)
+                return
+            end
+            local ok,reason
+            if vendor.type == "prompt" and type(fireproximityprompt) == "function" then
+                ok,reason = pcall(fireproximityprompt,vendor.target)
+            elseif vendor.type == "detector" and type(fireclickdetector) == "function" then
+                ok,reason = pcall(fireclickdetector,vendor.target)
+            else
+                sellSetPhase("PAUSED","Sell stand interaction API missing",now)
+                return
+            end
+            controller.sellVendorAttempts = controller.sellVendorAttempts + 1
+            if ok then sellSetPhase("SELL_MENU","Sell stand interaction sent; looking for ore-only Sell action",now)
+            else sellSetPhase("PAUSED","Sell stand action error: "..tostring(reason),now) end
+            return
+        end
+        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then
+            sellSetPhase("PAUSED","No living Humanoid for walking",now)
+            return
+        end
+        if controller.sellMoveTarget ~= vendor.target then
+            sellStopWalk()
+            controller.sellMoveTarget = vendor.target
+            controller.sellLastProgressAt = now
+            controller.sellLastDistance = vendor.distance
+            controller.sellLastMoveAt = 0
+        end
+        if vendor.distance < (controller.sellLastDistance or math.huge)-1 then
+            controller.sellLastDistance = vendor.distance
+            controller.sellLastProgressAt = now
+        end
+        if now - controller.sellLastProgressAt > 14 then
+            sellStopWalk()
+            sellSetPhase("PAUSED","Walk to Sell stand blocked for 14s",now)
+            return
+        end
+        if now - controller.sellLastMoveAt > 1.8 then
+            controller.sellLastMoveAt = now
+            controller.sellWalkAttempts = controller.sellWalkAttempts+1
+            local ok,err = pcall(function() humanoid:MoveTo(vendor.position) end)
+            if not ok then
+                sellStopWalk()
+                sellSetPhase("PAUSED","Sell stand MoveTo error: "..tostring(err),now)
+                return
+            end
+        end
+        controller.sellStage = ("Walking to Sell Items %.1f studs"):format(vendor.distance)
+        return
+    end
+    if phase == "SELL_MENU" then
+        local action,count = oreSellButton()
+        if action then
+            controller.sellActionTarget = describe(action)
+            local ok,reason = sellClick(action)
+            controller.sellSent = true
+            controller.sellAttempts = controller.sellAttempts+1
+            if ok then
+                controller.sellCallsOK = controller.sellCallsOK+1
+                sellSetPhase("DONE","Sell Ores click sent; currency NOT verified",now)
+            else
+                sellSetPhase("PAUSED","Sell Ores click error: "..reason,now)
+            end
+        elseif now-controller.sellPhaseAt > 14 then
+            sellSetPhase("PAUSED", count>1 and "Ambiguous ore-only Sell buttons"
+                or "Sell interface does not expose an ore-only button; no Sell All attempted",now)
+        else
+            controller.sellStage = "Waiting for verified Sell Ores action"
+        end
+    end
+end
+
 local function resolveUpgradeFeedback(now)
     local pending = controller.upgradePending
     if not pending or now - pending.started < 2.7 then return end
@@ -1557,7 +1906,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.13 EQUIP / UPGRADE TARGETS + AUTO SELL | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.14 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -1606,7 +1955,30 @@ local function actionDiagnosticReport()
     addButtons("Upgrade", controller.upgradeCandidates)
     addButtons("GameUpgradesMenu (read-only, not auto-purchased)", controller.guiUpgradeMenu)
     local sellButtons, sellLabels = scanNativeAutoSell()
-    lines[#lines + 1] = "Native Chest Auto Sell: enabled=" .. tostring(controller.sell) ..
+    local tele = shopsTeleportLauncher()
+    local shopsWarp, shopsCount = shopsWarpDestination()
+    local vendorOptions = sellVendorTargets()
+    local sellAction, sellActionCount = oreSellButton()
+    lines[#lines+1] = "SHOP SELL ROUTE: phase="..tostring(controller.sellPhase)..
+        " | stage="..tostring(controller.sellStage)..
+        " | warpAttempts="..controller.sellWarpAttempts..
+        " | ShopsClicks="..controller.sellShopsAttempts..
+        " | walks="..controller.sellWalkAttempts..
+        " | vendorInteractions="..controller.sellVendorAttempts..
+        " | sells="..controller.sellCallsOK.."/"..controller.sellAttempts
+    lines[#lines+1] = "TeleportButton="..(tele and describe(tele) or "NOT FOUND")..
+        " | Shops candidates="..shopsCount..
+        " | selected Shops="..(shopsWarp and describe(shopsWarp) or "NONE")
+    lines[#lines+1] = "Sell vendor candidates="..#vendorOptions
+    for i=1,math.min(16,#vendorOptions) do
+        local v=vendorOptions[i]
+        lines[#lines+1] = ("Vendor[%d]: %s | kind=%s | dist=%.1f | range=%.1f"):format(
+            i,describe(v.target),v.type,v.distance,v.maxRange)
+    end
+    lines[#lines+1] = "Ore-only Sell candidates="..sellActionCount..
+        " | ready="..(sellAction and describe(sellAction) or "NONE")
+    lines[#lines+1] = "Generic Sell/Select All buttons are NOT auto-clicked: they may sell miners."
+    lines[#lines + 1] = "Native Chest Auto Sell (legacy, not used by route): enabled=" .. tostring(controller.sell) ..
         " | stage=" .. tostring(controller.sellStage) ..
         " | target=" .. tostring(controller.sellTarget) ..
         " | event=" .. tostring(controller.sellEvent) ..
@@ -1679,23 +2051,83 @@ local function actionDiagnosticReport()
             textOf(button):sub(1, 45), nearbyButtonContext(button):sub(1, 75))
     end
     lines[#lines + 1] =
-        "NOTE: Auto Sell targets ONLY the native Chest auto-sell toggle; signal calls and UI labels do not prove ore sales. No extra game panel or unverified Remote opened/invoked."
+        "NOTE: Shop-route Auto Sell requires Shops warp, Sell Items stand, and explicit ORE-ONLY Sell. Never auto-clicks generic Sell All or uses the Auto Sell Game Pass."
     return table.concat(lines, "\n")
+end
+
+local function sellRouteDiagnosticReport()
+    local lines={
+        "MY ANIME MINE V0.14 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
+        "PlaceId="..tostring(game.PlaceId)..
+            " | autoSell="..tostring(controller.sell)..
+            " | autoCollect="..tostring(controller.collect)..
+            " | plot="..tostring(controller.selectedPlot),
+        "Phase="..tostring(controller.sellPhase)..
+            " | Stage="..tostring(controller.sellStage),
+        "Warp button clicks="..controller.sellWarpAttempts..
+            " | Shops destination clicks="..controller.sellShopsAttempts..
+            " | walk commands="..controller.sellWalkAttempts..
+            " | Sell vendor interactions="..controller.sellVendorAttempts..
+            " | Sell Ores clicks="..controller.sellCallsOK.."/"..controller.sellAttempts,
+        "Last target="..tostring(controller.sellActionTarget)..
+            " | vendor="..tostring(controller.sellVendorPath)..
+            " | vendorDist="..tostring(controller.sellVendorDistance),
+        "CharacterPos="..tostring(rootPart() and rootPart().Position),
+    }
+    local tele=shopsTeleportLauncher()
+    local shops,shopCount=shopsWarpDestination()
+    lines[#lines+1]="Teleport button="..(tele and describe(tele) or "NOT FOUND")
+    lines[#lines+1]="Shops destination candidates="..shopCount..
+        " | selected="..(shops and describe(shops) or "NONE")
+    local vendors=sellVendorTargets()
+    lines[#lines+1]="Sell stand targets="..#vendors
+    for i=1,math.min(12,#vendors) do
+        local v=vendors[i]
+        lines[#lines+1]=("Vendor[%d]: %s | kind=%s | distance=%.1f | maxRange=%.1f"):format(
+            i,describe(v.target),v.type,v.distance,v.maxRange)
+    end
+    local action,count=oreSellButton()
+    lines[#lines+1]="Explicit ore-only Sell controls="..count..
+        " | selected="..(action and describe(action) or "NONE")
+    lines[#lines+1]="Visible game buttons related to warp/shop/sell:"
+    local found=0
+    for _,button in ipairs(playerGui:GetDescendants()) do
+        if gameGuiButton(button) and isVisible(button) then
+            local name=normalizeLabel(button.Name.." "..textOf(button))
+            if name:find("teleport",1,true) or name:find("shops",1,true)
+                or name:find("sell",1,true) or name:find("ore",1,true) then
+                found=found+1
+                if found<=35 then
+                    local counts=takeAllConnections(button)
+                    lines[#lines+1]="GUI["..found.."]: "..describe(button)..
+                        " | text="..textOf(button):sub(1,50)..
+                        " | mouse="..tostring(counts.MouseButton1Click)..
+                        " activated="..tostring(counts.Activated)
+                end
+            end
+        end
+    end
+    lines[#lines+1]="NOTE: no generic Sell All button is clicked; a sent signal is not proof of sale or money received."
+    return table.concat(lines,"\n")
 end
 
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.13 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.14 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
         " autoEquip=" .. tostring(controller.equip) .. " autoUpgrade=" .. tostring(controller.upgrade))
-    append("Native Chest Auto Sell=" .. tostring(controller.sellStage) ..
-        " | target=" .. tostring(controller.sellTarget) ..
-        " | event=" .. tostring(controller.sellEvent) ..
-        " | dispatched=" .. tostring(controller.sellSent) ..
-        " | callsOK=" .. tostring(controller.sellCallsOK) ..
+    append("Shop Sell=" .. tostring(controller.sell) ..
+        " | phase=" .. tostring(controller.sellPhase) ..
+        " | stage=" .. tostring(controller.sellStage) ..
+        " | warp=" .. tostring(controller.sellWarpAttempts) ..
+        " / Shops=" .. tostring(controller.sellShopsAttempts) ..
+        " / vendor=" .. tostring(controller.sellVendorAttempts) ..
+        " / walk=" .. tostring(controller.sellWalkAttempts) ..
+        " | vendorTarget=" .. tostring(controller.sellVendorPath) ..
+        " | sellClicks=" .. tostring(controller.sellCallsOK) ..
         "/" .. tostring(controller.sellAttempts))
     append(("Targets: rocks=%d prompts=%d TakeAll=%d"):format(
         #controller.detectors, #controller.prompts, #controller.takeAllButtons))
@@ -1790,7 +2222,7 @@ local function refreshStatus()
     autoPlotLabel.Text = "PLOT AUTO: " .. tostring(controller.selectedPlot or "SEARCHING") ..
         "  |  WALK AUTO: " .. (controller.walkToChest and "ON" or "OFF")
     manualWatchButton.Text = "WATCH TAKE ALL: " .. (controller.watchManual and "ON" or "OFF")
-    sellButton.Text = "AUTO SELL ORES: " .. (controller.sell and "ON" or "OFF")
+    sellButton.Text = "AUTO SELL ORES: " .. (controller.sell and "ROUTING" or "OFF")
     sellButton.BackgroundColor3 = controller.sell and palette.accent or palette.button
     manualWatchButton.BackgroundColor3 = controller.watchManual and palette.accent or palette.button
     equipButton.Text = "AUTO EQUIP BEST: " .. (controller.equip and "ON" or "OFF")
@@ -1876,29 +2308,40 @@ connect(actionDiagnosticsButton.Activated, function()
 end)
 connect(sellButton.Activated, function()
     controller.sell = not controller.sell
+    sellStopWalk()
     if controller.sell then
-        controller.sellStage = "WAITING_FOR_NATIVE_CHEST_AUTO_SELL"
         controller.sellSent = false
         controller.sellAttempts = 0
         controller.sellCallsOK = 0
-        controller.sellTarget = "none"
-        controller.sellEvent = "none"
-        controller.sellInitialState = "UNKNOWN"
-        controller.sellLastObservedState = "UNKNOWN"
-        controller.sellNextScanAt = 0
-        controller.sellLastStageLog = ""
-        scanNativeAutoSell()
-        writeLog("AUTO SELL ORES armed (native Chest Auto Sell only; no game panel opens).")
+        controller.sellWarpAttempts = 0
+        controller.sellShopsAttempts = 0
+        controller.sellVendorAttempts = 0
+        controller.sellWalkAttempts = 0
+        controller.sellVendorPath = "none"
+        controller.sellActionTarget = "none"
+        controller.sellWarpOrigin = nil
+        local now = os.clock()
+        controller.sellStartedAt = now
+        sellSetPhase("TELEPORT_OPEN","Searching Teleport > Shops destination",now)
+        -- Stop the old Chest walking command; it will remain paused
+        -- during the user-requested sale route, and resume after OFF.
+        stopWalking()
     else
-        local ok, stage = setNativeAutoSell("OFF")
-        controller.sellStage = stage
-        if not ok then
-            writeLog("AUTO SELL ORES monitor OFF; native state not verified: " .. stage)
-        else
-            writeLog("AUTO SELL ORES disable request: " .. stage)
-        end
+        controller.sellPhase = "OFF"
+        controller.sellStage = "OFF (shop route stopped)"
+        writeLog("SHOP SELL OFF. Auto Collect can resume after returning to your Plot.")
     end
     refreshStatus()
+end)
+connect(sellDiagnosticsButton.Activated, function()
+    local report=sellRouteDiagnosticReport()
+    if type(setclipboard)=="function" then
+        local ok,err=pcall(setclipboard,report)
+        writeLog(ok and "Sell route diagnostics copied" or ("Sell route copy ERROR: "..tostring(err)))
+    else
+        print(report)
+        writeLog("Clipboard unavailable; sell route report printed to console")
+    end
 end)
 connect(manualWatchButton.Activated, function()
     if not controller.watchManual and controller.collect then
@@ -1983,7 +2426,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.13 started | native Chest Auto Sell | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.14 started | warp Shops then Sell Ores | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
@@ -2034,20 +2477,12 @@ task.spawn(function()
             scanActionButtons()
         end
 
-        -- A native Auto Sell toggle is a per-session setup operation, not
-        -- a button to spam. Recheck only while searching and never toggle twice.
-        if controller.sell and not controller.sellSent
-            and not controller.watchManual and now >= controller.sellNextScanAt then
-            controller.sellNextScanAt = now + 4
-            local ok, stage = tryNativeAutoSell()
-            controller.sellStage = stage
-            if controller.sellLastStageLog ~= stage then
-                controller.sellLastStageLog = stage
-                writeLog("AUTO SELL ORES: " .. stage .. " | target=" ..
-                    tostring(controller.sellTarget) ..
-                    " | callsOK=" .. tostring(controller.sellCallsOK) ..
-                    " (game currency increase NOT verified)")
-            end
+        -- Keep Auto Collect's existing implementation intact. Shop
+        -- navigation is a separate route and owns movement only while armed.
+        if controller.sell and not controller.watchManual
+            and now - (controller.sellLastTick or 0) >= 1.7 then
+            controller.sellLastTick = now
+            shopSellStep(now)
         end
 
         -- V0.12: no automatic game UI windows. An actual loaded hidden
@@ -2099,7 +2534,8 @@ task.spawn(function()
         end
         -- Holder travel gets a short exclusive movement window. The working
         -- Auto Collect loop is otherwise unchanged and resumes afterward.
-        if controller.collect and not controller.upgradeWalkTarget
+        if controller.collect and not controller.sell
+            and not controller.upgradeWalkTarget
             and now >= (controller.upgradeBusyUntil or 0)
             and now - lastCollect >= 1.25 then
             lastCollect = now

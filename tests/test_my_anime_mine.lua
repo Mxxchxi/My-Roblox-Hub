@@ -173,7 +173,7 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell}"
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, sellStopWalk=sellStopWalk}"
     local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
     return assert(env.MyAnimeMineHubController), helpers
 end
@@ -391,8 +391,8 @@ assert(#sellCandidates == 1 and sellCandidates[1] == nativeSell and #sellLabels 
 assert(helpers.nativeAutoSellState(nativeSell) == "OFF" and not nativeChest.Visible,
        "native hidden Chest Auto Sell state was not read correctly")
 local openerBeforeSell = realInventoryClicks
-findButton("AutoSell").Activated:Fire()
-assert(first.sell and nativeSellClicks == 0, "auto sell enable must not blindly toggle a game UI")
+-- Legacy Chest Game Pass toggle remains testable as a helper, but AUTO SELL
+-- must NO LONGER invoke it; the user requires Shops warp + ore vendor.
 local sellOK, sellStage = helpers.tryNativeAutoSell()
 assert(sellOK and sellStage:find("AUTO_SELL_SWITCH_TO_ON_SENT", 1, true)
        and first.sellSent and first.sellAttempts == 1 and first.sellCallsOK == 1
@@ -402,9 +402,10 @@ assert(sellOK and sellStage:find("AUTO_SELL_SWITCH_TO_ON_SENT", 1, true)
 local alreadyOK, alreadyState = helpers.tryNativeAutoSell()
 assert(alreadyOK and alreadyState:find("ALREADY_ON", 1, true)
        and nativeSellClicks == 1, "already ON must never toggle Auto Sell back OFF")
-findButton("AutoSell").Activated:Fire()
-assert(not first.sell and nativeSellClicks == 2 and nativeSell.Text == "Auto Sell: OFF",
-       "turning AUTO SELL OFF must disable a known ON state with one click")
+local stopOK, stopStage = helpers.setNativeAutoSell("OFF")
+assert(stopOK and stopStage:find("SWITCH_TO_OFF",1,true)
+       and nativeSellClicks == 2 and nativeSell.Text == "Auto Sell: OFF",
+       "legacy Chest toggle helper still safely respects known ON/OFF state")
 nativeSell.Text = "Auto Sell"
 local unknownOK, unknownStage = helpers.tryNativeAutoSell()
 assert(not unknownOK and unknownStage == "AUTO_SELL_STATE_UNKNOWN (no toggle sent)"
@@ -414,8 +415,8 @@ nativeSell.Text = "Auto Sell: OFF"
 findButton("ActionDiagnostics").Activated:Fire()
 assert(clipboard:find("Chest Auto Sell candidates=1", 1, true)
        and clipboard:find("ChestSellLabel", 1, true)
-       and clipboard:find("Native Chest Auto Sell:", 1, true)
-       and clipboard:find("AUTO_SELL", 1, true),
+       and clipboard:find("Native Chest Auto Sell (legacy", 1, true)
+       and clipboard:find("Native Chest Auto Sell (legacy", 1, true),
        "native Auto Sell target diagnostics missing")
 
 findButton("ActionDiagnostics").Activated:Fire()
@@ -519,6 +520,104 @@ helpers.stopUpgradeWalking()
 assert(first.upgradeWalkTarget == nil, "upgrade navigation not stopped")
 root.Position = vector(0,0,0)
 detector.MaxActivationDistance = 32
+
+-- User-confirmed route: click Teleport > Shops, walk to Sell Items,
+-- then an explicit ore-only Sell action. Do not use the paid Chest Auto Sell.
+local teleport = instance("TextButton")
+teleport.Name = "TeleportButton"; teleport.Text = ""
+teleport.Parent = mineGui
+local teleClicks = 0
+local teleMenu = instance("Frame")
+teleMenu.Name = "TeleportFrame"; teleMenu.Visible = false; teleMenu.Parent = mineGui
+local shopsButton
+teleport.MouseButton1Click:Connect(function()
+    teleClicks = teleClicks + 1
+    teleMenu.Visible = true
+    if not shopsButton then
+        shopsButton = instance("TextButton")
+        shopsButton.Name = "ShopsButton"; shopsButton.Text = "Shops"
+        shopsButton.Parent = teleMenu
+        shopsButton.MouseButton1Click:Connect(function()
+            root.Position = vector(500,0,0)
+            teleMenu.Visible = false
+        end)
+    end
+end)
+local sellStand = instance("BasePart")
+sellStand.Name="SellItemsStand"; sellStand.Position=vector(580,0,0)
+sellStand.Parent=workspace
+local sellPrompt = instance("ProximityPrompt")
+sellPrompt.Name="SellItemsPrompt"; sellPrompt.ActionText="Sell Items"
+sellPrompt.MaxActivationDistance=10; sellPrompt.Enabled=true
+sellPrompt.Parent=sellStand
+local sellScreen=instance("Frame")
+sellScreen.Name="SellFrame";sellScreen.Visible=false;sellScreen.Parent=mineGui
+local oreSell=instance("TextButton")
+oreSell.Name="SellOres"; oreSell.Text="Sell Ores";oreSell.Parent=sellScreen
+local genericSell=instance("TextButton")
+genericSell.Name="SellAll"; genericSell.Text="Sell All";genericSell.Parent=sellScreen
+local oreSells,genericSells=0,0
+oreSell.MouseButton1Click:Connect(function()
+    oreSells=oreSells+1
+    sellScreen.Visible=false
+end)
+genericSell.MouseButton1Click:Connect(function() genericSells=genericSells+1 end)
+env.fireproximityprompt=function(target)
+    if target==sellPrompt then sellScreen.Visible=true end
+end
+local nativeClicksBefore=nativeSellClicks
+assert(helpers.shopsTeleportLauncher() == teleport, "TeleportButton not found")
+findButton("AutoSell").Activated:Fire()
+assert(first.sell and first.sellPhase=="TELEPORT_OPEN",
+       "Auto Sell must arm Shops route instead of native Chest Game Pass")
+helpers.shopSellStep(10)
+assert(teleClicks==1 and first.sellPhase=="SHOPS_PICK",
+       "route must open Teleport destination")
+helpers.shopSellStep(12)
+assert(first.sellPhase=="WARP_WAIT" and root.Position.X==500,
+       "route must click Shops before moving to vendor")
+helpers.shopSellStep(14)
+assert(first.sellPhase=="VENDOR_WALK","route did not verify Shops warp")
+local vendors=helpers.sellVendorTargets()
+assert(#vendors>=1 and vendors[1].target==sellPrompt and vendors[1].distance==80,
+       "expected Sell Items vendor prompt at Shops")
+helpers.shopSellStep(16)
+assert(first.sellMoveTarget==sellPrompt and first.sellWalkAttempts>0,
+       "route must walk to Sell Items vendor, never teleport to its coordinate")
+root.Position=vector(578,0,0)
+helpers.shopSellStep(18)
+assert(first.sellPhase=="SELL_MENU" and sellScreen.Visible,
+       "sell vendor prompt must open sell interface")
+helpers.shopSellStep(20)
+assert(first.sellPhase=="DONE" and oreSells==1 and genericSells==0
+       and nativeSellClicks==nativeClicksBefore and first.sellCallsOK==1,
+       "route may only send explicit Sell Ores action, never Sell All or gamepass")
+findButton("ActionDiagnostics").Activated:Fire()
+assert(clipboard:find("SHOP SELL ROUTE",1,true)
+       and clipboard:find("Sell vendor candidates=",1,true)
+       and clipboard:find("Ore-only Sell candidates=",1,true),
+       "sale route must expose warp/vendor/sell diagnostics")
+findButton("SellDiagnostics").Activated:Fire()
+assert(clipboard:find("V0.14 SHOP SELL ROUTE",1,true)
+       and clipboard:find("Shops destination candidates=",1,true)
+       and clipboard:find("Explicit ore-only Sell controls=",1,true)
+       and clipboard:find("Sell Ores clicks=1/1",1,true),
+       "dedicated COPY SELL ROUTE diagnostic missing route outcomes")
+findButton("AutoSell").Activated:Fire()
+assert(not first.sell and first.sellPhase=="OFF", "sell route OFF did not stop")
+-- Some sell stands are touch-operated. Walking onto the named stand
+-- must be allowed even if it has no ProximityPrompt.
+sellPrompt.Parent=nil
+first.sell=true
+first.sellPhase="VENDOR_WALK"
+root.Position=vector(579,0,0)
+helpers.shopSellStep(24)
+assert(first.sellPhase=="SELL_MENU", "touch-only Sell Items stand should enter Sell GUI detection")
+first.sell=false
+first.sellPhase="OFF"
+root.Position=vector(0,0,0)
+sellScreen.Visible=false
+
 findButton("ActionDiagnostics").Activated:Fire()
 assert(clipboard:find("Holder[1]", 1, true)
        and clipboard:find("maxRange=32.0", 1, true),
@@ -677,4 +776,4 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.13 native Chest Auto Sell ON/OFF, hidden UI, premium protection and Collect lifecycle")
+print("PASS My Anime Mine V0.14 Shops warp, Sell Items MoveTo, ore-only sale and Collect lifecycle")
