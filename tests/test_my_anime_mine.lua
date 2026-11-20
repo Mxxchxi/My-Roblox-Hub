@@ -165,7 +165,7 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll}"
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll}"
     local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
     return assert(env.MyAnimeMineHubController), helpers
 end
@@ -310,8 +310,25 @@ gameChestGui.Enabled = false
 helpers.settleTakeAll(10)
 assert(first.takeAllOutcome:find("CHEST_CLOSED",1,true) and
        first.lastChestCountAfter == nil and first.lastChestCountDelta == nil and
-       not first.collect, "hidden Chest must invalidate cached item counts and pause")
+       first.collect and first.takeAllReopenAt == 22,
+       "hidden Chest must preserve automation, invalidate count and apply cooldown")
 gameChestGui.Enabled = true
+chestCountLabel.Text = "2/183.9K Items"
+helpers.observeReopenedChest(takeAllButton)
+assert(first.takeAllReopenStatus:find("REOPEN_COUNT_LOWER",1,true)
+       and first.takeAllUnverifiedReopens == 0 and first.collect,
+       "lower Chest count after reopen should be observed without claiming reward")
+first.takeAllClosedBeforeCount = 30
+chestCountLabel.Text = "30/183.9K Items"
+helpers.observeReopenedChest(takeAllButton)
+assert(first.takeAllUnverifiedReopens == 1 and first.collect,
+       "first unchanged reopen must be inconclusive")
+first.takeAllClosedBeforeCount = 30
+chestCountLabel.Text = "32/183.9K Items"
+helpers.observeReopenedChest(takeAllButton)
+assert(first.takeAllUnverifiedReopens == 2 and not first.collect,
+       "repeated inconclusive reopen must pause Auto Collect")
+
 
 -- The manually clicked GUI button is observed only; the hub must not emit signals.
 local emittedBefore = firedTakeAll
@@ -355,4 +372,4 @@ assert(not second.selectedPlot and not second.walkToChest, "rerun should clear p
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.6 stale Chest count handling, manual click watch, and plot/Alt lifecycle")
+print("PASS My Anime Mine V0.7 close/reopen cooldown, count feedback, manual click watch, and UI lifecycle")
