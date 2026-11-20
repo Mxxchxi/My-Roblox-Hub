@@ -41,7 +41,7 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn("collectWalking=", SOURCE)
         self.assertIn('if phase == "CHEST_HANDOFF" then', SOURCE)
         self.assertIn('controller.sellChestHandoffState="CHEST_CLOSED"', SOURCE)
-        self.assertIn("Chest still open/pending after 24s", SOURCE)
+        self.assertIn("Chest still open/pending; finish Take All or close Chest manually", SOURCE)
         self.assertIn("TeleportButton exists but hidden", SOURCE)
         self.assertIn("TeleportButton absent from MineGui", SOURCE)
         self.assertIn('and isVisible(button) then', SOURCE)
