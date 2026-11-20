@@ -415,7 +415,7 @@ nativeSell.Text = "Auto Sell: OFF"
 findButton("ActionDiagnostics").Activated:Fire()
 assert(clipboard:find("Chest Auto Sell candidates=1", 1, true)
        and clipboard:find("ChestSellLabel", 1, true)
-       and clipboard:find("Native Chest Auto Sell:", 1, true)
+       and clipboard:find("Native Chest Auto Sell (legacy", 1, true)
        and clipboard:find("AUTO_SELL", 1, true),
        "native Auto Sell target diagnostics missing")
 
