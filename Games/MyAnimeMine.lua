@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.17 (sell-route audit: scoped actions, touch authorization, state clarity)
+-- My Roblox Hub | My Anime Mine v0.18 (wait Chest handoff before Shops teleport)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -39,6 +39,8 @@ local controller = {
     sellStage = "OFF",
     sellPhase = "OFF",
     sellWarpAttempts = 0,
+    sellChestHandoffAttempts = 0,
+    sellChestHandoffState = "NOT_STARTED",
     sellShopsAttempts = 0,
     sellVendorAttempts = 0,
     sellVendorTouched = false,
@@ -324,7 +326,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.17 | Shops > SellStand > Select All > Sell; verify ore and money manually.",
+    Text = "V0.18 | Finish Chest Take All before Shops warp; Sell and ore/money unverified.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -1590,15 +1592,33 @@ local function sellClick(button)
     return ok, ok and event or tostring(err)
 end
 
-local function shopsTeleportLauncher()
+-- When Take All has just opened the game's chest, its modal may hide the
+-- hotbar TeleportButton entirely. Do not mistake this for a missing button.
+local function gameChestFrame()
+    local mine = playerGui:FindFirstChild("MineGui")
+    local chest = mine and mine:FindFirstChild("ChestFrame")
+    return chest, chest ~= nil and isVisible(chest)
+end
+
+local function teleportLauncherCandidates()
+    local matches = {}
     for _, button in ipairs(playerGui:GetDescendants()) do
-        if gameGuiButton(button) and isVisible(button)
-            and button.Name == "TeleportButton"
+        if gameGuiButton(button) and button.Name == "TeleportButton"
             and gameGuiAncestorNamed(button, "MineGui") then
-            return button
+            matches[#matches+1] = button
         end
     end
-    return nil
+    return matches
+end
+
+local function shopsTeleportLauncher()
+    local matches = teleportLauncherCandidates()
+    local visible = {}
+    for _,button in ipairs(matches) do
+        if isVisible(button) then visible[#visible+1] = button end
+    end
+    -- Never arbitrarily choose from multiple Teleport launchers.
+    return #visible == 1 and visible[1] or nil
 end
 
 local function shopsWarpDestination()
@@ -1615,9 +1635,7 @@ local function shopsWarpDestination()
             if explicit and not isPremiumAction(button)
                 and not gameGuiAncestorNamed(button, "ShopPurchase")
                 and not gameGuiAncestorNamed(button, "Store")
-                and (isVisible(button) or gameGuiAncestorNamed(button, "TeleportFrame")
-                    or gameGuiAncestorNamed(button, "TeleportGui")
-                    or gameGuiAncestorNamed(button, "TeleportMenu")) then
+                and isVisible(button) then
                 candidates[#candidates+1] = button
             end
         end
@@ -1817,7 +1835,40 @@ local function shopSellStep(now)
         controller.sellStage = "Waiting for character"
         return
     end
+    if phase == "CHEST_HANDOFF" then
+        local chest,chestOpen=gameChestFrame()
+        local pending=controller.takeAllPending ~= nil
+        local elapsed=now-controller.sellPhaseAt
+        controller.sellChestHandoffAttempts=controller.sellChestHandoffAttempts+1
+        if chestOpen or pending then
+            controller.sellChestHandoffState=chestOpen and "CHEST_OPEN"
+                or "TAKE_ALL_PENDING"
+            if elapsed > 24 then
+                sellSetPhase("PAUSED",
+                    "Chest still open/pending after 24s; finish Take All or close Chest manually",now)
+            else
+                controller.sellStage=controller.collect and
+                    "Waiting for Auto Collect Take All to finish and Chest to close"
+                    or "Close the open Chest manually to allow Shops teleport"
+            end
+            return
+        end
+        if elapsed < 1.3 then
+            controller.sellChestHandoffState="CHEST_RENDER_GRACE"
+            controller.sellStage="Waiting briefly for Chest UI to settle"
+            return
+        end
+        controller.sellChestHandoffState="CHEST_CLOSED"
+        sellSetPhase("TELEPORT_OPEN","Chest clear; searching Teleport > Shops",now)
+        return
+    end
     if phase == "TELEPORT_OPEN" then
+        local chest,chestOpen=gameChestFrame()
+        if chestOpen or controller.takeAllPending then
+            sellSetPhase("CHEST_HANDOFF","Chest reopened; wait for Take All before Shops teleport",now)
+            controller.sellChestHandoffState="CHEST_REOPENED"
+            return
+        end
         local shops, count = shopsWarpDestination()
         if shops then
             controller.sellWarpOrigin = root.Position
@@ -1833,10 +1884,17 @@ local function shopSellStep(now)
         end
         local button = shopsTeleportLauncher()
         if not button then
-            controller.sellStage = count > 1 and "Multiple Shops options; no automatic selection"
-                or "TeleportButton not found"
-            if now - controller.sellPhaseAt > 15 then
-                sellSetPhase("PAUSED", controller.sellStage, now)
+            local candidates=teleportLauncherCandidates()
+            local _,chestOpen=gameChestFrame()
+            controller.sellStage = chestOpen and "Chest is open, Teleport hidden"
+                or #candidates>1 and "Multiple TeleportButton candidates; cannot choose"
+                or #candidates==1 and "TeleportButton exists but hidden; close other game panels"
+                or count>1 and "Multiple Shops options; no automatic selection"
+                or "TeleportButton absent from MineGui (not just hidden)"
+            if chestOpen then
+                sellSetPhase("CHEST_HANDOFF","Chest open; delaying Teleport until collection ends",now)
+            elseif now - controller.sellPhaseAt > 15 then
+                sellSetPhase("PAUSED",controller.sellStage.." (COPY SELL ROUTE)",now)
             end
             return
         end
@@ -2040,7 +2098,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.17 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.18 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -2200,7 +2258,7 @@ end
 
 local function sellRouteDiagnosticReport()
     local lines={
-        "MY ANIME MINE V0.17 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.18 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
         "PlaceId="..tostring(game.PlaceId)..
             " | autoSell="..tostring(controller.sell)..
             " | autoCollect="..tostring(controller.collect)..
@@ -2225,6 +2283,23 @@ local function sellRouteDiagnosticReport()
     }
     local tele=shopsTeleportLauncher()
     local shops,shopCount=shopsWarpDestination()
+    local chest,chestOpen=gameChestFrame()
+    local teleportCandidates=teleportLauncherCandidates()
+    lines[#lines+1]="Chest handoff="..tostring(controller.sellChestHandoffState)..
+        " | handoffTicks="..tostring(controller.sellChestHandoffAttempts)..
+        " | ChestFrame="..(chest and describe(chest) or "NOT FOUND")..
+        " | chestOpen="..tostring(chestOpen)..
+        " | TakeAllVisible="..tostring(findTakeAll()~=nil)..
+        " | TakeAllPending="..tostring(controller.takeAllPending~=nil)
+    lines[#lines+1]="TeleportButton candidates="..#teleportCandidates
+    for i,button in ipairs(teleportCandidates) do
+        if i>8 then break end
+        local c=takeAllConnections(button)
+        lines[#lines+1]="TeleportCandidate["..i.."]: "..describe(button)..
+            " | visible="..tostring(isVisible(button))..
+            " | mouse="..tostring(c.MouseButton1Click)..
+            " activated="..tostring(c.Activated)
+    end
     lines[#lines+1]="Teleport button="..(tele and describe(tele) or "NOT FOUND")
     lines[#lines+1]="Shops destination candidates="..shopCount..
         " | selected="..(shops and describe(shops) or "NONE")
@@ -2262,14 +2337,14 @@ local function sellRouteDiagnosticReport()
             end
         end
     end
-    lines[#lines+1]="NOTE: Select All MUST be dispatched in the same SellFrame before Sell; no generic Sell All. Click dispatch does not prove selection or money credit."
+    lines[#lines+1]="NOTE: Chest must close before Shops teleport. Select All precedes Sell. Dispatch is not evidence of currency credit."
     return table.concat(lines,"\n")
 end
 
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.17 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.18 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
@@ -2474,6 +2549,8 @@ connect(sellButton.Activated, function()
         controller.sellAttempts = 0
         controller.sellCallsOK = 0
         controller.sellWarpAttempts = 0
+        controller.sellChestHandoffAttempts = 0
+        controller.sellChestHandoffState = "STARTING"
         controller.sellShopsAttempts = 0
         controller.sellVendorAttempts = 0
         controller.sellVendorTouched = false
@@ -2490,7 +2567,7 @@ connect(sellButton.Activated, function()
         controller.sellWarpOrigin = nil
         local now = os.clock()
         controller.sellStartedAt = now
-        sellSetPhase("TELEPORT_OPEN","Searching Teleport > Shops destination",now)
+        sellSetPhase("CHEST_HANDOFF","Checking Chest before Teleport > Shops",now)
         -- Stop the old Chest walking command; it will remain paused
         -- during the user-requested sale route, and resume after OFF.
         stopWalking()
@@ -2594,7 +2671,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.17 started | sell-route audited | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.18 started | Chest handoff before Shops warp | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
@@ -2702,7 +2779,11 @@ task.spawn(function()
         end
         -- Holder travel gets a short exclusive movement window. The working
         -- Auto Collect loop is otherwise unchanged and resumes afterward.
-        if controller.collect and not controller.sell
+        -- During handoff only the already-visible Take All control may run.
+        -- Do not walk back to Chest or open Chest after sale was requested.
+        if controller.collect and (not controller.sell
+            or (controller.sellPhase == "CHEST_HANDOFF"
+                and select(2, gameChestFrame()) and findTakeAll() ~= nil))
             and not controller.upgradeWalkTarget
             and now >= (controller.upgradeBusyUntil or 0)
             and now - lastCollect >= 1.25 then
