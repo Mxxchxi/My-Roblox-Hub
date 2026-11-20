@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.5 (Chest item-count feedback)
+-- My Roblox Hub | My Anime Mine v0.6 (hidden-Chest and manual Take All diagnostics)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -57,6 +57,15 @@ local controller = {
     lastChestCountAfter = nil,
     lastChestCountDelta = nil,
     takeAllOutcome = "NOT TESTED",
+    watchManual = false,
+    manualClickCount = 0,
+    manualPending = nil,
+    manualOutcome = "NOT TESTED",
+    manualBefore = nil,
+    manualAfter = nil,
+    manualDelta = nil,
+    manualMonitorButton = nil,
+    manualMonitorConnection = nil,
     takeAllLastEvent = "none",
     takeAllMethodIndex = 1,
     takeAllNextAt = 0,
@@ -94,6 +103,12 @@ function controller:Stop()
     self.mine = false
     self.collect = false
     self.walkToChest = false
+    self.watchManual = false
+    self.manualPending = nil
+    if self.manualMonitorConnection then
+        pcall(function() self.manualMonitorConnection:Disconnect() end)
+        self.manualMonitorConnection = nil
+    end
     if self.moveTarget then
         local character = player.Character
         local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -133,8 +148,8 @@ local gui = make("ScreenGui", playerGui, {
 })
 controller.gui = gui
 local panel = make("Frame", gui, {
-    Name = "Main", Size = UDim2.fromOffset(510, 482),
-    Position = UDim2.new(0.5, -255, 0.5, -241),
+    Name = "Main", Size = UDim2.fromOffset(510, 536),
+    Position = UDim2.new(0.5, -255, 0.5, -268),
     BackgroundColor3 = palette.background, BorderSizePixel = 0,
 })
 make("UICorner", panel, { CornerRadius = UDim.new(0, 12) })
@@ -210,7 +225,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.5 | Compare Chest item count before/after Take All. Inventory confirmation still required.",
+    Text = "V0.6 | Diagnose closed Chest vs unchanged items. Watch a normal manual Take All.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -219,22 +234,23 @@ local copyButton = button("CopyLog", "COPY LOG", 264, 158, 230, 38)
 local detailButton = button("Diagnostics", "COPY TARGET DIAGNOSTICS", 16, 205, 478, 38)
 local setPlotButton = button("SetPlot", "SET MY PLOT", 16, 250, 230, 38)
 local walkButton = button("WalkToChest", "WALK TO CHEST: OFF", 264, 250, 230, 38)
+local manualWatchButton = button("ManualWatch", "WATCH MANUAL TAKE ALL: OFF", 16, 298, 478, 38)
 local statusLabel = make("TextLabel", panel, {
-    Name = "Status", Position = UDim2.fromOffset(17, 299),
+    Name = "Status", Position = UDim2.fromOffset(17, 346),
     Size = UDim2.fromOffset(478, 51),
     BackgroundTransparency = 1, Font = Enum.Font.Code, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.accent, Text = "Discovering...",
 })
 make("TextLabel", panel, {
-    Name = "LogTitle", Position = UDim2.fromOffset(16, 360),
+    Name = "LogTitle", Position = UDim2.fromOffset(16, 413),
     Size = UDim2.fromOffset(478, 20),
     BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 13,
     TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = palette.text,
     Text = "LOG / DIAGNOSTICS",
 })
 local logFrame = make("Frame", panel, {
-    Name = "LogPanel", Position = UDim2.fromOffset(16, 383),
+    Name = "LogPanel", Position = UDim2.fromOffset(16, 436),
     Size = UDim2.fromOffset(478, 88), BackgroundColor3 = palette.panel,
     BorderSizePixel = 0,
 })
@@ -637,50 +653,52 @@ local function chooseTakeAllEvent(button)
     return controller.takeAllMethodIndex == 1 and "Activated" or "MouseButton1Click", counts
 end
 
+-- A hidden ChestFrame retains old TextLabels in Roblox; never treat their stale
+-- values as a live count. No inventory outcome is inferred from a closing UI.
 local function settleTakeAll(now)
     local pending = controller.takeAllPending
     if not pending or now - pending.sentAt < 2.5 then return end
     controller.takeAllPending = nil
 
     local visible = pending.button.Parent and isVisible(pending.button)
-    local afterSnapshot = pending.button.Parent and chestSnapshot(pending.button) or "BUTTON_REMOVED"
-    local afterCount = pending.button.Parent and chestItemCount(pending.button) or nil
     local beforeCount = pending.beforeCount
+    local afterCount = visible and chestItemCount(pending.button) or nil
+    local afterSnapshot = visible and chestSnapshot(pending.button) or nil
     controller.lastChestCountBefore = beforeCount
     controller.lastChestCountAfter = afterCount
     controller.lastChestCountDelta = nil
-    local countDecrease = false
+    local decreased = false
+    local closed = not visible
 
-    if beforeCount ~= nil and afterCount ~= nil then
+    if closed then
+        controller.takeAllOutcome = "CHEST_CLOSED (old UI count ignored; inventory unknown)"
+    elseif beforeCount ~= nil and afterCount ~= nil then
         local delta = afterCount - beforeCount
         controller.lastChestCountDelta = delta
         if delta < 0 then
-            countDecrease = true
+            decreased = true
             controller.takeAllOutcome = "CHEST_COUNT_DECREASED (possible collection, NOT inventory proof)"
         elseif delta > 0 then
             controller.takeAllOutcome = "CHEST_COUNT_INCREASED (possible mining/refill)"
         else
             controller.takeAllOutcome = "CHEST_COUNT_UNCHANGED"
         end
-    elseif not visible then
-        controller.takeAllOutcome = "BUTTON_HIDDEN (count unavailable)"
     elseif afterSnapshot ~= pending.before then
         controller.takeAllOutcome = "CHEST_UI_CHANGED (item count unavailable)"
     else
         controller.takeAllOutcome = "NO_CHEST_UI_CHANGE (item count unavailable)"
     end
 
-    if countDecrease then
+    if decreased then
         controller.takeAllNotDecreased = 0
         controller.takeAllNoChange = 0
     else
         controller.takeAllNotDecreased = controller.takeAllNotDecreased + 1
-        if afterSnapshot == pending.before then
+        if not closed and afterSnapshot == pending.before then
             controller.takeAllNoChange = controller.takeAllNoChange + 1
         else
             controller.takeAllNoChange = 0
         end
-        -- Keep the event with an actual connection rather than alternating away from it.
         if type(getconnections) ~= "function" then
             controller.takeAllMethodIndex = controller.takeAllMethodIndex == 1 and 2 or 1
         end
@@ -690,18 +708,94 @@ local function settleTakeAll(now)
         " | chest count " .. tostring(beforeCount) .. " -> " .. tostring(afterCount) ..
         " | event=" .. pending.event ..
         " | without-count-decrease=" .. controller.takeAllNotDecreased)
-    if controller.collect and
-        (controller.takeAllNotDecreased >= 3 or controller.takeAllAttempts >= 6) then
+    if controller.collect and (closed or controller.takeAllNotDecreased >= 3
+        or controller.takeAllAttempts >= 6) then
         controller.collect = false
         stopWalking()
-        controller.collectionStage = "PAUSED: Take All has no verified inventory result. Inspect chest and inventory."
-        writeLog("Auto Collect PAUSED after bounded Take All checks. Compare actual inventory manually.")
+        controller.collectionStage = closed
+            and "PAUSED: Chest closed after Take All. Compare manual behavior and inventory."
+            or "PAUSED: Chest count did not decrease. Compare manual behavior and inventory."
+        writeLog("Auto Collect PAUSED; will not automatically reopen or spam a hidden Chest.")
     end
 end
+
+-- Read-only test: when the player clicks the *game's* Take All button normally,
+-- compare UI feedback with the same rules, but do not send a signal or remote.
+local function stopManualMonitor()
+    if controller.manualMonitorConnection then
+        pcall(function() controller.manualMonitorConnection:Disconnect() end)
+    end
+    controller.manualMonitorConnection = nil
+    controller.manualMonitorButton = nil
+end
+
+local function monitorManualButton()
+    if not controller.watchManual then
+        stopManualMonitor()
+        return
+    end
+    local button = findTakeAll()
+    if not button then
+        stopManualMonitor()
+        return
+    end
+    if controller.manualMonitorButton == button and controller.manualMonitorConnection then
+        return
+    end
+    stopManualMonitor()
+    controller.manualMonitorButton = button
+    controller.manualMonitorConnection = connect(button.MouseButton1Click, function()
+        if not controller.running or not controller.watchManual or controller.collect then return end
+        controller.manualClickCount = controller.manualClickCount + 1
+        controller.manualPending = {
+            button = button,
+            sentAt = os.clock(),
+            beforeCount = chestItemCount(button),
+            before = chestSnapshot(button),
+        }
+        controller.manualOutcome = "WAITING_FOR_MANUAL_UI_FEEDBACK"
+        writeLog("Manual Take All CLICK detected | chest count=" ..
+            tostring(controller.manualPending.beforeCount))
+    end)
+    writeLog("Manual watch armed: click the game's Take All button with your mouse.")
+end
+
+local function settleManualTakeAll(now)
+    local pending = controller.manualPending
+    if not pending or now - pending.sentAt < 2.5 then return end
+    controller.manualPending = nil
+    local visible = pending.button.Parent and isVisible(pending.button)
+    local beforeCount = pending.beforeCount
+    local afterCount = visible and chestItemCount(pending.button) or nil
+    controller.manualBefore, controller.manualAfter = beforeCount, afterCount
+    controller.manualDelta = nil
+    if not visible then
+        controller.manualOutcome = "MANUAL_CHEST_CLOSED (stale count ignored)"
+    elseif beforeCount and afterCount then
+        local delta = afterCount - beforeCount
+        controller.manualDelta = delta
+        if delta < 0 then
+            controller.manualOutcome = "MANUAL_CHEST_COUNT_DECREASED"
+        elseif delta > 0 then
+            controller.manualOutcome = "MANUAL_CHEST_COUNT_INCREASED"
+        else
+            controller.manualOutcome = "MANUAL_CHEST_COUNT_UNCHANGED"
+        end
+    elseif chestSnapshot(pending.button) ~= pending.before then
+        controller.manualOutcome = "MANUAL_CHEST_UI_CHANGED (count unavailable)"
+    else
+        controller.manualOutcome = "MANUAL_CHEST_UI_UNCHANGED (count unavailable)"
+    end
+    writeLog("Manual Take All feedback: " .. controller.manualOutcome ..
+        " | chest count " .. tostring(beforeCount) .. " -> " .. tostring(afterCount) ..
+        " | delta=" .. tostring(controller.manualDelta) ..
+        " | inventory NOT verified")
+end
+
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.5 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.6 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect))
     append(("Targets: rocks=%d prompts=%d TakeAll=%d"):format(
@@ -735,6 +829,13 @@ local function diagnosticReport()
     append("Chest count before=" .. tostring(controller.lastChestCountBefore) ..
         " after=" .. tostring(controller.lastChestCountAfter) ..
         " delta=" .. tostring(controller.lastChestCountDelta))
+    append("Manual watch=" .. tostring(controller.watchManual) ..
+        " | manualClickCount=" .. tostring(controller.manualClickCount) ..
+        " | pending=" .. tostring(controller.manualPending ~= nil))
+    append("Manual TakeAll feedback=" .. tostring(controller.manualOutcome) ..
+        " | before=" .. tostring(controller.manualBefore) ..
+        " after=" .. tostring(controller.manualAfter) ..
+        " delta=" .. tostring(controller.manualDelta))
     if button then
         local connections = takeAllConnections(button)
         append("TakeAll event connections (getconnections; '?' means unavailable): Activated=" ..
@@ -757,7 +858,7 @@ local function diagnosticReport()
         local item = controller.takeAllButtons[i]
         append("TakeAll " .. i .. ": " .. describe(item) .. " | visible=" .. tostring(isVisible(item)))
     end
-    append("NOTE: Chest count change is NOT inventory proof; mining/refill can happen during the click. Verify actual inventory manually.")
+    append("NOTE: hidden Chest counts are stale. Neither UI count changes nor manual events prove inventory credits.")
     return table.concat(out, "\n")
 end
 
@@ -770,6 +871,8 @@ local function refreshStatus()
     setPlotButton.Text = "MY PLOT: " .. tostring(controller.selectedPlot or "NOT SET")
     walkButton.Text = "WALK TO CHEST: " .. (controller.walkToChest and "ON" or "OFF")
     walkButton.BackgroundColor3 = controller.walkToChest and palette.accent or palette.button
+    manualWatchButton.Text = "WATCH MANUAL TAKE ALL: " .. (controller.watchManual and "ON" or "OFF")
+    manualWatchButton.BackgroundColor3 = controller.watchManual and palette.accent or palette.button
     statusLabel.Text = ("Rock: %d | Chest prompt: %d | TakeAll: %d | calls %d/%d/%d\nStage: %s"):format(
         #controller.detectors, #controller.prompts, #controller.takeAllButtons,
         controller.mineActions, controller.collectActions, controller.takeAllActions,
@@ -807,9 +910,30 @@ connect(walkButton.Activated, function()
         " | no teleport; only selected plot")
     refreshStatus()
 end)
+connect(manualWatchButton.Activated, function()
+    if not controller.watchManual and controller.collect then
+        writeLog("Turn Auto Collect OFF before watching a manual Take All.")
+        return
+    end
+    controller.watchManual = not controller.watchManual
+    controller.manualPending = nil
+    if controller.watchManual then
+        controller.manualOutcome = "WAITING_FOR_GAME_BUTTON"
+        writeLog("MANUAL TEST ON. Open Chest manually and click Take All. Auto Collect must remain OFF.")
+        monitorManualButton()
+    else
+        stopManualMonitor()
+        writeLog("Manual Take All watch OFF.")
+    end
+    refreshStatus()
+end)
 connect(collectButton.Activated, function()
     if type(fireproximityprompt) ~= "function" and type(firesignal) ~= "function" then
         writeLog("Auto Collect unavailable: requires fireproximityprompt or firesignal")
+        return
+    end
+    if controller.watchManual and not controller.collect then
+        writeLog("Turn WATCH MANUAL TAKE ALL OFF before enabling Auto Collect.")
         return
     end
     controller.collect = not controller.collect
@@ -858,7 +982,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.5 started | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.6 started | toggles OFF | PlaceId 79389059854988")
 writeLog("Set your plot near UpgradeClick, then enable Auto Collect; enable Walk to Chest to approach.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
@@ -897,6 +1021,8 @@ task.spawn(function()
                 end
             end
         end
+        if controller.watchManual then monitorManualButton() end
+        if controller.manualPending then settleManualTakeAll(now) end
         if controller.takeAllPending then settleTakeAll(now) end
         if controller.collect and now - lastCollect >= 1.25 then
             lastCollect = now
