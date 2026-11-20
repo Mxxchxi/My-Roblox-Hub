@@ -565,6 +565,13 @@ end)
 local unrelatedSelect=instance("TextButton")
 unrelatedSelect.Name="SelectAllButton";unrelatedSelect.Text="Select All"
 unrelatedSelect.Parent=inventoryGui
+local unrelatedOreSell=instance("TextButton")
+unrelatedOreSell.Name="SellOres";unrelatedOreSell.Text="Sell Ores"
+unrelatedOreSell.Parent=inventoryGui
+local unrelatedSellOreClicks=0
+unrelatedOreSell.MouseButton1Click:Connect(function()
+    unrelatedSellOreClicks=unrelatedSellOreClicks+1
+end)
 local unrelatedSelectClicks=0
 unrelatedSelect.MouseButton1Click:Connect(function()
     unrelatedSelectClicks=unrelatedSelectClicks+1
@@ -615,9 +622,13 @@ assert(first.sellPhase=="SELL_MENU" and selectClicks==1 and oreSells==0
        "Select All must be dispatched once before Sell, only inside SellFrame")
 helpers.shopSellStep(22)
 assert(first.sellPhase=="DONE" and oreSells==1 and genericSells==0
+       and unrelatedSellOreClicks==0
        and nativeSellClicks==nativeClicksBefore and first.sellCallsOK==1
        and sellOrder[1]=="Select All" and sellOrder[2]=="Sell",
        "route must call Select All then Sell in strict order")
+findButton("Scan").Activated:Fire()
+assert(findButton("AutoSell").Text=="AUTO SELL ORES: SENT"
+       and first.sell, "DONE means dispatched only; UI must show SENT, not ROUTING or verified sale")
 findButton("ActionDiagnostics").Activated:Fire()
 assert(clipboard:find("SHOP SELL ROUTE",1,true)
        and clipboard:find("Sell vendor candidates=",1,true)
@@ -748,14 +759,35 @@ first.sell=false
 first.sellPhase="OFF"
 sellScreen.Visible=false
 
--- Some sell stands are touch-operated. Walking onto the named stand
--- must be allowed even if it has no ProximityPrompt.
+-- Regression: touch-only Sell Items stand (NO sell prompts anywhere).
+-- Old V0.16 tests only checked entry to SELECT_ALL and missed that the
+-- authorization required a prompt, blocking actual Select All / Sell.
 sellPrompt.Parent=nil
+realSellPrompt.Parent=nil
+stand.Parent=nil
 first.sell=true
 first.sellPhase="VENDOR_WALK"
+first.sellVendorAttempts=0
+first.sellVendorTouched=false
+first.sellSelectAllSent=false
+first.sellSelectAllCallsOK=0
+first.sellSelectAllAt=0
+oreSell.Visible=true
+sellScreen.Visible=true
 root.Position=vector(579,0,0)
+local initialOreSells=oreSells
+local initialSelectClicks=selectClicks
 helpers.shopSellStep(24)
-assert(first.sellPhase=="SELECT_ALL", "touch-only Sell Items stand must enter Select All phase")
+assert(first.sellPhase=="SELECT_ALL" and first.sellVendorTouched
+       and first.sellVendorAttempts==0,
+       "touch-only stand must be authorized by actual 3-stud marker approach, not a prompt")
+helpers.shopSellStep(26)
+assert(first.sellPhase=="SELL_MENU" and selectClicks==initialSelectClicks+1
+       and not first.sellSent, "touch-only stand must click Select All before Sell")
+helpers.shopSellStep(28)
+assert(first.sellPhase=="DONE" and oreSells==initialOreSells+1
+       and unrelatedSellOreClicks==0 and genericSells==beforeAll,
+       "touch-only stand must finish explicit Sell Ores, never unrelated inventory sales")
 first.sell=false
 first.sellPhase="OFF"
 root.Position=vector(0,0,0)
@@ -919,4 +951,4 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.16 Select All before Sell for shop and GingerbreadKeeper; no unrelated sales or Collect regressions")
+print("PASS My Anime Mine V0.17 sale audit: selected SellFrame-only, touch-only complete flow, unverified SENT status, Collect regression")
