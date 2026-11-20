@@ -14,7 +14,7 @@ return {
         uiName = "EggDiagnostics",
     },
     [79389059854988] = {
-        name = "My Anime Mine (V0.13)",
+        name = "My Anime Mine (V0.14)",
         script = "Games/MyAnimeMine.lua",
         uiName = "MyAnimeMineHub",
     },
