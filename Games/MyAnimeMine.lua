@@ -2101,6 +2101,12 @@ local function actionDiagnosticReport()
             i,describe(v.target),v.type,v.distance,v.maxRange)
     end
     local _,_,sellKind=oreSellButton()
+    local selectButton,selectCount=sellSelectAllButton()
+    lines[#lines+1] = "Select All candidates="..selectCount..
+        " | ready="..(selectButton and describe(selectButton) or "NONE")..
+        " | sent="..tostring(controller.sellSelectAllSent)..
+        " | callsOK="..controller.sellSelectAllCallsOK.."/"..controller.sellSelectAllAttempts..
+        " | lastTarget="..tostring(controller.sellSelectAllTarget)
     lines[#lines+1] = "Ore-only Sell candidates="..sellActionCount..
         " | ready="..(sellAction and describe(sellAction) or "NONE")..
         " | mode="..tostring(sellKind)..
@@ -2179,7 +2185,7 @@ local function actionDiagnosticReport()
             textOf(button):sub(1, 45), nearbyButtonContext(button):sub(1, 75))
     end
     lines[#lines + 1] =
-        "NOTE: Sale requires ore-only button or exact SellFrame/SellButton after GingerbreadKeeper SellPrompt. Never auto-clicks Sell All."
+        "NOTE: Select All must dispatch before Sell; sale requires ore-only button or exact GingerbreadKeeper SellFrame/SellButton. No generic Sell All."
     return table.concat(lines, "\n")
 end
 
@@ -2196,9 +2202,13 @@ local function sellRouteDiagnosticReport()
             " | Shops destination clicks="..controller.sellShopsAttempts..
             " | walk commands="..controller.sellWalkAttempts..
             " | Sell vendor interactions="..controller.sellVendorAttempts..
-            " | Sell Ores clicks="..controller.sellCallsOK.."/"..controller.sellAttempts,
+            " | Select All clicks="..controller.sellSelectAllCallsOK.."/"..controller.sellSelectAllAttempts..
+        " | Sell Ores clicks="..controller.sellCallsOK.."/"..controller.sellAttempts,
         "Last target="..tostring(controller.sellActionTarget)..
             " | Last sale mode="..tostring(controller.sellActionKind)..
+            " | Select All target="..tostring(controller.sellSelectAllTarget)..
+            " | selectEvent="..tostring(controller.sellSelectAllEvent)..
+            " | selectSent="..tostring(controller.sellSelectAllSent)..
             " | vendor="..tostring(controller.sellVendorPath)..
             " | vendorDist="..tostring(controller.sellVendorDistance),
         "CharacterPos="..tostring(rootPart() and rootPart().Position),
@@ -2215,6 +2225,10 @@ local function sellRouteDiagnosticReport()
         lines[#lines+1]=("Vendor[%d]: %s | kind=%s | distance=%.1f | maxRange=%.1f"):format(
             i,describe(v.target),v.type,v.distance,v.maxRange)
     end
+    local selectButton,selectCount=sellSelectAllButton()
+    lines[#lines+1]="Select All candidates="..selectCount..
+        " | selected="..(selectButton and describe(selectButton) or "NONE")..
+        " | selectedFirst="..tostring(controller.sellSelectAllSent)
     local action,count,kind=oreSellButton()
     lines[#lines+1]="Explicit ore-only Sell controls="..count..
         " | selected="..(action and describe(action) or "NONE")..
@@ -2238,7 +2252,7 @@ local function sellRouteDiagnosticReport()
             end
         end
     end
-    lines[#lines+1]="NOTE: only explicit ores or EXACT SellFrame/Content/SellButton after GingerbreadKeeper SellPrompt; never generic Sell All. Currency not verified."
+    lines[#lines+1]="NOTE: Select All MUST be dispatched in the same SellFrame before Sell; no generic Sell All. Click dispatch does not prove selection or money credit."
     return table.concat(lines,"\n")
 end
 
@@ -2258,6 +2272,8 @@ local function diagnosticReport()
         " / vendor=" .. tostring(controller.sellVendorAttempts) ..
         " / walk=" .. tostring(controller.sellWalkAttempts) ..
         " | vendorTarget=" .. tostring(controller.sellVendorPath) ..
+        " | selectClicks=" .. tostring(controller.sellSelectAllCallsOK)..
+        "/" .. tostring(controller.sellSelectAllAttempts)..
         " | sellClicks=" .. tostring(controller.sellCallsOK) ..
         "/" .. tostring(controller.sellAttempts))
     append(("Targets: rocks=%d prompts=%d TakeAll=%d"):format(
