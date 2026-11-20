@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.3 (bound plot + chest approach + collection)
+-- My Roblox Hub | My Anime Mine v0.4 (Take All feedback and click-event diagnostics)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -50,6 +50,12 @@ local controller = {
     mineAttempts = 0,
     collectAttempts = 0,
     takeAllAttempts = 0,
+    takeAllPending = nil,
+    takeAllNoChange = 0,
+    takeAllOutcome = "NOT TESTED",
+    takeAllLastEvent = "none",
+    takeAllMethodIndex = 1,
+    takeAllNextAt = 0,
     detectors = {},
     prompts = {},
     takeAllButtons = {},
@@ -200,7 +206,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.3 | Set your plot near UpgradeClick. Enable Auto Collect; Auto Walk is optional.",
+    Text = "V0.4 | Select your plot. Collect tracks Take All UI feedback; no reward proof yet.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -549,10 +555,92 @@ local function approachChest(prompt, distance, now)
         controller.selectedPlot, distance, chestRange(prompt))
 end
 
+
+-- UI-only evidence. These labels may change for reasons other than item collection.
+local function chestSnapshot(button)
+    local root = button
+    while root and root ~= playerGui and root.Name ~= "ChestFrame" do
+        root = root.Parent
+    end
+    if not root or root == playerGui then return "CHEST_FRAME_MISSING" end
+    local fields = {}
+    for _, node in ipairs(root:GetDescendants()) do
+        if node:IsA("TextLabel") or node:IsA("TextButton") then
+            local value = tostring(node.Text or ""):gsub("%s+", " "):sub(1, 65)
+            if value ~= "" then
+                fields[#fields + 1] = tostring(node.Name) .. "=" .. value
+            end
+            if #fields >= 55 then break end
+        end
+    end
+    return table.concat(fields, " | ")
+end
+
+local function takeAllConnections(button)
+    local counts = { Activated = "?", MouseButton1Click = "?" }
+    if type(getconnections) ~= "function" then return counts end
+    for _, name in ipairs({ "Activated", "MouseButton1Click" }) do
+        local ok, connections = pcall(getconnections, button[name])
+        if ok and type(connections) == "table" then
+            local live = 0
+            for _, conn in ipairs(connections) do
+                if conn.Enabled ~= false then live = live + 1 end
+            end
+            counts[name] = live
+        end
+    end
+    return counts
+end
+
+local function chooseTakeAllEvent(button)
+    local counts = takeAllConnections(button)
+    if type(counts.Activated) == "number" and type(counts.MouseButton1Click) == "number" then
+        if counts.MouseButton1Click > counts.Activated then
+            return "MouseButton1Click", counts
+        elseif counts.Activated > counts.MouseButton1Click then
+            return "Activated", counts
+        end
+    elseif type(counts.MouseButton1Click) == "number" and counts.MouseButton1Click > 0 then
+        return "MouseButton1Click", counts
+    elseif type(counts.Activated) == "number" and counts.Activated > 0 then
+        return "Activated", counts
+    end
+    -- Without readable connection information, alternate safely after inconclusive calls.
+    return controller.takeAllMethodIndex == 1 and "Activated" or "MouseButton1Click", counts
+end
+
+local function settleTakeAll(now)
+    local pending = controller.takeAllPending
+    if not pending or now - pending.sentAt < 2.5 then return end
+    controller.takeAllPending = nil
+    local visible = pending.button.Parent and isVisible(pending.button)
+    local newSnapshot = pending.button.Parent and chestSnapshot(pending.button) or "BUTTON_REMOVED"
+    if not visible then
+        controller.takeAllOutcome = "BUTTON_HIDDEN (not verified ore)"
+        controller.takeAllNoChange = 0
+    elseif newSnapshot ~= pending.before then
+        controller.takeAllOutcome = "CHEST_UI_CHANGED (not verified ore)"
+        controller.takeAllNoChange = 0
+    else
+        controller.takeAllOutcome = "NO_CHEST_UI_CHANGE"
+        controller.takeAllNoChange = controller.takeAllNoChange + 1
+        controller.takeAllMethodIndex = controller.takeAllMethodIndex == 1 and 2 or 1
+    end
+    writeLog("Take All feedback: " .. controller.takeAllOutcome ..
+        " | event=" .. pending.event .. " | no-change=" .. controller.takeAllNoChange)
+    if controller.collect and
+        (controller.takeAllNoChange >= 2 or controller.takeAllAttempts >= 6) then
+        controller.collect = false
+        stopWalking()
+        controller.collectionStage = "PAUSED: Take All result unverified. Inspect chest/ore and COPY TARGET DIAGNOSTICS."
+        writeLog("Auto Collect PAUSED to avoid repeatedly clicking Take All without confirmed effect.")
+    end
+end
+
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.3 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.4 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect))
     append(("Targets: rocks=%d prompts=%d TakeAll=%d"):format(
@@ -576,7 +664,19 @@ local function diagnosticReport()
         (describe(nearMine) .. (" distance=%.1f"):format(distMine)) or tostring(whyMine)))
     append("Collect candidate: " .. (nearCollect and
         (describe(nearCollect) .. (" distance=%.1f"):format(distCollect)) or tostring(whyCollect)))
-    append("TakeAll visible: " .. (findTakeAll() and describe(findTakeAll()) or "NONE"))
+    local button = findTakeAll()
+    append("TakeAll visible: " .. (button and describe(button) or "NONE"))
+    append("TakeAll feedback=" .. tostring(controller.takeAllOutcome) ..
+        " | lastEvent=" .. tostring(controller.takeAllLastEvent) ..
+        " | noChange=" .. tostring(controller.takeAllNoChange) ..
+        " | pending=" .. tostring(controller.takeAllPending ~= nil))
+    if button then
+        local connections = takeAllConnections(button)
+        append("TakeAll event connections (getconnections; '?' means unavailable): Activated=" ..
+            tostring(connections.Activated) .. " MouseButton1Click=" ..
+            tostring(connections.MouseButton1Click))
+        append("Chest UI labels (read-only, truncated): " .. chestSnapshot(button):sub(1, 1600))
+    end
     append("Executor: fireclickdetector=" .. tostring(type(fireclickdetector) == "function")
         .. " fireproximityprompt=" .. tostring(type(fireproximityprompt) == "function")
         .. " firesignal=" .. tostring(type(firesignal) == "function"))
@@ -591,7 +691,7 @@ local function diagnosticReport()
         local item = controller.takeAllButtons[i]
         append("TakeAll " .. i .. ": " .. describe(item) .. " | visible=" .. tostring(isVisible(item)))
     end
-    append("NOTE: successful executor dispatch is not confirmation of reward.")
+    append("NOTE: UI feedback is weak evidence only. Verify actual ore/inventory manually.")
     return table.concat(out, "\n")
 end
 
@@ -647,6 +747,13 @@ connect(collectButton.Activated, function()
         return
     end
     controller.collect = not controller.collect
+    if controller.collect then
+        controller.takeAllNoChange = 0
+        controller.takeAllPending = nil
+        controller.takeAllMethodIndex = 1
+        controller.takeAllAttempts = 0
+        controller.takeAllOutcome = "NOT TESTED"
+    end
     if not controller.collect then
         stopWalking()
         controller.collectionStage = "OFF"
@@ -681,7 +788,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.3 started | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.4 started | toggles OFF | PlaceId 79389059854988")
 writeLog("Set your plot near UpgradeClick, then enable Auto Collect; enable Walk to Chest to approach.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
@@ -720,6 +827,7 @@ task.spawn(function()
                 end
             end
         end
+        if controller.takeAllPending then settleTakeAll(now) end
         if controller.collect and now - lastCollect >= 1.25 then
             lastCollect = now
             local action = "none"
@@ -727,18 +835,27 @@ task.spawn(function()
             if not controller.selectedPlot then
                 controller.collectionStage = "Select MY PLOT near your UpgradeClick first"
             elseif button and type(firesignal) == "function" then
-                -- Chest UI can be accessed once it is open, without requiring movement.
+                -- Do not assume a success return from firesignal means a server-side reward.
                 stopWalking()
-                controller.collectionStage = "Take All visible"
-                if now - (controller.lastTakeAll or 0) >= 3 then
-                    controller.lastTakeAll = now
+                controller.collectionStage = controller.takeAllPending and
+                    "Waiting for Take All UI feedback" or "Take All visible"
+                if not controller.takeAllPending and now >= controller.takeAllNextAt then
+                    controller.takeAllNextAt = now + 3.5
+                    local eventName, counts = chooseTakeAllEvent(button)
+                    controller.takeAllLastEvent = eventName
                     controller.takeAllAttempts = controller.takeAllAttempts + 1
-                    local ok, err = pcall(firesignal, button.Activated)
+                    local snapshot = chestSnapshot(button)
+                    local ok, err = pcall(firesignal, button[eventName])
                     if ok then
                         controller.takeAllActions = controller.takeAllActions + 1
-                        action = "TAKE ALL " .. describe(button)
+                        controller.takeAllPending = {
+                            button = button, before = snapshot, sentAt = now, event = eventName,
+                        }
+                        action = "TAKE ALL dispatched (" .. eventName .. ") " .. describe(button) ..
+                            " | connections=" .. tostring(counts[eventName])
                     else
-                        action = "Take All ERROR " .. tostring(err)
+                        action = "Take All " .. eventName .. " ERROR " .. tostring(err)
+                        controller.takeAllOutcome = "DISPATCH_ERROR"
                     end
                 end
             else

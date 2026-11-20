@@ -69,7 +69,7 @@ local function instance(className)
     setmetatable(obj, {
         __index = function(_, key)
             if methods[key] then return methods[key] end
-            if key == "Activated" or key == "InputBegan" or key == "InputChanged" or key == "InputEnded" then
+            if key == "Activated" or key == "MouseButton1Click" or key == "InputBegan" or key == "InputChanged" or key == "InputEnded" then
                 props.events[key] = props.events[key] or signal()
                 return props.events[key]
             end
@@ -115,16 +115,24 @@ local clipboard
 local gameChestGui = instance("ScreenGui")
 gameChestGui.Name = "ChestUI"
 gameChestGui.Parent = playerGui
+local chestFrame = instance("Frame")
+chestFrame.Name = "ChestFrame"
+chestFrame.Parent = gameChestGui
+local contentFrame = instance("Frame")
+contentFrame.Name = "Content"
+contentFrame.Parent = chestFrame
 local takeAllButton = instance("TextButton")
 takeAllButton.Name = "ClaimContents"
 takeAllButton.Text = ""
 takeAllButton.Visible = true
-takeAllButton.Parent = gameChestGui
+takeAllButton.Parent = contentFrame
 local takeAllLabel = instance("TextLabel")
 takeAllLabel.Name = "Caption"
 takeAllLabel.Text = "Take All"
 takeAllLabel.Parent = takeAllButton
 local firedTakeAll = 0
+local mouseClickHandled = 0
+takeAllButton.MouseButton1Click:Connect(function() mouseClickHandled = mouseClickHandled + 1 end)
 local env = setmetatable({
     game = roblox,
     workspace = workspace,
@@ -145,6 +153,7 @@ local env = setmetatable({
     fireproximityprompt = function() end,
     setclipboard = function(value) clipboard = value end,
     firesignal = function(signalValue) firedTakeAll = firedTakeAll + 1; signalValue:Fire() end,
+    getconnections = function(signalValue) return signalValue.listeners end,
     print = function() end,
     warn = function() end,
 }, {__index = _G})
@@ -152,8 +161,9 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    assert(load(source, "@Games/MyAnimeMine.lua", "t", env))()
-    return assert(env.MyAnimeMineHubController)
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll}"
+    local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
+    return assert(env.MyAnimeMineHubController), helpers
 end
 local function findButton(name)
     for _, child in ipairs(playerGui:GetDescendants()) do
@@ -184,16 +194,23 @@ local function createPlot(name, chestX, withUpgrade)
     end
 end
 
-local first = run()
+local first, helpers = run()
 assert(playerGui:FindFirstChild("MyAnimeMineHub"), "UI was not mounted")
 assert(not first.mine and not first.collect, "auto toggles must start OFF")
 assert(#first.detectors == 0 and #first.prompts == 0, "unexpected scan targets")
 assert(#first.takeAllButtons == 1, "did not discover Chest Take All button")
+local event, counts = helpers.chooseTakeAllEvent(takeAllButton)
+assert(event == "MouseButton1Click" and counts.MouseButton1Click == 1
+       and counts.Activated == 0, "click event with live connection not selected")
+assert(helpers.chestSnapshot(takeAllButton):find("Take All", 1, true),
+       "chest snapshot missing Take All label")
 findButton("Scan").Activated:Fire()
 findButton("CopyLog").Activated:Fire()
 assert(clipboard and clipboard:find("PlaceId 79389059854988", 1, true), "copy log unavailable")
 findButton("Diagnostics").Activated:Fire()
 assert(clipboard and clipboard:find("TakeAll visible: ", 1, true), "target diagnostics missing")
+assert(clipboard:find("TakeAll event connections", 1, true),
+       "Take All event connections not present in diagnostic")
 
 -- The nearest chest belongs to MinePlot8, but only the explicitly marked MinePlot7 may be used.
 findButton("SetPlot").Activated:Fire()
@@ -236,6 +253,20 @@ assert(main.Visible and not restore.Visible and not first.minimized, "restore ch
 input.InputBegan:Fire(alt, false)
 input.InputBegan:Fire(alt, false)
 assert(main.Visible and not restore.Visible, "LeftAlt must toggle open and closed")
+-- A dispatch alone is not proof. No visible GUI change must pause collection.
+first.takeAllPending = {button = takeAllButton, before = helpers.chestSnapshot(takeAllButton),
+    sentAt = 1, event = "MouseButton1Click"}
+first.takeAllAttempts = 1
+helpers.settleTakeAll(10)
+assert(first.takeAllOutcome == "NO_CHEST_UI_CHANGE" and first.collect,
+       "first inconclusive Take All should not stop collect")
+first.takeAllPending = {button = takeAllButton, before = helpers.chestSnapshot(takeAllButton),
+    sentAt = 11, event = "Activated"}
+helpers.settleTakeAll(20)
+assert(first.takeAllNoChange == 2 and not first.collect, "repeated unchanged chest must pause collect")
+findButton("AutoCollect").Activated:Fire()
+assert(first.collect and first.takeAllNoChange == 0 and first.takeAllOutcome == "NOT TESTED",
+       "reenabling Collect should reset feedback state")
 local second = run()
 assert(not first.running and second.running, "rerun did not clean up previous controller")
 local count = 0
@@ -250,4 +281,4 @@ assert(not second.selectedPlot and not second.walkToChest, "rerun should clear p
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.3 plot-bound Chest, distance diagnostics, walk toggle, LeftAlt and lifecycle")
+print("PASS My Anime Mine V0.4 event detection, feedback pause, plot-bound Chest, LeftAlt and lifecycle")
