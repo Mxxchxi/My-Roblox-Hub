@@ -1557,7 +1557,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.13 EQUIP / UPGRADE / SELL TARGETS | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.13 EQUIP / UPGRADE TARGETS + AUTO SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
