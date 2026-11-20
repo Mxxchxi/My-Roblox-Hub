@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.9 (auto equip best and crew-stat upgrades)
+-- My Roblox Hub | My Anime Mine v0.10 (action target discovery and holder approach)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -51,11 +51,19 @@ local controller = {
     holderActions = 0,
     openedHolder = nil,
     openedHolderAt = 0,
+    upgradeWalkTarget = nil,
+    upgradeWalkProgressAt = 0,
+    upgradeWalkLastDistance = nil,
+    upgradeWalkAttempts = 0,
+    upgradeWalkLastCommand = 0,
+    upgradeWalkLastTarget = "none",
     holderIndex = 1,
     holderNextAt = 0,
     statsTabAttempted = false,
     equipCandidates = {},
     inventoryCandidates = {},
+    guiButtonSamples = {},
+    guiHiddenSamples = {},
     upgradeCandidates = {},
     statsCandidates = {},
     minimized = false,
@@ -134,6 +142,13 @@ function controller:Stop()
     self.equip = false
     self.upgrade = false
     self.walkToChest = false
+    if self.upgradeWalkTarget then
+        local char = player.Character
+        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if humanoid and root then pcall(function() humanoid:MoveTo(root.Position) end) end
+        self.upgradeWalkTarget = nil
+    end
     self.watchManual = false
     self.manualPending = nil
     if self.manualMonitorConnection then
@@ -256,7 +271,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.9 | Auto Equip Best and crew-stat upgrades use game GUI. Test with diagnostics.",
+    Text = "V0.10 | Expanded GUI scan and holder approach. Auto Collect workflow preserved.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -1029,30 +1044,78 @@ local function isUpgradeAction(button)
     return true
 end
 
+local function nearbyButtonContext(item)
+    local labels = {}
+    local cursor = item.Parent
+    for i = 1, 3 do
+        if not cursor or cursor == playerGui then break end
+        labels[#labels + 1] = tostring(cursor.Name)
+        -- Keep UI labels next to icon-only buttons discoverable.
+        for _, child in ipairs(cursor:GetChildren()) do
+            if child:IsA("TextLabel") then
+                local t = textOf(child)
+                if t ~= "" then labels[#labels + 1] = t:sub(1, 45) end
+            end
+        end
+        cursor = cursor.Parent
+    end
+    return table.concat(labels, " ")
+end
+
 local function scanActionButtons()
     local equip, inventory, upgrades, stats = {}, {}, {}, {}
+    local visibleSamples, hiddenSamples = {}, {}
     local count = 0
     local ok, err = pcall(function()
         for _, item in ipairs(playerGui:GetDescendants()) do
-            if gameGuiButton(item) and isVisible(item) then
-                count = count + 1
+            if gameGuiButton(item) then
+                local visible = isVisible(item)
+                local context = nearbyButtonContext(item)
                 local label = normalizeLabel(actionLabel(item))
                 local named = normalizeLabel(item.Name)
                 local buttonText = normalizeLabel(textOf(item))
-                if label:find("equipbest", 1, true)
-                    or named:find("bestcrew", 1, true) then
-                    equip[#equip + 1] = item
-                elseif named == "inventory" or named == "inventorybutton"
-                    or named == "openinventory" or named == "inventorytoggle"
-                    or named == "inventoryicon" or buttonText == "inventory" then
-                    inventory[#inventory + 1] = item
-                end
-                if isUpgradeAction(item) then
-                    upgrades[#upgrades + 1] = item
-                end
-                if named == "stats" or named == "statsbutton"
-                    or named == "statstab" or buttonText == "stats" then
-                    stats[#stats + 1] = item
+                local nearby = normalizeLabel(context)
+                if visible then
+                    count = count + 1
+                    if #visibleSamples < 70 then
+                        visibleSamples[#visibleSamples + 1] = item
+                    end
+                    local insideInventory = nearby:find("inventory", 1, true) ~= nil
+                    local looksEquip = label:find("equipbest", 1, true)
+                        or named:find("bestcrew", 1, true)
+                        or (insideInventory and (named == "best" or named == "bestbutton"
+                            or buttonText == "best"))
+                    local looksInventory = named == "inventory" or named == "inventorybutton"
+                        or named == "openinventory" or named == "inventorytoggle"
+                        or named == "inventoryicon" or named == "backpack"
+                        or named == "backpackbutton" or named == "itemsbutton"
+                        or buttonText == "inventory" or buttonText == "backpack"
+                        or (nearby:find("inventory", 1, true)
+                            and (nearby:find("toolbar", 1, true)
+                                or nearby:find("hotbar", 1, true)
+                                or nearby:find("navbar", 1, true))
+                            and (named == "button" or named == "icon"))
+                    if looksEquip and not isPremiumAction(item) then
+                        equip[#equip + 1] = item
+                    elseif looksInventory and not isPremiumAction(item) then
+                        inventory[#inventory + 1] = item
+                    end
+                    if isUpgradeAction(item) then upgrades[#upgrades + 1] = item end
+                    if named == "stats" or named == "statsbutton"
+                        or named == "statstab" or buttonText == "stats" then
+                        stats[#stats + 1] = item
+                    end
+                else
+                    if #hiddenSamples < 70 then
+                        local clue = label .. nearby
+                        if clue:find("inventory", 1, true)
+                            or clue:find("equip", 1, true)
+                            or clue:find("upgrade", 1, true)
+                            or clue:find("stats", 1, true)
+                            or clue:find("backpack", 1, true) then
+                            hiddenSamples[#hiddenSamples + 1] = item
+                        end
+                    end
                 end
             end
         end
@@ -1066,6 +1129,8 @@ local function scanActionButtons()
     controller.upgradeCandidates = upgrades
     controller.statsCandidates = stats
     controller.actionGuiCount = count
+    controller.guiButtonSamples = visibleSamples
+    controller.guiHiddenSamples = hiddenSamples
 end
 
 local function firstAvailable(list)
@@ -1106,32 +1171,114 @@ local function upgradeRowSnapshot(button)
     return table.concat(values, "|"):sub(1, 1200)
 end
 
-local function nextHolderDetector(peek)
-    if not controller.selectedPlot then return nil, nil end
+-- Read holder ClickDetectors directly from the world, not just the rock scan.
+-- The game's upgrade detector can be outside its own MaxActivationDistance,
+-- in which case report it and approach naturally instead of saying "not found".
+local function holderTargets()
     local root = rootPart()
-    if not root then return nil, nil end
-    local holders = {}
-    for _, detector in ipairs(controller.detectors) do
-        if detector.Parent and detector.Name == "UpgradeClick"
-            and minePlotName(detector) == controller.selectedPlot
-            and describe(detector):lower():find("holders", 1, true) then
-            local point = positionOf(detector)
-            if point then
-                local distance = (point - root.Position).Magnitude
-                local range = tonumber(detector.MaxActivationDistance) or 65
-                if distance <= math.min(65, range) then
-                    holders[#holders + 1] = {detector = detector, distance = distance}
+    local items = {}
+    if not controller.selectedPlot or not root then return items end
+    for _, detector in ipairs(workspace:GetDescendants()) do
+        if detector:IsA("ClickDetector") and detector.Name == "UpgradeClick"
+            and minePlotName(detector) == controller.selectedPlot then
+            local node, isHolder = detector.Parent, false
+            for _ = 1, 7 do
+                if not node or node == workspace then break end
+                if node.Name == "Holders" then isHolder = true; break end
+                node = node.Parent
+            end
+            if isHolder then
+                local pos = positionOf(detector)
+                if pos then
+                    local distance = (pos - root.Position).Magnitude
+                    local allowed = tonumber(detector.MaxActivationDistance) or 10
+                    items[#items + 1] = {
+                        detector = detector, distance = distance,
+                        allowed = allowed, inRange = allowed > 0 and distance <= allowed,
+                    }
                 end
             end
         end
     end
-    table.sort(holders, function(a, b)
+    table.sort(items, function(a, b)
+        if a.distance ~= b.distance then return a.distance < b.distance end
         return describe(a.detector) < describe(b.detector)
     end)
-    if #holders == 0 then return nil, nil end
-    local index = (controller.holderIndex - 1) % #holders + 1
+    return items
+end
+
+local function nextHolderDetector(peek)
+    local items = holderTargets()
+    local ready = {}
+    for _, item in ipairs(items) do
+        if item.inRange then ready[#ready + 1] = item end
+    end
+    if #ready == 0 then return nil, nil, items[1] end
+    local index = (controller.holderIndex - 1) % #ready + 1
     if not peek then controller.holderIndex = index + 1 end
-    return holders[index].detector, holders[index].distance
+    return ready[index].detector, ready[index].distance, items[1]
+end
+
+local function stopUpgradeWalking()
+    if not controller.upgradeWalkTarget then return end
+    controller.upgradeWalkTarget = nil
+    controller.upgradeWalkLastDistance = nil
+    local char = player.Character
+    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+    local root = rootPart()
+    if humanoid and root then
+        pcall(function() humanoid:MoveTo(root.Position) end)
+    end
+end
+
+local function approachUpgradeHolder(target, now)
+    if not target then
+        return "No Holder UpgradeClick on selected plot"
+    end
+    if target.allowed <= 0 then
+        return "Holder UpgradeClick disabled (max range 0)"
+    end
+    if target.distance > 120 then
+        return ("Holder too far (%.1f studs, limit 120)"):format(target.distance)
+    end
+    local char = player.Character
+    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+    local pos = positionOf(target.detector)
+    if not humanoid or not pos or humanoid.Health <= 0 then
+        return "Cannot walk: Humanoid or holder position missing"
+    end
+    if controller.upgradeWalkTarget ~= target.detector then
+        stopUpgradeWalking()
+        stopWalking() -- surrender a previous Chest MoveTo; Auto Collect remains ON
+        controller.upgradeWalkTarget = target.detector
+        controller.upgradeWalkLastDistance = target.distance
+        controller.upgradeWalkProgressAt = now
+        controller.upgradeWalkLastCommand = 0
+        controller.upgradeWalkLastTarget = describe(target.detector)
+        writeLog(("Upgrade walking to %s (%.1f studs, click range %.1f)"):format(
+            controller.upgradeWalkLastTarget, target.distance, target.allowed))
+    end
+    if target.distance + 0.75 < (controller.upgradeWalkLastDistance or math.huge) then
+        controller.upgradeWalkLastDistance = target.distance
+        controller.upgradeWalkProgressAt = now
+    end
+    if now - controller.upgradeWalkProgressAt > 11 then
+        stopUpgradeWalking()
+        controller.upgrade = false
+        return "PAUSED: holder walk blocked for 11s (Auto Collect unaffected)"
+    end
+    if now - controller.upgradeWalkLastCommand >= 1.8 then
+        controller.upgradeWalkLastCommand = now
+        controller.upgradeWalkAttempts = controller.upgradeWalkAttempts + 1
+        local ok, err = pcall(function() humanoid:MoveTo(pos) end)
+        if not ok then
+            stopUpgradeWalking()
+            controller.upgrade = false
+            return "PAUSED: Holder MoveTo ERROR: " .. tostring(err)
+        end
+    end
+    controller.upgradeBusyUntil = now + 3.5
+    return ("Walking to holder %.1f / %.1f studs"):format(target.distance, target.allowed)
 end
 
 local function resolveUpgradeFeedback(now)
@@ -1158,7 +1305,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.9 EQUIP / UPGRADE TARGETS | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.10 EQUIP / UPGRADE TARGETS | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -1177,6 +1324,9 @@ local function actionDiagnosticReport()
             " unchanged=" .. controller.upgradeNoChange ..
             " holderClicks=" .. controller.holderActions .. "/" .. controller.holderAttempts,
         "Selected holder=" .. (controller.openedHolder and describe(controller.openedHolder) or "none"),
+        "Upgrade walk=" .. tostring(controller.upgradeWalkTarget ~= nil) ..
+            " | attempts=" .. tostring(controller.upgradeWalkAttempts) ..
+            " lastTarget=" .. tostring(controller.upgradeWalkLastTarget),
         "Executor: firesignal=" .. tostring(type(firesignal) == "function") ..
             " fireclickdetector=" .. tostring(type(fireclickdetector) == "function") ..
             " getconnections=" .. tostring(type(getconnections) == "function"),
@@ -1196,18 +1346,44 @@ local function actionDiagnosticReport()
     addButtons("Inventory", controller.inventoryCandidates)
     addButtons("Stats", controller.statsCandidates)
     addButtons("Upgrade", controller.upgradeCandidates)
-    local holder, distance = nextHolderDetector(true)
+    local holders = holderTargets()
+    lines[#lines + 1] = "Holders on plot=" .. tostring(#holders) ..
+        " | selectedPlot=" .. tostring(controller.selectedPlot) ..
+        " | root=" .. tostring(rootPart() and rootPart().Position)
+    for i = 1, math.min(30, #holders) do
+        local h = holders[i]
+        lines[#lines + 1] = ("Holder[%d]: %s | distance=%.1f maxRange=%.1f inRange=%s"):format(
+            i, describe(h.detector), h.distance, h.allowed, tostring(h.inRange))
+    end
+    local holder, distance, closest = nextHolderDetector(true)
     lines[#lines + 1] = "Holder candidate=" .. (holder and
-        (describe(holder) .. (" distance=%.1f"):format(distance)) or "NONE IN RANGE")
+        (describe(holder) .. (" distance=%.1f"):format(distance)) or
+        (closest and (describe(closest.detector) ..
+            (" OUT OF RANGE distance=%.1f maxRange=%.1f"):format(
+                closest.distance, closest.allowed)) or "NONE FOUND"))
+    lines[#lines + 1] = "ALL VISIBLE GAME GUI BUTTONS (read-only):"
+    for i, button in ipairs(controller.guiButtonSamples) do
+        local connections = takeAllConnections(button)
+        lines[#lines + 1] = ("Button[%02d]: %s | class=%s | name=%s | text=%s | context=%s | click=%s activated=%s"):format(
+            i, describe(button), tostring(button.ClassName), tostring(button.Name),
+            textOf(button):sub(1, 60), nearbyButtonContext(button):sub(1, 90),
+            tostring(connections.MouseButton1Click), tostring(connections.Activated))
+    end
+    lines[#lines + 1] = "HIDDEN GAME GUI CANDIDATES (read-only):"
+    for i, button in ipairs(controller.guiHiddenSamples) do
+        lines[#lines + 1] = ("Hidden[%02d]: %s | class=%s | name=%s | text=%s | context=%s"):format(
+            i, describe(button), tostring(button.ClassName), tostring(button.Name),
+            textOf(button):sub(1, 45), nearbyButtonContext(button):sub(1, 75))
+    end
     lines[#lines + 1] =
-        "NOTE: button dispatch/click does not prove Equip or stat change; no paid Robux actions are targeted."
+        "NOTE: no game UI path has been verified live; dispatch is not proof of equip/stat gains. No premium actions targeted."
     return table.concat(lines, "\n")
 end
 
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.9 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.10 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoEquip=" .. tostring(controller.equip) .. " autoUpgrade=" .. tostring(controller.upgrade))
@@ -1225,6 +1401,9 @@ local function diagnosticReport()
     append("Auto Upgrade=" .. tostring(controller.upgrade) ..
         " stage=" .. tostring(controller.upgradeStage) .. " calls=" ..
         tostring(controller.upgradeActions) .. "/" .. tostring(controller.upgradeAttempts))
+    append("Upgrade move target=" .. tostring(controller.upgradeWalkLastTarget) ..
+        " | move attempts=" .. tostring(controller.upgradeWalkAttempts) ..
+        " | navigating=" .. tostring(controller.upgradeWalkTarget ~= nil))
     append("Closest upgrade plot=" .. (nearPlot and
         (nearPlot .. (" dist=%.1f"):format(plotDistance)) or tostring(plotReason)))
     local chest, chestDistance, chestReason = selectedChest()
@@ -1345,6 +1524,7 @@ connect(upgradeButton.Activated, function()
     end
     controller.upgrade = not controller.upgrade
     if controller.upgrade then
+        stopUpgradeWalking()
         controller.upgradeStage = "Finding selected-plot miner Stats"
         controller.upgradeAttempts = 0
         controller.upgradeNoChange = 0
@@ -1357,6 +1537,7 @@ connect(upgradeButton.Activated, function()
         autoSelectPlot()
         scanActionButtons()
     else
+        stopUpgradeWalking()
         controller.upgradePending = nil
         controller.upgradeStage = "OFF"
     end
@@ -1457,7 +1638,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.9 started | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.10 started | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
@@ -1591,6 +1772,8 @@ task.spawn(function()
                 elseif now >= controller.holderNextAt then
                     local detector, distance = nextHolderDetector()
                     if detector then
+                        stopUpgradeWalking()
+                        controller.upgradeBusyUntil = now + 6
                         controller.holderNextAt = now + 23
                         controller.holderAttempts = controller.holderAttempts + 1
                         local ok, err = pcall(fireclickdetector, detector)
@@ -1607,8 +1790,15 @@ task.spawn(function()
                         writeLog("AUTO UPGRADE " .. controller.upgradeStage ..
                             " | " .. describe(detector) .. " | result NOT verified")
                     else
-                        controller.upgradeStage =
-                            "No in-range Holder UpgradeClick on selected Plot"
+                        local allHolders = holderTargets()
+                        if #allHolders == 0 then
+                            controller.upgradeStage = "No Holders/UpgradeClick found on selected Plot"
+                        else
+                            controller.upgradeStage = approachUpgradeHolder(allHolders[1], now)
+                            if controller.upgradeStage:find("PAUSED:", 1, true) then
+                                writeLog("AUTO UPGRADE " .. controller.upgradeStage)
+                            end
+                        end
                     end
                 else
                     controller.upgradeStage = "Waiting for miner Stats panel"
@@ -1622,7 +1812,11 @@ task.spawn(function()
             lastAutoPlotCheck = now
             autoSelectPlot()
         end
-        if controller.collect and now - lastCollect >= 1.25 then
+        -- Holder travel gets a short exclusive movement window. The working
+        -- Auto Collect loop is otherwise unchanged and resumes afterward.
+        if controller.collect and not controller.upgradeWalkTarget
+            and now >= (controller.upgradeBusyUntil or 0)
+            and now - lastCollect >= 1.25 then
             lastCollect = now
             local action = "none"
             local button = findTakeAll()

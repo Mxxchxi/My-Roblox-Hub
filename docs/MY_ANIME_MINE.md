@@ -1,4 +1,4 @@
-# My Anime Mine (v0.9)
+# My Anime Mine (v0.10)
 
 - Roblox game: https://www.roblox.com/games/79389059854988/My-Anime-Mine
 - PlaceId: `79389059854988`
@@ -14,6 +14,8 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 
 ## Features and limitations
 
+- **V0.10 troubleshooting:** **COPY EQUIP / UPGRADE TARGETS** now includes all visible game TextButtons and ImageButtons (up to 70), hidden UI candidates (up to 70), button paths/context, and every detected Holder's real distance and MaxActivationDistance. If Equip Best is still not found, open the game's Inventory manually and recopy diagnostics to identify its real button hierarchy; do not guess server remote calls.
+- **Auto Upgrade movement:** the script scans all selected-plot `Holders/*/UpgradeClick` detectors directly even when outside activation range and approaches a nearby Holder with bounded natural `Humanoid:MoveTo` (up to 120 studs, 11s no-progress cutoff). Auto Collect is briefly suspended *only during the approach* to avoid conflicting movement commands and resumes afterward. Holder ownership remains based on the auto-selected plot and is not independently verified.
 - **AUTO EQUIP BEST** (OFF by default): searches for the game's Equip Best GUI control and triggers its existing click listener periodically. When not visible, tries opening the game's Inventory menu once per enable cycle. No undocumented remote signatures are used. The click and equipment changes require live verification.
 - **AUTO UPGRADE STATS** (OFF by default): tries UpgradeClick detectors on miners (Holders) in the selected plot, opens the miner's Stats tab when detected, and selects only character Damage, Speed, and Mining Speed upgrade GUI controls. Excludes candidates with Robux, gamepass, premium, purchase, shop, or research hints, and does not automate Research Tree purchases. Clicking a game UI upgrade can spend in-game currency; no Robux actions are intentionally targeted. The script pauses after three unchanged UI attempts or 80 attempts per cycle. The live GUI hierarchy is not yet confirmed and may require adapting from an in-game diagnostic.
 - Two independent toggles leave the previously working Auto Collect behavior unchanged. When a Chest is open these new workflows defer UI actions.
@@ -47,6 +49,9 @@ For reporting a failure: enter the actual game, select SCAN GAME, select COPY LO
 ## Regression checklist
 
 - [ ] UI loads when entering My Anime Mine.
+- [ ] If no Equip Best candidate is visible, copy the complete game GUI Button[]/Hidden[] paths; icon-only toolbar inventory controls are detected where their context is identifiable.
+- [ ] Out-of-range selected-plot Holder UpgradeClick reports distance/max range and moves within range naturally, without teleporting or entering another plot.
+- [ ] Auto Collect V0.8 behavior continues normally whenever upgrade navigation is inactive.
 - [ ] AUTO EQUIP BEST and AUTO UPGRADE STATS start OFF, operate independently, and do not interrupt Auto Collect.
 - [ ] Equip Best finds an Inventory game button and dispatches its supported click event; verify equipped units in Roblox.
 - [ ] Stat upgrades find only the selected plot's Holder UpgradeClick and Damage/Speed/Mining Speed buttons, not Robux or Research purchases.

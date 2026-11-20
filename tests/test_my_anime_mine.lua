@@ -165,7 +165,7 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector}"
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking}"
     local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
     return assert(env.MyAnimeMineHubController), helpers
 end
@@ -294,11 +294,40 @@ assert(first.equip and first.upgrade, "equip and upgrade toggles failed to enabl
 findButton("ActionDiagnostics").Activated:Fire()
 assert(clipboard:find("EQUIP / UPGRADE TARGETS", 1, true)
        and clipboard:find("EquipBest", 1, true)
-       and clipboard:find("statUpgrades=2", 1, true),
+       and clipboard:find("statUpgrades=2", 1, true)
+       and clipboard:find("ALL VISIBLE GAME GUI BUTTONS", 1, true),
        "equip/upgrade target copy missing candidate details")
 findButton("AutoEquip").Activated:Fire()
 findButton("AutoUpgrade").Activated:Fire()
 assert(not first.equip and not first.upgrade, "equip and upgrade toggles must switch OFF")
+-- Icon-only Inventory opener and hidden Equip Best are visible in diagnostic,
+-- but hidden controls must not be added to auto dispatch candidates.
+local toolbar = instance("Frame")
+toolbar.Name = "Toolbar"
+toolbar.Parent = inventoryGui
+local inventoryText = instance("TextLabel")
+inventoryText.Name = "IconTitle"
+inventoryText.Text = "Inventory"
+inventoryText.Parent = toolbar
+local icon = instance("ImageButton")
+icon.Name = "Icon"
+icon.Parent = toolbar
+local hiddenGui = instance("ScreenGui")
+hiddenGui.Name = "SecondaryInventory"
+hiddenGui.Enabled = false
+hiddenGui.Parent = playerGui
+local hiddenEquip = instance("TextButton")
+hiddenEquip.Name = "EquipBestButton"
+hiddenEquip.Text = "Equip Best"
+hiddenEquip.Parent = hiddenGui
+helpers.scanActionButtons()
+assert(#first.inventoryCandidates == 2 and #first.equipCandidates == 1,
+       "icon-only Inventory discovery failed or hidden Equip leaked into candidates")
+findButton("ActionDiagnostics").Activated:Fire()
+assert(clipboard:find("class=ImageButton", 1, true)
+       and clipboard:find("HIDDEN GAME GUI CANDIDATES", 1, true)
+       and clipboard:find("SecondaryInventory", 1, true),
+       "expanded button diagnostic omitted icon-only or hidden GUI")
 findButton("Scan").Activated:Fire()
 findButton("CopyLog").Activated:Fire()
 assert(clipboard and clipboard:find("PlaceId 79389059854988", 1, true), "copy log unavailable")
@@ -327,6 +356,32 @@ assert(first.selectedPlot == "MinePlot7", "auto selector failed to choose the ve
 local selectedHolder, holderDist = helpers.nextHolderDetector(true)
 assert(selectedHolder == detector and holderDist == 23,
        "selected plot holder upgrade detector not found")
+detector.MaxActivationDistance = 8
+local noHolder, _, outOfRangeHolder = helpers.nextHolderDetector(true)
+assert(noHolder == nil and outOfRangeHolder.detector == detector
+       and outOfRangeHolder.distance == 23 and outOfRangeHolder.allowed == 8,
+       "out-of-range Holder must be reported rather than called missing")
+local humanoid = instance("Humanoid")
+humanoid.Health = 100
+humanoid.Parent = character
+local moveCommands = 0
+humanoid.MoveTo = function(_, _) moveCommands = moveCommands + 1 end
+local approachStage = helpers.approachUpgradeHolder(outOfRangeHolder, 10)
+assert(approachStage:find("Walking to holder", 1, true)
+       and first.upgradeWalkTarget == detector and moveCommands > 0,
+       "out-of-range Holder should trigger bounded natural MoveTo")
+root.Position = vector(20,0,0)
+local inRangeHolder, inRangeDist = helpers.nextHolderDetector(true)
+assert(inRangeHolder == detector and inRangeDist == 3,
+       "Holder should become actionable only after approaching its range")
+helpers.stopUpgradeWalking()
+assert(first.upgradeWalkTarget == nil, "upgrade navigation not stopped")
+root.Position = vector(0,0,0)
+detector.MaxActivationDistance = 32
+findButton("ActionDiagnostics").Activated:Fire()
+assert(clipboard:find("Holder[1]", 1, true)
+       and clipboard:find("maxRange=32.0", 1, true),
+       "Holder diagnostics should report range/position")
 findButton("AutoUpgrade").Activated:Fire()
 assert(first.upgrade and first.selectedPlot == "MinePlot7",
        "upgrade must work independently with automatically detected plot")
@@ -481,4 +536,4 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.9 Equip Best, stat upgrade filtering, holder target, Collect and UI lifecycle")
+print("PASS My Anime Mine V0.10 GUI image/hidden scan, Holder distance+MoveTo, Equip, Collect and UI lifecycle")
