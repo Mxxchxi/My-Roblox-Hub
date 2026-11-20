@@ -782,6 +782,15 @@ assert(first.sellPhase=="SELECT_ALL" and first.sellVendorTouched
        and first.sellVendorAttempts==0,
        "touch-only stand must be authorized by actual 3-stud marker approach, not a prompt")
 helpers.shopSellStep(26)
+local touchSelectTarget,touchSelectCount=helpers.sellSelectAllButton()
+print("AUDIT_TOUCH_DEBUG phase="..tostring(first.sellPhase)..
+    " | stage="..tostring(first.sellStage)..
+    " | vendor="..tostring(first.sellVendorPath)..
+    " | vendorTouched="..tostring(first.sellVendorTouched)..
+    " | vendorAttempts="..tostring(first.sellVendorAttempts)..
+    " | selectClicks="..tostring(selectClicks)..
+    " | selectCandidates="..tostring(touchSelectCount)..
+    " | selectTarget="..tostring(touchSelectTarget and touchSelectTarget.Name))
 assert(first.sellPhase=="SELL_MENU" and selectClicks==initialSelectClicks+1
        and not first.sellSent, "touch-only stand must click Select All before Sell")
 helpers.shopSellStep(28)
