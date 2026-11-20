@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.18 (wait Chest handoff before Shops teleport)
+-- My Roblox Hub | My Anime Mine v0.19 (finish in-progress Auto Collect before Shops)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -41,6 +41,10 @@ local controller = {
     sellWarpAttempts = 0,
     sellChestHandoffAttempts = 0,
     sellChestHandoffState = "NOT_STARTED",
+    sellHandoffNeedsCollect = false,
+    sellHandoffBaselineTakeAllActions = 0,
+    sellHandoffTakeAllObserved = false,
+    sellHandoffChestEmpty = false,
     sellShopsAttempts = 0,
     sellVendorAttempts = 0,
     sellVendorTouched = false,
@@ -326,7 +330,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.18 | Finish Chest Take All before Shops warp; Sell and ore/money unverified.",
+    Text = "V0.19 | Finish active Auto Collect before Shops warp; sell result unverified.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -1836,19 +1840,47 @@ local function shopSellStep(now)
         return
     end
     if phase == "CHEST_HANDOFF" then
-        local chest,chestOpen=gameChestFrame()
+        local _,chestOpen=gameChestFrame()
         local pending=controller.takeAllPending ~= nil
         local elapsed=now-controller.sellPhaseAt
         controller.sellChestHandoffAttempts=controller.sellChestHandoffAttempts+1
+
+        -- V0.18 could teleport while Auto Collect was STILL WALKING to Chest.
+        -- If Auto Collect was active when the user requested selling, finish
+        -- exactly the current collection attempt before starting travel.
+        if controller.sellHandoffNeedsCollect then
+            if controller.takeAllActions > controller.sellHandoffBaselineTakeAllActions then
+                controller.sellHandoffTakeAllObserved=true
+            end
+            if not controller.sellHandoffTakeAllObserved
+                and not controller.sellHandoffChestEmpty then
+                if not controller.collect then
+                    sellSetPhase("PAUSED",
+                        "Auto Collect stopped before Take All; review Chest before selling",now)
+                elseif elapsed > 42 then
+                    sellSetPhase("PAUSED",
+                        "No Take All within 42s; walk/Chest may be blocked (COPY SELL ROUTE)",now)
+                else
+                    controller.sellChestHandoffState = controller.moveTarget
+                        and "COLLECT_WALKING_TO_CHEST"
+                        or chestOpen and "COLLECT_WAITING_FOR_TAKE_ALL"
+                        or "COLLECT_WAITING_FOR_CHEST_OPEN"
+                    controller.sellStage =
+                        "Finishing active Auto Collect before Shops (Take All not sent yet)"
+                end
+                return
+            end
+        end
         if chestOpen or pending then
             controller.sellChestHandoffState=chestOpen and "CHEST_OPEN"
                 or "TAKE_ALL_PENDING"
-            if elapsed > 24 then
+            local maxWait=controller.sellHandoffNeedsCollect and 47 or 24
+            if elapsed > maxWait then
                 sellSetPhase("PAUSED",
-                    "Chest still open/pending after 24s; finish Take All or close Chest manually",now)
+                    "Chest still open/pending; finish Take All or close Chest manually",now)
             else
                 controller.sellStage=controller.collect and
-                    "Waiting for Auto Collect Take All to finish and Chest to close"
+                    "Waiting for Auto Collect Take All feedback and Chest to close"
                     or "Close the open Chest manually to allow Shops teleport"
             end
             return
@@ -1858,7 +1890,9 @@ local function shopSellStep(now)
             controller.sellStage="Waiting briefly for Chest UI to settle"
             return
         end
-        controller.sellChestHandoffState="CHEST_CLOSED"
+        controller.sellChestHandoffState=controller.sellHandoffChestEmpty
+            and "CHEST_EMPTY" or "COLLECT_FINISHED"
+        stopWalking()
         sellSetPhase("TELEPORT_OPEN","Chest clear; searching Teleport > Shops",now)
         return
     end
@@ -2098,7 +2132,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.18 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.19 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -2258,7 +2292,7 @@ end
 
 local function sellRouteDiagnosticReport()
     local lines={
-        "MY ANIME MINE V0.18 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.19 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
         "PlaceId="..tostring(game.PlaceId)..
             " | autoSell="..tostring(controller.sell)..
             " | autoCollect="..tostring(controller.collect)..
@@ -2287,6 +2321,12 @@ local function sellRouteDiagnosticReport()
     local teleportCandidates=teleportLauncherCandidates()
     lines[#lines+1]="Chest handoff="..tostring(controller.sellChestHandoffState)..
         " | handoffTicks="..tostring(controller.sellChestHandoffAttempts)..
+        " | collectFirst="..tostring(controller.sellHandoffNeedsCollect)..
+        " | takeAllBaseline="..tostring(controller.sellHandoffBaselineTakeAllActions)..
+        " | takeAllNow="..tostring(controller.takeAllActions)..
+        " | takeAllObserved="..tostring(controller.sellHandoffTakeAllObserved)..
+        " | chestEmpty="..tostring(controller.sellHandoffChestEmpty)..
+        " | collectWalking="..tostring(controller.moveTarget~=nil)..
         " | ChestFrame="..(chest and describe(chest) or "NOT FOUND")..
         " | chestOpen="..tostring(chestOpen)..
         " | TakeAllVisible="..tostring(findTakeAll()~=nil)..
@@ -2337,14 +2377,14 @@ local function sellRouteDiagnosticReport()
             end
         end
     end
-    lines[#lines+1]="NOTE: Chest must close before Shops teleport. Select All precedes Sell. Dispatch is not evidence of currency credit."
+    lines[#lines+1]="NOTE: if Auto Collect was ON, wait for new Take All attempt or confirmed empty Chest BEFORE Shops. Sell dispatch does not prove currency credit."
     return table.concat(lines,"\n")
 end
 
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.18 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.19 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
@@ -2551,6 +2591,10 @@ connect(sellButton.Activated, function()
         controller.sellWarpAttempts = 0
         controller.sellChestHandoffAttempts = 0
         controller.sellChestHandoffState = "STARTING"
+        controller.sellHandoffNeedsCollect = controller.collect
+        controller.sellHandoffBaselineTakeAllActions = controller.takeAllActions
+        controller.sellHandoffTakeAllObserved = false
+        controller.sellHandoffChestEmpty = false
         controller.sellShopsAttempts = 0
         controller.sellVendorAttempts = 0
         controller.sellVendorTouched = false
@@ -2567,10 +2611,13 @@ connect(sellButton.Activated, function()
         controller.sellWarpOrigin = nil
         local now = os.clock()
         controller.sellStartedAt = now
-        sellSetPhase("CHEST_HANDOFF","Checking Chest before Teleport > Shops",now)
-        -- Stop the old Chest walking command; it will remain paused
-        -- during the user-requested sale route, and resume after OFF.
-        stopWalking()
+        sellSetPhase("CHEST_HANDOFF",
+            controller.sellHandoffNeedsCollect
+                and "Finishing Auto Collect before Shops"
+                or "Checking Chest before Shops",now)
+        -- Do not cancel an already-running Chest walk. It must finish Take All
+        -- (or time out safely) before Shops takes ownership of movement.
+        if not controller.sellHandoffNeedsCollect then stopWalking() end
     else
         controller.sellPhase = "OFF"
         controller.sellStage = "OFF (shop route stopped)"
@@ -2671,12 +2718,20 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.18 started | Chest handoff before Shops warp | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.19 started | finish Auto Collect before Shops warp | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
 autoSelectPlot()
 refreshStatus()
+
+local function canCollectDuringSell()
+    return not controller.sell
+        or (controller.sellPhase == "CHEST_HANDOFF"
+            and controller.sellHandoffNeedsCollect
+            and not controller.sellHandoffTakeAllObserved
+            and not controller.sellHandoffChestEmpty)
+end
 
 task.spawn(function()
     local lastScan, lastMine, lastCollect, lastStatus = os.clock(), 0, 0, 0
@@ -2781,9 +2836,7 @@ task.spawn(function()
         -- Auto Collect loop is otherwise unchanged and resumes afterward.
         -- During handoff only the already-visible Take All control may run.
         -- Do not walk back to Chest or open Chest after sale was requested.
-        if controller.collect and (not controller.sell
-            or (controller.sellPhase == "CHEST_HANDOFF"
-                and select(2, gameChestFrame()) and findTakeAll() ~= nil))
+        if controller.collect and canCollectDuringSell()
             and not controller.upgradeWalkTarget
             and now >= (controller.upgradeBusyUntil or 0)
             and now - lastCollect >= 1.25 then
@@ -2816,6 +2869,10 @@ task.spawn(function()
                     -- Avoid clicking an already-empty chest.
                     if beforeCount == 0 then
                         controller.takeAllAttempts = controller.takeAllAttempts - 1
+                        if controller.sell and controller.sellPhase == "CHEST_HANDOFF"
+                            and controller.sellHandoffNeedsCollect then
+                            controller.sellHandoffChestEmpty = true
+                        end
                         controller.collectionStage = "Chest empty: wait for mined items"
                         action = "CHEST EMPTY, Take All not dispatched"
                     else
