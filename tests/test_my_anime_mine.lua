@@ -21,7 +21,7 @@ local function signal()
 end
 
 local function instance(className)
-    local props = {ClassName = className, Name = className, children = {}, events = {}}
+    local props = {ClassName = className, Name = className, Visible = true, Enabled = true, children = {}, events = {}}
     local obj = {}
     local methods = {}
     function methods:IsA(kind) return kind == props.ClassName end
