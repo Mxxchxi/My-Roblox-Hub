@@ -345,6 +345,7 @@ assert(first.manualOutcome:find("MANUAL_CHEST_CLOSED",1,true) and
        first.manualAfter == nil and first.manualDelta == nil,
        "manual hidden Chest must not reuse stale cached count")
 gameChestGui.Enabled = true
+chestCountLabel.Text = "30/183.9K Items"
 takeAllButton.MouseButton1Click:Fire()
 assert(first.manualClickCount == 2, "manual click not observed")
 chestCountLabel.Text = "12/183.9K Items"
