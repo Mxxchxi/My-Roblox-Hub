@@ -44,5 +44,7 @@ jobs:
         run: |
           luac5.4 -p Games/StealAnEgg_Diagnostics.lua
           luac5.4 -p Loader.lua
+          luac5.4 -p Games/MyAnimeMine.lua
           lua5.4 tests/test_egg_collect.lua
           lua5.4 tests/test_runtime_smoke.lua
+          lua5.4 tests/test_my_anime_mine.lua
