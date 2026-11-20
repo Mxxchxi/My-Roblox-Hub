@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.12 (headless actions without game UI openers)
+-- My Roblox Hub | My Anime Mine v0.13 (opt-in native Chest Auto Sell target discovery)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -35,6 +35,19 @@ local controller = {
     running = true,
     mine = false,
     collect = false,
+    sell = false,
+    sellStage = "OFF",
+    sellCandidates = {},
+    sellLabels = {},
+    sellAttempts = 0,
+    sellCallsOK = 0,
+    sellSent = false,
+    sellTarget = "none",
+    sellEvent = "none",
+    sellInitialState = "UNKNOWN",
+    sellLastObservedState = "UNKNOWN",
+    sellNextScanAt = 0,
+    sellLastStageLog = "",
     equip = false,
     upgrade = false,
     headlessOnly = true,
@@ -148,6 +161,7 @@ function controller:Stop()
     self.running = false
     self.mine = false
     self.collect = false
+    self.sell = false
     self.equip = false
     self.upgrade = false
     self.walkToChest = false
@@ -280,7 +294,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.12 | HEADLESS ONLY: never auto-open Inventory, Stats, Holders or Upgrades UI.",
+    Text = "V0.13 | Auto Sell ores uses the native Chest control only. No extra game panels.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -300,7 +314,9 @@ local autoPlotLabel = make("TextLabel", panel, {
 make("UICorner", autoPlotLabel, { CornerRadius = UDim.new(0, 7) })
 local equipButton = button("AutoEquip", "AUTO EQUIP BEST: OFF", 16, 298, 230, 38)
 local upgradeButton = button("AutoUpgrade", "AUTO UPGRADE STATS: OFF", 264, 298, 230, 38)
-local manualWatchButton = button("ManualWatch", "WATCH MANUAL TAKE ALL: OFF", 16, 345, 478, 38)
+local sellButton = button("AutoSell", "AUTO SELL ORES: OFF", 16, 345, 230, 38)
+local manualWatchButton = button("ManualWatch", "WATCH MANUAL TAKE ALL: OFF", 264, 345, 230, 38)
+manualWatchButton.TextSize = 11
 local actionDiagnosticsButton = button("ActionDiagnostics", "COPY EQUIP / UPGRADE TARGETS", 16, 393, 478, 38)
 local statusLabel = make("TextLabel", panel, {
     Name = "Status", Position = UDim2.fromOffset(17, 437),
@@ -1368,7 +1384,7 @@ local function headlessRemotes()
             all[#all + 1] = entry
             if name:find("equip", 1, true) or name:find("upgrade", 1, true)
                 or name:find("miner", 1, true) or name:find("unit", 1, true)
-                or name:find("inventory", 1, true) then
+                or name:find("inventory", 1, true) or name:find("sell", 1, true) then
                 list[#list + 1] = entry
             end
         end
@@ -1407,6 +1423,116 @@ local function tryHeadlessEquip()
     return false, "NO_ACTIVE_EQUIP_BEST_LISTENER"
 end
 
+-- Auto Sell is confined to the game's ChestFrame and never touches
+-- inventory cards, pets, character sales, or global shop purchases.
+-- It only attempts a preloaded native Chest Auto Sell control, whether
+-- its panel happens to be visible or hidden; no new game window is opened.
+local function scanNativeAutoSell()
+    local buttons, labels = {}, {}
+    for _, item in ipairs(playerGui:GetDescendants()) do
+        if gameGuiAncestorNamed(item, "MineGui")
+            and gameGuiAncestorNamed(item, "ChestFrame") then
+            if item:IsA("TextLabel") and
+                normalizeLabel(textOf(item)):find("autosell", 1, true) then
+                if #labels < 24 then labels[#labels + 1] = item end
+            elseif gameGuiButton(item) then
+                local named = normalizeLabel(item.Name)
+                local label = normalizeLabel(actionLabel(item))
+                local parent = item.Parent
+                local parentName = parent and normalizeLabel(parent.Name) or ""
+                local isSellControl = named:find("autosell", 1, true)
+                    or label:find("autosell", 1, true)
+                    or parentName:find("autosell", 1, true)
+                if isSellControl
+                    and not isPremiumAction(item)
+                    and not gameGuiAncestorNamed(item, "Shop")
+                    and not gameGuiAncestorNamed(item, "Gamepass")
+                    and not gameGuiAncestorNamed(item, "Premium") then
+                    buttons[#buttons + 1] = item
+                end
+            end
+        end
+    end
+    controller.sellCandidates, controller.sellLabels = buttons, labels
+    return buttons, labels
+end
+
+-- Only an explicit UI indication is accepted as ON/OFF. A color or a signal
+-- dispatch is not an authoritative sell-state indicator.
+local function nativeAutoSellState(button)
+    local label = actionLabel(button):lower()
+    if label:match("auto%s*sell%s*[:%-]?%s*on%s*$") then return "ON" end
+    if label:match("auto%s*sell%s*[:%-]?%s*off%s*$") then return "OFF" end
+    local status = textOf(button):lower():gsub("^%s+", ""):gsub("%s+$", "")
+    if status == "on" or status == "enabled" then return "ON" end
+    if status == "off" or status == "disabled" then return "OFF" end
+    local parent = button.Parent
+    if parent then
+        for _, sibling in ipairs(parent:GetChildren()) do
+            if sibling:IsA("TextLabel") then
+                local text = textOf(sibling):lower():gsub("^%s+", ""):gsub("%s+$", "")
+                if text == "on" or text == "enabled" then return "ON" end
+                if text == "off" or text == "disabled" then return "OFF" end
+            end
+        end
+    end
+    return "UNKNOWN"
+end
+
+-- A toggle is clicked only when its current ON/OFF state is explicitly
+-- readable. Without that evidence a click could disable an already active
+-- Auto Sell, so report unknown rather than guessing.
+local function setNativeAutoSell(desired)
+    if type(firesignal) ~= "function" then return false, "FIRESIGNAL_UNAVAILABLE" end
+    local buttons, labels = scanNativeAutoSell()
+    if #buttons == 0 then
+        return false, #labels > 0 and "AUTO_SELL_LABEL_ONLY_NO_BUTTON"
+            or "AUTO_SELL_CHEST_CONTROL_NOT_FOUND"
+    end
+    local ready = {}
+    for _, button in ipairs(buttons) do
+        local counts = takeAllConnections(button)
+        if type(counts.MouseButton1Click) == "number" and counts.MouseButton1Click > 0 then
+            ready[#ready + 1] = {button=button, event="MouseButton1Click"}
+        elseif type(counts.Activated) == "number" and counts.Activated > 0 then
+            ready[#ready + 1] = {button=button, event="Activated"}
+        end
+    end
+    if #ready == 0 then return false, "AUTO_SELL_NO_CONFIRMED_LISTENER" end
+    if #ready > 1 then return false, "AUTO_SELL_AMBIGUOUS_ACTIVE_BUTTONS" end
+    local choice = ready[1]
+    local button = choice.button
+    controller.sellTarget = describe(button)
+    controller.sellEvent = choice.event
+    local state = nativeAutoSellState(button)
+    controller.sellInitialState = state
+    controller.sellLastObservedState = state
+
+    if state == desired then
+        controller.sellSent = true
+        return true, "AUTO_SELL_UI_ALREADY_" .. desired .. " (ore sales not verified)"
+    end
+    if state == "UNKNOWN" then
+        return false, "AUTO_SELL_STATE_UNKNOWN (no toggle sent)"
+    end
+
+    -- At most one signal per enable/disable action, never assume that pcall
+    -- means server accepted the sale or that a currency balance changed.
+    controller.sellSent = true
+    controller.sellAttempts = controller.sellAttempts + 1
+    local ok, err = pcall(firesignal, button[choice.event])
+    if ok then
+        controller.sellCallsOK = controller.sellCallsOK + 1
+        controller.sellLastObservedState = nativeAutoSellState(button)
+        return true, "AUTO_SELL_SWITCH_TO_" .. desired .. "_SENT (selling unverified)"
+    end
+    return false, "AUTO_SELL_SIGNAL_ERROR: " .. tostring(err)
+end
+
+local function tryNativeAutoSell()
+    return setNativeAutoSell("ON")
+end
+
 local function resolveUpgradeFeedback(now)
     local pending = controller.upgradePending
     if not pending or now - pending.started < 2.7 then return end
@@ -1431,7 +1557,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.12 EQUIP / UPGRADE TARGETS | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.13 EQUIP / UPGRADE TARGETS + AUTO SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -1479,6 +1605,31 @@ local function actionDiagnosticReport()
     addButtons("Stats", controller.statsCandidates)
     addButtons("Upgrade", controller.upgradeCandidates)
     addButtons("GameUpgradesMenu (read-only, not auto-purchased)", controller.guiUpgradeMenu)
+    local sellButtons, sellLabels = scanNativeAutoSell()
+    lines[#lines + 1] = "Native Chest Auto Sell: enabled=" .. tostring(controller.sell) ..
+        " | stage=" .. tostring(controller.sellStage) ..
+        " | target=" .. tostring(controller.sellTarget) ..
+        " | event=" .. tostring(controller.sellEvent) ..
+        " | sent=" .. tostring(controller.sellSent) ..
+        " | callsOK=" .. tostring(controller.sellCallsOK) ..
+        "/" .. tostring(controller.sellAttempts) ..
+        " | initial=" .. tostring(controller.sellInitialState) ..
+        " observed=" .. tostring(controller.sellLastObservedState)
+    lines[#lines + 1] = ("Chest Auto Sell candidates=%d | matching text labels=%d"):format(
+        #sellButtons, #sellLabels)
+    for i, button in ipairs(sellButtons) do
+        if i > 18 then break end
+        local connections = takeAllConnections(button)
+        lines[#lines + 1] = ("ChestSell[%d]: %s | visible=%s | label=%s | UIstate=%s | mouse=%s activated=%s"):format(
+            i, describe(button), tostring(isVisible(button)), actionLabel(button):sub(1, 110),
+            nativeAutoSellState(button), tostring(connections.MouseButton1Click),
+            tostring(connections.Activated))
+    end
+    for i, label in ipairs(sellLabels) do
+        if i > 18 then break end
+        lines[#lines + 1] = ("ChestSellLabel[%d]: %s | visible=%s | text=%s"):format(
+            i, describe(label), tostring(isVisible(label)), textOf(label):sub(1, 100))
+    end
     local hiddenBest = hiddenEquipBestCandidates()
     lines[#lines + 1] = "Headless loaded Equip Best buttons=" .. tostring(#hiddenBest)
     for i, button in ipairs(hiddenBest) do
@@ -1528,17 +1679,24 @@ local function actionDiagnosticReport()
             textOf(button):sub(1, 45), nearbyButtonContext(button):sub(1, 75))
     end
     lines[#lines + 1] =
-        "NOTE: Headless mode never opens Inventory/Stats/Holders/Upgrades game panels. Remotes are read-only; no unknown signature is invoked."
+        "NOTE: Auto Sell targets ONLY the native Chest auto-sell toggle; signal calls and UI labels do not prove ore sales. No extra game panel or unverified Remote opened/invoked."
     return table.concat(lines, "\n")
 end
 
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.12 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.13 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
+        " autoSell=" .. tostring(controller.sell) ..
         " autoEquip=" .. tostring(controller.equip) .. " autoUpgrade=" .. tostring(controller.upgrade))
+    append("Native Chest Auto Sell=" .. tostring(controller.sellStage) ..
+        " | target=" .. tostring(controller.sellTarget) ..
+        " | event=" .. tostring(controller.sellEvent) ..
+        " | dispatched=" .. tostring(controller.sellSent) ..
+        " | callsOK=" .. tostring(controller.sellCallsOK) ..
+        "/" .. tostring(controller.sellAttempts))
     append(("Targets: rocks=%d prompts=%d TakeAll=%d"):format(
         #controller.detectors, #controller.prompts, #controller.takeAllButtons))
     local root = rootPart()
@@ -1631,17 +1789,20 @@ local function refreshStatus()
     collectButton.BackgroundColor3 = controller.collect and palette.accent or palette.button
     autoPlotLabel.Text = "PLOT AUTO: " .. tostring(controller.selectedPlot or "SEARCHING") ..
         "  |  WALK AUTO: " .. (controller.walkToChest and "ON" or "OFF")
-    manualWatchButton.Text = "WATCH MANUAL TAKE ALL: " .. (controller.watchManual and "ON" or "OFF")
+    manualWatchButton.Text = "WATCH TAKE ALL: " .. (controller.watchManual and "ON" or "OFF")
+    sellButton.Text = "AUTO SELL ORES: " .. (controller.sell and "ON" or "OFF")
+    sellButton.BackgroundColor3 = controller.sell and palette.accent or palette.button
     manualWatchButton.BackgroundColor3 = controller.watchManual and palette.accent or palette.button
     equipButton.Text = "AUTO EQUIP BEST: " .. (controller.equip and "ON" or "OFF")
     upgradeButton.Text = "AUTO UPGRADE STATS: " .. (controller.upgrade and "DIAG ONLY" or "OFF")
     equipButton.BackgroundColor3 = controller.equip and palette.accent or palette.button
     upgradeButton.BackgroundColor3 = controller.upgrade and palette.accent or palette.button
-    statusLabel.Text = ("Rock %d | Chest %d | TakeAll %d | collect calls %d/%d\nEquip: %s (%d OK) | Upgrade: %s (%d OK)\nCollect: %s"):format(
+    statusLabel.Text = ("Rock %d | Chest %d | TakeAll %d | Collect calls %d/%d\nSell: %s | Equip: %s | Upgrade: %s\nCollect: %s"):format(
         #controller.detectors, #controller.prompts, #controller.takeAllButtons,
         controller.collectActions, controller.takeAllActions,
-        tostring(controller.equipStage):sub(1, 35), controller.equipActions,
-        tostring(controller.upgradeStage):sub(1, 35), controller.upgradeActions,
+        tostring(controller.sellStage):sub(1, 37),
+        tostring(controller.equipStage):sub(1, 22),
+        tostring(controller.upgradeStage):sub(1, 22),
         tostring(controller.collectionStage):sub(1, 67))
 end
 
@@ -1712,6 +1873,32 @@ connect(actionDiagnosticsButton.Activated, function()
         print(report)
         writeLog("Clipboard unavailable; Equip/Upgrade targets printed to console")
     end
+end)
+connect(sellButton.Activated, function()
+    controller.sell = not controller.sell
+    if controller.sell then
+        controller.sellStage = "WAITING_FOR_NATIVE_CHEST_AUTO_SELL"
+        controller.sellSent = false
+        controller.sellAttempts = 0
+        controller.sellCallsOK = 0
+        controller.sellTarget = "none"
+        controller.sellEvent = "none"
+        controller.sellInitialState = "UNKNOWN"
+        controller.sellLastObservedState = "UNKNOWN"
+        controller.sellNextScanAt = 0
+        controller.sellLastStageLog = ""
+        scanNativeAutoSell()
+        writeLog("AUTO SELL ORES armed (native Chest Auto Sell only; no game panel opens).")
+    else
+        local ok, stage = setNativeAutoSell("OFF")
+        controller.sellStage = stage
+        if not ok then
+            writeLog("AUTO SELL ORES monitor OFF; native state not verified: " .. stage)
+        else
+            writeLog("AUTO SELL ORES disable request: " .. stage)
+        end
+    end
+    refreshStatus()
 end)
 connect(manualWatchButton.Activated, function()
     if not controller.watchManual and controller.collect then
@@ -1796,7 +1983,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.12 started | headless Equip/Upgrade | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.13 started | native Chest Auto Sell | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
@@ -1845,6 +2032,22 @@ task.spawn(function()
         if (controller.equip or controller.upgrade) and now - lastActionScan >= 2.8 then
             lastActionScan = now
             scanActionButtons()
+        end
+
+        -- A native Auto Sell toggle is a per-session setup operation, not
+        -- a button to spam. Recheck only while searching and never toggle twice.
+        if controller.sell and not controller.sellSent
+            and not controller.watchManual and now >= controller.sellNextScanAt then
+            controller.sellNextScanAt = now + 4
+            local ok, stage = tryNativeAutoSell()
+            controller.sellStage = stage
+            if controller.sellLastStageLog ~= stage then
+                controller.sellLastStageLog = stage
+                writeLog("AUTO SELL ORES: " .. stage .. " | target=" ..
+                    tostring(controller.sellTarget) ..
+                    " | callsOK=" .. tostring(controller.sellCallsOK) ..
+                    " (game currency increase NOT verified)")
+            end
         end
 
         -- V0.12: no automatic game UI windows. An actual loaded hidden

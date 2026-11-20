@@ -1,4 +1,4 @@
-# My Anime Mine (v0.12)
+# My Anime Mine (v0.13)
 
 - Roblox game: https://www.roblox.com/games/79389059854988/My-Anime-Mine
 - PlaceId: `79389059854988`
@@ -14,15 +14,21 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 
 ## Features and limitations
 
-- **Headless-only Equip/Upgrade (V0.12):** when AUTO EQUIP BEST or AUTO UPGRADE STATS is ON, the hub never attempts to open the game's Inventory, Stats, Holders, or Upgrades panels. Auto Collect remains unchanged.
+- **AUTO SELL ORES (new V0.13, OFF by default):** arms an opt-in interaction with the game's native `Auto Sell` control under `PlayerGui/MineGui/ChestFrame`. It does **not** open the Inventory, Shop, Holder, or a separate selling panel. The control can already exist while the Chest is hidden. Only a single native `MouseButton1Click` or `Activated` listener can be selected, and only when the UI shows an unambiguous current `OFF` state. A button labeled `Auto Sell` without an observable `ON/OFF` state is **not clicked**; instead it reports `AUTO_SELL_STATE_UNKNOWN`.
+- **Disable:** switching the hub's AUTO SELL ORES OFF attempts to set the native toggle OFF only if its current state is explicitly ON. If the native state cannot be read, the hub reports this uncertainty rather than firing a blind toggle. The hub OFF switch cannot guarantee the game's native setting was disabled in that case.
+- **Scope and verification:** Auto Sell is restricted to `MineGui/ChestFrame`, excluding character/equipment sales, Shops, Gamepasses and controls showing Robux pricing. At most one signal is sent for each requested ON/OFF transition; a successful signal dispatch is **not proof** of sold ores, money credited, or an accepted server operation. No guessed `RemoteEvent:FireServer` is used.
+- **Diagnostics:** `COPY EQUIP / UPGRADE TARGETS` now also includes native Chest Auto Sell candidate buttons, matching labels, listener counts, observed ON/OFF state, and action feedback. Use these results to refine the mapping if the game uses a different kind of toggle. 
+
+
+- **Headless-only Equip/Upgrade (V0.13):** when AUTO EQUIP BEST or AUTO UPGRADE STATS is ON, the hub never attempts to open the game's Inventory, Stats, Holders, or Upgrades panels. Auto Collect remains unchanged.
 - **Equip Best without showing a game panel:** if a *game-native* Equip Best button and a real click listener are already loaded under `MineGui/InventoryFrame` (even when that frame is hidden), the hub can emit that existing signal without displaying Inventory. This is only a best-effort client-side dispatch and may not produce an equipment change; no success is inferred.
 - **Upgrade without showing a game panel:** this requires the game's actual server command and parameters. They are **not contained in existing diagnostics**. The hub does NOT make up Remote arguments or silently click Holder/Stats/Buy controls. It reports `HEADLESS_PROTOCOL_UNKNOWN` until the correct API is identified.
 - **Remote discovery:** `COPY EQUIP / UPGRADE TARGETS` includes a read-only list of plausible RemoteEvents/RemoteFunctions from ReplicatedStorage. Discovery does not call `FireServer` or `InvokeServer`, and a name alone does not establish a safe argument signature.
 
 
-- **Historical V0.11 diagnostics:** The game's textless Hotbar Inventory launcher and a separate UpgradesButton were identified, but V0.12 does not automatically click them. A prior Plot inspection found Holder detectors, but V0.12 no longer approaches or clicks them in headless mode.
+- **Historical V0.11 diagnostics:** The game's textless Hotbar Inventory launcher and a separate UpgradesButton were identified, but V0.13 does not automatically click them. A prior Plot inspection found Holder detectors, but V0.13 no longer approaches or clicks them in headless mode.
 - **Target diagnostics:** copy visible/hidden GUI control paths and read-only remote names to identify a direct backend protocol without guessing a purchase method.
-- **AUTO EQUIP BEST** (OFF by default): checks already-loaded game-native hidden Equip Best listeners without clicking the Inventory opener. Never opens Inventory in V0.12; if no listener exists, reports HEADLESS_TARGET_UNKNOWN. Any equipment change still needs live verification.
+- **AUTO EQUIP BEST** (OFF by default): checks already-loaded game-native hidden Equip Best listeners without clicking the Inventory opener. Never opens Inventory in V0.13; if no listener exists, reports HEADLESS_TARGET_UNKNOWN. Any equipment change still needs live verification.
 - **AUTO UPGRADE STATS** (OFF by default): runs in headless discovery mode. It does not open a Holder or Stats window and does not buy upgrades until the game's exact server-side upgrade command and parameters can be verified. This prevents guessing routes for purchases involving game currency or premium products.
 - Two independent toggles leave the previously working Auto Collect behavior unchanged. Headless action probes do not navigate to Holder or open any game GUI window.
 - **COPY EQUIP / UPGRADE TARGETS** reports candidate game GUI paths, readable labels, click listener counts, selected holder, action stages, and dispatch statistics. If a target is missing or an upgrade does not take effect, paste this copied report.
@@ -35,7 +41,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 - Includes SCAN GAME, COPY LOG and **COPY TARGET DIAGNOSTICS** with target/range details, Take All signal connection counts (`Activated` and `MouseButton1Click`), a read-only Chest UI text snapshot, event method, and post-dispatch feedback. When `getconnections` is unavailable, the script alternates these two button signal types after inconclusive attempts.
 - Automation toggles and walking start **OFF**. A plot is auto-discovered on startup, retrying when world objects load. Stand within 65 studs of your own upgrade marker and 75 studs of its Chest; if several plots are too close to distinguish, selection stays unset until you move closer. Close with X to stop workers and movement; rerun replaces the previous UI.
 - Press **LeftAlt** to minimize or restore the main window. When minimized, click the small **MY ANIME MINE [+]** restore control near the upper-left corner to reopen. Hiding the window leaves active automation toggles untouched. RightAlt does nothing.
-- Does **not** invoke undocumented remotes, buy premium items, sell ores/characters, auto-summon, assign crew, auto-upgrade research, or teleport. Enabling miner stat upgrades may spend ordinary in-game currency.
+- Does **not** invoke undocumented remotes, buy premium items, sell characters/equipment, auto-summon, assign crew, auto-upgrade research, or teleport. The experimental ore-only Auto Sell toggle is the sole selling-related feature; server-side sale is not verified.
 - Plot selection is based on proximity to an `UpgradeClick` detector **and** ChestPrompt, **not verified ownership**. Stand near your own plot and inspect the auto-selected Plot number before enabling Auto Collect; it will not switch plots while operating. If walking stalls or MoveTo fails, automation turns OFF rather than teleporting or repeatedly walking forever.
 - A Take All signal call is evaluated after 2.5 seconds. A manually clicked Take All also closes the Chest, so automatic `CHEST_CLOSED_AFTER_TAKE_ALL` is no longer treated as an immediate failure. The script ignores stale closed-GUI values, waits **12 seconds** before attempting to open the selected Plot Chest again, and compares the fresh item count with its pre-click count. A lower count suggests collection but **does not prove inventory credit**; mining may occur concurrently. It pauses after **two inconclusive reopen comparisons** or **six Take All dispatches** per enable cycle, and still pauses after three unchanged open-Chest readings. Re-enable Auto Collect to reset the test cycle.
 - Interactions are experimental: the live game might mine through proprietary server remotes/UI rather than exposed detectors/prompts. A detected interaction **is not proof** of an ore/reward gain. The function is a starting point for in-game diagnostics, not a verified auto-farm.
@@ -55,6 +61,12 @@ For reporting a failure: enter the actual game, select SCAN GAME, select COPY LO
 ## Regression checklist
 
 - [ ] UI loads when entering My Anime Mine.
+- [ ] AUTO SELL ORES starts OFF, can be switched ON/OFF independently, and never sends an unknown Remote or opens extra game windows.
+- [ ] Native Chest Auto Sell recognizes an OFF state and fires exactly one confirmed UI listener, then reports the observed state without claiming credited money.
+- [ ] An already-ON toggle does not get clicked OFF by enabling the feature; a known ON state is clicked once when the feature is disabled.
+- [ ] If the state is UNKNOWN, no click is sent, and diagnostics identify the Chest Auto Sell label/button problem.
+- [ ] Global Sell All / Sell Characters / Robux-premium controls are excluded and never clicked.
+- [ ] COPY EQUIP / UPGRADE TARGETS includes ChestSell and ChestSellLabel candidates, listener counts, and native sell action status.
 - [ ] Enabling Auto Equip/Upgrade does not click InventoryButton, UpgradesButton, Holder UpgradeClick or Stats tab automatically.
 - [ ] A hidden native MineGui/InventoryFrame Equip Best button with an attached listener can receive a signal without opening the frame.
 - [ ] Unknown headless upgrade commands produce HEADLESS_PROTOCOL_UNKNOWN and do not invoke remotes or spend game currency.
