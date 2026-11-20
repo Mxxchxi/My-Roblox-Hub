@@ -340,7 +340,9 @@ local upgradeButton = button("AutoUpgrade", "AUTO UPGRADE STATS: OFF", 264, 298,
 local sellButton = button("AutoSell", "AUTO SELL ORES: OFF", 16, 345, 230, 38)
 local manualWatchButton = button("ManualWatch", "WATCH MANUAL TAKE ALL: OFF", 264, 345, 230, 38)
 manualWatchButton.TextSize = 11
-local actionDiagnosticsButton = button("ActionDiagnostics", "COPY EQUIP / UPGRADE TARGETS", 16, 393, 478, 38)
+local actionDiagnosticsButton = button("ActionDiagnostics", "COPY EQUIP / UPGRADE TARGETS", 16, 393, 230, 38)
+actionDiagnosticsButton.TextSize = 11
+local sellDiagnosticsButton = button("SellDiagnostics", "COPY SELL ROUTE", 264, 393, 230, 38)
 local statusLabel = make("TextLabel", panel, {
     Name = "Status", Position = UDim2.fromOffset(17, 437),
     Size = UDim2.fromOffset(478, 65),
@@ -2050,6 +2052,62 @@ local function actionDiagnosticReport()
     return table.concat(lines, "\n")
 end
 
+local function sellRouteDiagnosticReport()
+    local lines={
+        "MY ANIME MINE V0.14 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
+        "PlaceId="..tostring(game.PlaceId)..
+            " | autoSell="..tostring(controller.sell)..
+            " | autoCollect="..tostring(controller.collect)..
+            " | plot="..tostring(controller.selectedPlot),
+        "Phase="..tostring(controller.sellPhase)..
+            " | Stage="..tostring(controller.sellStage),
+        "Warp button clicks="..controller.sellWarpAttempts..
+            " | Shops destination clicks="..controller.sellShopsAttempts..
+            " | walk commands="..controller.sellWalkAttempts..
+            " | Sell vendor interactions="..controller.sellVendorAttempts..
+            " | Sell Ores clicks="..controller.sellCallsOK.."/"..controller.sellAttempts,
+        "Last target="..tostring(controller.sellActionTarget)..
+            " | vendor="..tostring(controller.sellVendorPath)..
+            " | vendorDist="..tostring(controller.sellVendorDistance),
+        "CharacterPos="..tostring(rootPart() and rootPart().Position),
+    }
+    local tele=shopsTeleportLauncher()
+    local shops,shopCount=shopsWarpDestination()
+    lines[#lines+1]="Teleport button="..(tele and describe(tele) or "NOT FOUND")
+    lines[#lines+1]="Shops destination candidates="..shopCount..
+        " | selected="..(shops and describe(shops) or "NONE")
+    local vendors=sellVendorTargets()
+    lines[#lines+1]="Sell stand targets="..#vendors
+    for i=1,math.min(12,#vendors) do
+        local v=vendors[i]
+        lines[#lines+1]=("Vendor[%d]: %s | kind=%s | distance=%.1f | maxRange=%.1f"):format(
+            i,describe(v.target),v.type,v.distance,v.maxRange)
+    end
+    local action,count=oreSellButton()
+    lines[#lines+1]="Explicit ore-only Sell controls="..count..
+        " | selected="..(action and describe(action) or "NONE")
+    lines[#lines+1]="Visible game buttons related to warp/shop/sell:"
+    local found=0
+    for _,button in ipairs(playerGui:GetDescendants()) do
+        if gameGuiButton(button) and isVisible(button) then
+            local name=normalizeLabel(button.Name.." "..textOf(button))
+            if name:find("teleport",1,true) or name:find("shops",1,true)
+                or name:find("sell",1,true) or name:find("ore",1,true) then
+                found=found+1
+                if found<=35 then
+                    local counts=takeAllConnections(button)
+                    lines[#lines+1]="GUI["..found.."]: "..describe(button)..
+                        " | text="..textOf(button):sub(1,50)..
+                        " | mouse="..tostring(counts.MouseButton1Click)..
+                        " activated="..tostring(counts.Activated)
+                end
+            end
+        end
+    end
+    lines[#lines+1]="NOTE: no generic Sell All button is clicked; a sent signal is not proof of sale or money received."
+    return table.concat(lines,"\n")
+end
+
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
@@ -2271,6 +2329,16 @@ connect(sellButton.Activated, function()
         writeLog("SHOP SELL OFF. Auto Collect can resume after returning to your Plot.")
     end
     refreshStatus()
+end)
+connect(sellDiagnosticsButton.Activated, function()
+    local report=sellRouteDiagnosticReport()
+    if type(setclipboard)=="function" then
+        local ok,err=pcall(setclipboard,report)
+        writeLog(ok and "Sell route diagnostics copied" or ("Sell route copy ERROR: "..tostring(err)))
+    else
+        print(report)
+        writeLog("Clipboard unavailable; sell route report printed to console")
+    end
 end)
 connect(manualWatchButton.Activated, function()
     if not controller.watchManual and controller.collect then
