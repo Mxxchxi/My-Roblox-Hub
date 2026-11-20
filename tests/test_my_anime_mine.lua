@@ -687,6 +687,45 @@ assert(clipboard:find("verified=true",1,true)
 first.collect=false
 teleMenu.Visible=false
 
+-- A return toggle that teleports directly, with no Base submenu,
+-- should still pass once the selected Chest is near.
+first.sell=true
+first.sellPhase="RETURN_BASE_WAIT"
+first.sellReturnOriginalPlot="MinePlot7"
+first.sellReturnStartDistance=538
+first.sellReturnVerified=false
+first.sellReturnChoiceClicks=0
+root.Position=vector(578,0,0)
+local directBaseBefore=baseClicks
+root.Position=vector(0,0,0)
+helpers.returnBaseStep(32,"RETURN_BASE_WAIT")
+assert(first.sellPhase=="RETURNED_BASE" and not first.sell
+       and first.sellReturnVerified and baseClicks==directBaseBefore,
+       "Base/Shops direct toggle must verify return without an extra destination click")
+
+-- A click that leaves the player at Shops cannot unlock Collect.
+root.Position=vector(578,0,0)
+first.sell=true
+first.sellPhase="RETURN_BASE_WAIT"
+first.sellReturnOriginalPlot="MinePlot7"
+first.sellReturnStartDistance=538
+first.sellReturnVerified=false
+first.sellReturnChoiceClicks=1
+first.sellPhaseAt=33
+first.collect=true
+helpers.returnBaseStep(52,"RETURN_BASE_WAIT")
+assert(first.sellPhase=="PAUSED" and first.sell
+       and not first.sellReturnVerified and not helpers.canCollectDuringSell()
+       and first.sellReturnStatus=="RETURN_UNVERIFIED",
+       "wrong destination must pause; Auto Collect stays locked")
+findButton("SellDiagnostics").Activated:Fire()
+assert(clipboard:find("status=RETURN_UNVERIFIED",1,true)
+       and clipboard:find("verified=false",1,true),
+       "failed return diagnostic must show unverified state")
+findButton("AutoSell").Activated:Fire()
+first.collect=false
+root.Position=vector(0,0,0)
+
 -- LIVE V0.17 REGRESSION: Auto Collect just opened MineGui/ChestFrame,
 -- then Auto Sell was enabled. Chest modal makes TeleportButton hidden.
 -- Allow Take All to settle instead of prematurely declaring Teleport missing.
