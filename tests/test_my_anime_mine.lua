@@ -253,6 +253,12 @@ local upgradeSpeed = instance("TextButton")
 upgradeSpeed.Name = "LevelUpButton"; upgradeSpeed.Text = "Upgrade"; upgradeSpeed.Parent = speedRow
 local premium = instance("TextButton")
 premium.Name = "UpgradeRobux"; premium.Text = "R$199"; premium.Parent = damageRow
+local premiumRow = instance("Frame")
+premiumRow.Name = "MiningSpeedRow"; premiumRow.Parent = statsPanel
+local paidPrice = instance("TextLabel")
+paidPrice.Name = "Price"; paidPrice.Text = "R$399"; paidPrice.Parent = premiumRow
+local paidButton = instance("TextButton")
+paidButton.Name = "UpgradeButton"; paidButton.Text = "Upgrade"; paidButton.Parent = premiumRow
 local research = instance("Frame")
 research.Name = "ResearchPanel"; research.Parent = statsGui
 local researchRow = instance("Frame")
@@ -270,7 +276,8 @@ assert(#first.statsCandidates == 1 and first.statsCandidates[1] == statsTab,
        "did not discover Stats tab")
 assert(helpers.isUpgradeAction(upgradeDamage) and helpers.isUpgradeAction(upgradeSpeed),
        "legitimate crew Damage and Speed upgrades not detected")
-assert(not helpers.isUpgradeAction(premium) and not helpers.isUpgradeAction(upgradeResearch),
+assert(not helpers.isUpgradeAction(premium) and not helpers.isUpgradeAction(paidButton)
+       and not helpers.isUpgradeAction(upgradeResearch),
        "Robux/research upgrade must never be selected")
 assert(#first.upgradeCandidates == 2 and helpers.statContext(upgradeDamage) == "Damage"
        and helpers.statContext(upgradeSpeed) == "Speed",
