@@ -173,7 +173,7 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, sellStopWalk=sellStopWalk, canCollectDuringSell=canCollectDuringSell, gameChestFrame=gameChestFrame, teleportLauncherCandidates=teleportLauncherCandidates, validatedSellStandSession=validatedSellStandSession, isExactSellStandButton=isExactSellStandButton, sellSelectAllButton=sellSelectAllButton, knownOreSellFrame=knownOreSellFrame}"
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, sellStopWalk=sellStopWalk, recentTakeAllForHandoff=recentTakeAllForHandoff, canCollectDuringSell=canCollectDuringSell, gameChestFrame=gameChestFrame, teleportLauncherCandidates=teleportLauncherCandidates, validatedSellStandSession=validatedSellStandSession, isExactSellStandButton=isExactSellStandButton, sellSelectAllButton=sellSelectAllButton, knownOreSellFrame=knownOreSellFrame}"
     local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
     return assert(env.MyAnimeMineHubController), helpers
 end
@@ -638,7 +638,7 @@ assert(clipboard:find("SHOP SELL ROUTE",1,true)
        and clipboard:find("Ore-only Sell candidates=",1,true),
        "sale route must expose warp/vendor/sell diagnostics")
 findButton("SellDiagnostics").Activated:Fire()
-assert(clipboard:find("V0.19 SHOP SELL ROUTE",1,true)
+assert(clipboard:find("V0.20 SHOP SELL ROUTE",1,true)
        and clipboard:find("Shops destination candidates=",1,true)
        and clipboard:find("Explicit ore-only Sell controls=",1,true)
        and clipboard:find("Select All clicks=1/1",1,true)
@@ -767,6 +767,82 @@ assert(first.sellPhase=="PAUSED"
 findButton("AutoSell").Activated:Fire()
 first.collect=false
 first.walkToChest=false -- restore OFF-by-default test fixture after Collect handoff
+
+-- LIVE V0.19 REGRESSION: user enabled Sell just as a Take All had
+-- finished. It was unnecessarily reopened after the 12-second cooldown.
+-- Reuse only recent same-plot Take All; do not claim inventory credit.
+local plotBeforeRecent=first.selectedPlot
+first.selectedPlot="MinePlot5"
+first.collect=true
+activeChest.Visible=false
+first.takeAllPending=nil
+first.takeAllOutcome="CHEST_CLOSED_AFTER_TAKE_ALL (matches manual UI; inventory unknown)"
+first.takeAllLastDispatchAt=os.clock()
+first.takeAllLastDispatchPlot="MinePlot5"
+local recentValid, recentAge=helpers.recentTakeAllForHandoff(os.clock())
+assert(recentValid and recentAge>=0 and recentAge<8,
+       "same-plot closed Take All within 8s should be eligible")
+local priorTakeAll=first.takeAllActions
+local teleBeforeRecent=teleClicks
+findButton("AutoSell").Activated:Fire()
+assert(first.sellPhase=="CHEST_HANDOFF" and first.sellHandoffRecentTakeAll
+    and first.sellHandoffTakeAllObserved
+    and not helpers.canCollectDuringSell(),
+    "recent Take All must stop further Chest reopen and be reused for sale")
+first.sellPhaseAt=80
+helpers.shopSellStep(82)
+assert(first.sellPhase=="TELEPORT_OPEN" and first.takeAllActions==priorTakeAll
+    and first.sellChestHandoffState=="RECENT_TAKE_ALL_REUSED",
+    "reused closed Take All should permit Shops without another collection")
+helpers.shopSellStep(84)
+assert(first.sellPhase=="SHOPS_PICK" and teleClicks==teleBeforeRecent+1,
+    "reuse must preserve normal Shops teleport")
+findButton("SellDiagnostics").Activated:Fire()
+assert(clipboard:find("reusedRecentTakeAll=true",1,true)
+    and clipboard:find("lastTakeAllPlot=MinePlot5",1,true),
+    "reuse diagnostic missing Take All plot/evidence")
+findButton("AutoSell").Activated:Fire()
+teleMenu.Visible=false
+
+-- A just-fired Take All must still wait for its pending UI feedback.
+local at=os.clock()
+first.takeAllLastDispatchAt=at
+first.takeAllLastDispatchPlot="MinePlot5"
+first.takeAllPending={sentAt=at}
+first.takeAllOutcome="NOT TESTED"
+findButton("AutoSell").Activated:Fire()
+assert(first.sellHandoffRecentTakeAll and first.sellHandoffTakeAllObserved
+    and not helpers.canCollectDuringSell(),
+    "pending same-plot Take All should count as already dispatched")
+first.sellPhaseAt=90
+helpers.shopSellStep(92)
+assert(first.sellPhase=="CHEST_HANDOFF" and first.sellChestHandoffState=="TAKE_ALL_PENDING",
+    "pending Take All must not allow early warp")
+first.takeAllPending=nil
+first.takeAllOutcome="CHEST_CLOSED_AFTER_TAKE_ALL (matches manual UI; inventory unknown)"
+helpers.shopSellStep(94)
+assert(first.sellPhase=="TELEPORT_OPEN", "settled pending Take All should release warp")
+findButton("AutoSell").Activated:Fire()
+
+-- Stale or another Plot's Take All cannot satisfy the handoff.
+first.takeAllLastDispatchAt=os.clock()-20
+first.takeAllLastDispatchPlot="MinePlot5"
+local staleEligible=helpers.recentTakeAllForHandoff(os.clock())
+assert(not staleEligible,"20-second-old Take All is not recent")
+first.takeAllLastDispatchAt=os.clock()
+first.takeAllLastDispatchPlot="MinePlot6"
+local otherPlotEligible=helpers.recentTakeAllForHandoff(os.clock())
+assert(not otherPlotEligible,"another plot's Take All may not be reused")
+findButton("AutoSell").Activated:Fire()
+assert(not first.sellHandoffRecentTakeAll and helpers.canCollectDuringSell(),
+    "wrong-plot Take All must leave Auto Collect handoff armed")
+findButton("AutoSell").Activated:Fire()
+
+first.takeAllLastDispatchAt=0
+first.takeAllLastDispatchPlot=nil
+first.takeAllPending=nil
+first.collect=false
+first.selectedPlot=plotBeforeRecent
 
 -- V0.14 REAL RUNTIME LOG: GingerbreadKeeper's SellPrompt opens a
 -- visible MineGui/SellFrame/Content/SellButton with one MouseButton1Click
@@ -1076,4 +1152,4 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.19 active Collect walk completes Take All before Shops, bounded timeout, existing seller flow")
+print("PASS My Anime Mine V0.20 reuse recent same-Plot Take All; pending/stale/wrong-Plot guards and seller regression")
