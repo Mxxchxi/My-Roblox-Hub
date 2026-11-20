@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.10 (action target discovery and holder approach)
+-- My Roblox Hub | My Anime Mine v0.11 (live Inventory launcher and Holder action diagnostics)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -40,6 +40,7 @@ local controller = {
     equipAttempts = 0,
     equipActions = 0,
     inventoryOpenAttempts = 0,
+    inventoryLastTarget = "none",
     equipStage = "OFF",
     upgradeAttempts = 0,
     upgradeActions = 0,
@@ -57,6 +58,8 @@ local controller = {
     upgradeWalkAttempts = 0,
     upgradeWalkLastCommand = 0,
     upgradeWalkLastTarget = "none",
+    lastHolderProbe = "none",
+    lastHolderProbeInRange = "none",
     holderIndex = 1,
     holderNextAt = 0,
     statsTabAttempted = false,
@@ -64,6 +67,7 @@ local controller = {
     inventoryCandidates = {},
     guiButtonSamples = {},
     guiHiddenSamples = {},
+    guiUpgradeMenu = {},
     upgradeCandidates = {},
     statsCandidates = {},
     minimized = false,
@@ -271,7 +275,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.10 | Expanded GUI scan and holder approach. Auto Collect workflow preserved.",
+    Text = "V0.11 | Detect Inventory hotbar button and verify Holder upgrade actions. Auto Collect preserved.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -1044,6 +1048,22 @@ local function isUpgradeAction(button)
     return true
 end
 
+local function isKnownInventoryLauncher(item)
+    if item.Name ~= "TextButton" then return false end
+    local parent = item.Parent
+    if not parent or parent.Name ~= "InventoryButton" then return false end
+    local cursor = parent.Parent
+    local hasHotbar, hasMineGui = false, false
+    for _ = 1, 8 do
+        if not cursor or cursor == playerGui then break end
+        if cursor.Name == "HotbarFrame" then hasHotbar = true end
+        if cursor.Name == "MineGui" then hasMineGui = true end
+        cursor = cursor.Parent
+    end
+    -- Confirm the exact game UI hierarchy found in the V0.10 runtime log.
+    return hasHotbar and hasMineGui
+end
+
 local function nearbyButtonContext(item)
     local labels = {}
     local cursor = item.Parent
@@ -1063,8 +1083,9 @@ local function nearbyButtonContext(item)
 end
 
 local function scanActionButtons()
-    local equip, inventory, upgrades, stats = {}, {}, {}, {}
+    local equip, inventory, upgrades, stats, upgradeMenu = {}, {}, {}, {}, {}
     local visibleSamples, hiddenSamples = {}, {}
+    local hiddenOccurrences = {}
     local count = 0
     local ok, err = pcall(function()
         for _, item in ipairs(playerGui:GetDescendants()) do
@@ -1085,7 +1106,8 @@ local function scanActionButtons()
                         or named:find("bestcrew", 1, true)
                         or (insideInventory and (named == "best" or named == "bestbutton"
                             or buttonText == "best"))
-                    local looksInventory = named == "inventory" or named == "inventorybutton"
+                    local looksInventory = isKnownInventoryLauncher(item)
+                        or named == "inventory" or named == "inventorybutton"
                         or named == "openinventory" or named == "inventorytoggle"
                         or named == "inventoryicon" or named == "backpack"
                         or named == "backpackbutton" or named == "itemsbutton"
@@ -1101,19 +1123,27 @@ local function scanActionButtons()
                         inventory[#inventory + 1] = item
                     end
                     if isUpgradeAction(item) then upgrades[#upgrades + 1] = item end
+                    if named == "upgradesbutton" then
+                        upgradeMenu[#upgradeMenu + 1] = item
+                    end
                     if named == "stats" or named == "statsbutton"
                         or named == "statstab" or buttonText == "stats" then
                         stats[#stats + 1] = item
                     end
                 else
-                    if #hiddenSamples < 70 then
+                    if #hiddenSamples < 100 and named ~= "card" then
                         local clue = label .. nearby
                         if clue:find("inventory", 1, true)
                             or clue:find("equip", 1, true)
                             or clue:find("upgrade", 1, true)
                             or clue:find("stats", 1, true)
                             or clue:find("backpack", 1, true) then
-                            hiddenSamples[#hiddenSamples + 1] = item
+                            local signature = describe(item)
+                            local occurrences = hiddenOccurrences[signature] or 0
+                            if occurrences < 2 then
+                                hiddenOccurrences[signature] = occurrences + 1
+                                hiddenSamples[#hiddenSamples + 1] = item
+                            end
                         end
                     end
                 end
@@ -1126,6 +1156,7 @@ local function scanActionButtons()
     end
     controller.equipCandidates = equip
     controller.inventoryCandidates = inventory
+    controller.guiUpgradeMenu = upgradeMenu
     controller.upgradeCandidates = upgrades
     controller.statsCandidates = stats
     controller.actionGuiCount = count
@@ -1305,7 +1336,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.10 EQUIP / UPGRADE TARGETS | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.11 EQUIP / UPGRADE TARGETS | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -1324,6 +1355,7 @@ local function actionDiagnosticReport()
             " unchanged=" .. controller.upgradeNoChange ..
             " holderClicks=" .. controller.holderActions .. "/" .. controller.holderAttempts,
         "Selected holder=" .. (controller.openedHolder and describe(controller.openedHolder) or "none"),
+        "Inventory target=" .. tostring(controller.inventoryLastTarget),
         "Upgrade walk=" .. tostring(controller.upgradeWalkTarget ~= nil) ..
             " | attempts=" .. tostring(controller.upgradeWalkAttempts) ..
             " lastTarget=" .. tostring(controller.upgradeWalkLastTarget),
@@ -1346,7 +1378,10 @@ local function actionDiagnosticReport()
     addButtons("Inventory", controller.inventoryCandidates)
     addButtons("Stats", controller.statsCandidates)
     addButtons("Upgrade", controller.upgradeCandidates)
+    addButtons("GameUpgradesMenu (read-only, not auto-purchased)", controller.guiUpgradeMenu)
     local holders = holderTargets()
+    lines[#lines + 1] = "Holder last probe=" .. tostring(controller.lastHolderProbe) ..
+        " | last in range=" .. tostring(controller.lastHolderProbeInRange)
     lines[#lines + 1] = "Holders on plot=" .. tostring(#holders) ..
         " | selectedPlot=" .. tostring(controller.selectedPlot) ..
         " | root=" .. tostring(rootPart() and rootPart().Position)
@@ -1369,7 +1404,7 @@ local function actionDiagnosticReport()
             textOf(button):sub(1, 60), nearbyButtonContext(button):sub(1, 90),
             tostring(connections.MouseButton1Click), tostring(connections.Activated))
     end
-    lines[#lines + 1] = "HIDDEN GAME GUI CANDIDATES (read-only):"
+    lines[#lines + 1] = "HIDDEN GAME GUI CANDIDATES (read-only; repeated Cards omitted):"
     for i, button in ipairs(controller.guiHiddenSamples) do
         lines[#lines + 1] = ("Hidden[%02d]: %s | class=%s | name=%s | text=%s | context=%s"):format(
             i, describe(button), tostring(button.ClassName), tostring(button.Name),
@@ -1383,7 +1418,7 @@ end
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.10 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.11 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoEquip=" .. tostring(controller.equip) .. " autoUpgrade=" .. tostring(controller.upgrade))
@@ -1638,7 +1673,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.10 started | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.11 started | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
