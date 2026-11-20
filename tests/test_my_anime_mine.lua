@@ -173,7 +173,7 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip}"
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell}"
     local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
     return assert(env.MyAnimeMineHubController), helpers
 end
@@ -242,6 +242,37 @@ equipBest.MouseButton1Click:Connect(function() equipClicks = equipClicks + 1 end
 -- Real V0.10 runtime GUI path supplied by the user: button text is empty,
 -- but the clickable TextButton is a descendant of InventoryButton.
 local mineGui = instance("ScreenGui"); mineGui.Name = "MineGui"; mineGui.Parent = playerGui
+
+-- Only the game's native Chest Auto Sell control is permitted.
+-- Its GUI is deliberately hidden throughout the headless test.
+local nativeChest = instance("Frame")
+nativeChest.Name = "ChestFrame"; nativeChest.Visible = false; nativeChest.Parent = mineGui
+local chestActions = instance("Frame")
+chestActions.Name = "Actions"; chestActions.Parent = nativeChest
+local autoSellLabel = instance("TextLabel")
+autoSellLabel.Name = "AutoSellCaption"; autoSellLabel.Text = "Auto Sell"
+autoSellLabel.Parent = chestActions
+local nativeSell = instance("TextButton")
+nativeSell.Name = "AutoSellButton"; nativeSell.Text = "Auto Sell: OFF"
+nativeSell.Parent = chestActions
+local nativeSellClicks = 0
+nativeSell.MouseButton1Click:Connect(function()
+    nativeSellClicks = nativeSellClicks + 1
+    nativeSell.Text = nativeSell.Text == "Auto Sell: OFF" and "Auto Sell: ON" or "Auto Sell: OFF"
+end)
+local paidSell = instance("Frame")
+paidSell.Name = "PaidAutoSell"; paidSell.Parent = nativeChest
+local paidPrice = instance("TextLabel")
+paidPrice.Name = "Price"; paidPrice.Text = "R$199"; paidPrice.Parent = paidSell
+local premiumAutoSell = instance("TextButton")
+premiumAutoSell.Name = "AutoSellButton"; premiumAutoSell.Text = "Auto Sell"
+premiumAutoSell.Parent = paidSell
+premiumAutoSell.MouseButton1Click:Connect(function() error("premium action must not run") end)
+local unrelatedSell = instance("TextButton")
+unrelatedSell.Name = "SellAll"; unrelatedSell.Text = "Sell All Characters"
+unrelatedSell.Parent = playerGui
+unrelatedSell.MouseButton1Click:Connect(function() error("unrelated sale must not run") end)
+
 local hotbarFrame = instance("Frame"); hotbarFrame.Name = "HotbarFrame"
 hotbarFrame.Parent = mineGui
 local hotbarContent = instance("Frame"); hotbarContent.Name = "Content"
@@ -353,6 +384,40 @@ assert(hiddenOk and hiddenStatus:find("HIDDEN_EQUIP_SIGNAL_SENT", 1, true)
 local remoteList = helpers.headlessRemotes()
 assert(#remoteList == 1 and remoteList[1].name == "EquipBestRemote",
        "headless remote discovery must report real names without invoking them")
+
+local sellCandidates, sellLabels = helpers.scanNativeAutoSell()
+assert(#sellCandidates == 1 and sellCandidates[1] == nativeSell and #sellLabels == 1,
+       "Chest-only scanner must exclude premium Auto Sell and unrelated Sell All")
+assert(helpers.nativeAutoSellState(nativeSell) == "OFF" and not nativeChest.Visible,
+       "native hidden Chest Auto Sell state was not read correctly")
+local openerBeforeSell = realInventoryClicks
+findButton("AutoSell").Activated:Fire()
+assert(first.sell and nativeSellClicks == 0, "auto sell enable must not blindly toggle a game UI")
+local sellOK, sellStage = helpers.tryNativeAutoSell()
+assert(sellOK and sellStage:find("AUTO_SELL_SWITCH_TO_ON_SENT", 1, true)
+       and first.sellSent and first.sellAttempts == 1 and first.sellCallsOK == 1
+       and nativeSellClicks == 1 and helpers.nativeAutoSellState(nativeSell) == "ON"
+       and not nativeChest.Visible and realInventoryClicks == openerBeforeSell,
+       "Auto Sell must enable a hidden native Chest control once, without opening any panel")
+local alreadyOK, alreadyState = helpers.tryNativeAutoSell()
+assert(alreadyOK and alreadyState:find("ALREADY_ON", 1, true)
+       and nativeSellClicks == 1, "already ON must never toggle Auto Sell back OFF")
+findButton("AutoSell").Activated:Fire()
+assert(not first.sell and nativeSellClicks == 2 and nativeSell.Text == "Auto Sell: OFF",
+       "turning AUTO SELL OFF must disable a known ON state with one click")
+nativeSell.Text = "Auto Sell"
+local unknownOK, unknownStage = helpers.tryNativeAutoSell()
+assert(not unknownOK and unknownStage == "AUTO_SELL_STATE_UNKNOWN (no toggle sent)"
+       and nativeSellClicks == 2,
+       "unknown state must not risk toggling an already ON or OFF control")
+nativeSell.Text = "Auto Sell: OFF"
+findButton("ActionDiagnostics").Activated:Fire()
+assert(clipboard:find("Chest Auto Sell candidates=1", 1, true)
+       and clipboard:find("ChestSellLabel", 1, true)
+       and clipboard:find("Native Chest Auto Sell:", 1, true)
+       and clipboard:find("AUTO_SELL", 1, true),
+       "native Auto Sell target diagnostics missing")
+
 findButton("ActionDiagnostics").Activated:Fire()
 assert(clipboard:find("HEADLESS REMOTE DISCOVERY", 1, true)
        and clipboard:find("EquipBestRemote", 1, true)
@@ -603,8 +668,8 @@ for _, child in ipairs(playerGui:GetChildren()) do
     if child.Name == "MyAnimeMineHub" then count = count + 1 end
 end
 assert(count == 1, "duplicate UI after rerun")
-assert(not second.mine and not second.collect and not second.equip and not second.upgrade,
-       "rerun must begin with all auto toggles OFF")
+assert(not second.mine and not second.collect and not second.equip and not second.upgrade
+       and not second.sell, "rerun must begin with all auto toggles OFF")
 assert(not second.minimized and findButton("RestoreWindow").Visible == false,
     "rerun must restore expanded UI")
 assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
@@ -612,4 +677,4 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.12 headless hidden Equip Best, read-only Remotes, and unchanged Collect lifecycle")
+print("PASS My Anime Mine V0.13 native Chest Auto Sell ON/OFF, hidden UI, premium protection and Collect lifecycle")
