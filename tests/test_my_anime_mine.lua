@@ -105,6 +105,20 @@ local roblox = {
     GetService = function(_, name) return assert(services[name], name) end,
 }
 local clipboard
+-- Simulate the game Chest UI: unlabeled TextButton with a nested "Take All" label.
+local gameChestGui = instance("ScreenGui")
+gameChestGui.Name = "ChestUI"
+gameChestGui.Parent = playerGui
+local takeAllButton = instance("TextButton")
+takeAllButton.Name = "ClaimContents"
+takeAllButton.Text = ""
+takeAllButton.Visible = true
+takeAllButton.Parent = gameChestGui
+local takeAllLabel = instance("TextLabel")
+takeAllLabel.Name = "Caption"
+takeAllLabel.Text = "Take All"
+takeAllLabel.Parent = takeAllButton
+local firedTakeAll = 0
 local env = setmetatable({
     game = roblox,
     workspace = workspace,
@@ -124,6 +138,7 @@ local env = setmetatable({
     fireclickdetector = function() end,
     fireproximityprompt = function() end,
     setclipboard = function(value) clipboard = value end,
+    firesignal = function(signalValue) firedTakeAll = firedTakeAll + 1; signalValue:Fire() end,
     print = function() end,
     warn = function() end,
 }, {__index = _G})
@@ -145,9 +160,12 @@ local first = run()
 assert(playerGui:FindFirstChild("MyAnimeMineHub"), "UI was not mounted")
 assert(not first.mine and not first.collect, "auto toggles must start OFF")
 assert(#first.detectors == 0 and #first.prompts == 0, "unexpected scan targets")
+assert(#first.takeAllButtons == 1, "did not discover Chest Take All button")
 findButton("Scan").Activated:Fire()
 findButton("CopyLog").Activated:Fire()
 assert(clipboard and clipboard:find("PlaceId 79389059854988", 1, true), "copy log unavailable")
+findButton("Diagnostics").Activated:Fire()
+assert(clipboard and clipboard:find("TakeAll visible: ", 1, true), "target diagnostics missing")
 
 findButton("AutoMine").Activated:Fire()
 findButton("AutoCollect").Activated:Fire()
@@ -163,4 +181,4 @@ assert(not second.mine and not second.collect, "rerun must begin OFF")
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine GUI startup, scan, clipboard, toggle, rerun, and cleanup")
+print("PASS My Anime Mine GUI startup, chest discovery, diagnostics, toggle, rerun, and cleanup")
