@@ -1556,6 +1556,324 @@ local function tryNativeAutoSell()
     return setNativeAutoSell("ON")
 end
 
+
+-- Normal ore sale uses the Shops teleport destination and a physical sell
+-- stand. Do not confuse it with the paid native Chest Auto Sell Game Pass.
+local function sellSetPhase(phase, message, now)
+    controller.sellPhase = phase
+    controller.sellPhaseAt = now or os.clock()
+    controller.sellStage = message or phase
+    writeLog("SHOP SELL: " .. tostring(controller.sellStage))
+end
+
+local function sellClick(button)
+    if type(firesignal) ~= "function" then return false, "firesignal unavailable" end
+    if not button or not button.Parent then return false, "button removed" end
+    local counts = takeAllConnections(button)
+    local event
+    if type(counts.MouseButton1Click) == "number" and counts.MouseButton1Click > 0 then
+        event = "MouseButton1Click"
+    elseif type(counts.Activated) == "number" and counts.Activated > 0 then
+        event = "Activated"
+    end
+    if not event then return false, "no verified event listener" end
+    local ok, err = pcall(firesignal, button[event])
+    return ok, ok and event or tostring(err)
+end
+
+local function shopsTeleportLauncher()
+    for _, button in ipairs(playerGui:GetDescendants()) do
+        if gameGuiButton(button) and isVisible(button)
+            and button.Name == "TeleportButton"
+            and gameGuiAncestorNamed(button, "MineGui") then
+            return button
+        end
+    end
+    return nil
+end
+
+local function shopsWarpDestination()
+    local candidates = {}
+    for _, button in ipairs(playerGui:GetDescendants()) do
+        if gameGuiButton(button) then
+            local key = normalizeLabel(button.Name)
+            local textKey = normalizeLabel(textOf(button))
+            local labeled = normalizeLabel(actionLabel(button))
+            local explicit = key == "shops" or key == "shopsbutton"
+                or key == "shopsdestination" or key == "shopswarp"
+                or textKey == "shops" or textKey == "shopsteleport"
+                or labeled == "shops"
+            if explicit and not isPremiumAction(button)
+                and not gameGuiAncestorNamed(button, "ShopPurchase")
+                and not gameGuiAncestorNamed(button, "Store")
+                and (isVisible(button) or gameGuiAncestorNamed(button, "TeleportFrame")
+                    or gameGuiAncestorNamed(button, "TeleportGui")
+                    or gameGuiAncestorNamed(button, "TeleportMenu")) then
+                candidates[#candidates+1] = button
+            end
+        end
+    end
+    controller.sellMenuButtons = candidates
+    -- Never pick arbitrarily among multiple Shops buttons.
+    return #candidates == 1 and candidates[1] or nil, #candidates
+end
+
+local function sellNodePosition(item)
+    if item:IsA("BasePart") then return item.Position end
+    return positionOf(item)
+end
+
+local function sellVendorTargets()
+    local root = rootPart()
+    if not root then return {} end
+    local list = {}
+    for _, item in ipairs(workspace:GetDescendants()) do
+        local prompt = item:IsA("ProximityPrompt")
+        local detector = item:IsA("ClickDetector")
+        local marker = item:IsA("BasePart")
+        if prompt or detector or marker then
+            local title = normalizeLabel(item.Name .. " " ..
+                (prompt and tostring(item.ActionText or "") or ""))
+            local parent = item.Parent
+            local parentName = parent and normalizeLabel(parent.Name) or ""
+            local grand = parent and parent.Parent
+            local grandName = grand and normalizeLabel(grand.Name) or ""
+            local context = title .. parentName .. grandName
+            local named = context:find("sellitems",1,true)
+                or context:find("sellore",1,true)
+                or context:find("oreseller",1,true)
+                or context:find("sellstall",1,true)
+                or context:find("sellstand",1,true)
+                or context:find("sellpoint",1,true)
+            local contextual = prompt and title == "sell"
+                and (parentName:find("shop",1,true)
+                    or parentName:find("vendor",1,true)
+                    or parentName:find("sell",1,true))
+            if (named or contextual) and not context:find("gamepass",1,true)
+                and not context:find("premium",1,true)
+                and not context:find("characters",1,true) then
+                local pos = sellNodePosition(item)
+                if pos then
+                    local d = (pos - root.Position).Magnitude
+                    local maxRange = (prompt or detector)
+                        and tonumber(item.MaxActivationDistance) or 10
+                    list[#list+1] = {
+                        target=item, position=pos, distance=d,
+                        type=prompt and "prompt" or detector and "detector" or "marker",
+                        maxRange=maxRange,
+                    }
+                end
+            end
+        end
+    end
+    table.sort(list, function(a,b)
+        if a.distance ~= b.distance then return a.distance < b.distance end
+        return describe(a.target) < describe(b.target)
+    end)
+    return list
+end
+
+local function oreSellButton()
+    local candidates = {}
+    for _, button in ipairs(playerGui:GetDescendants()) do
+        if gameGuiButton(button) and isVisible(button) and not isPremiumAction(button) then
+            local name = normalizeLabel(button.Name)
+            local label = normalizeLabel(textOf(button))
+            -- An unqualified "Sell", "Select All" or "Sell All" may liquidate
+            -- miners/equipment. Only explicitly ore-scoped actions qualify.
+            local explicit = name == "sellores" or name == "sellore"
+                or name == "sellallores" or name == "selloresbutton"
+                or label == "sellores" or label == "sellallores"
+            if explicit and (gameGuiAncestorNamed(button, "MineGui")
+                or gameGuiAncestorNamed(button, "SellGui")
+                or gameGuiAncestorNamed(button, "SellFrame")
+                or gameGuiAncestorNamed(button, "SellMenu")) then
+                candidates[#candidates+1] = button
+            end
+        end
+    end
+    return #candidates == 1 and candidates[1] or nil, #candidates
+end
+
+local function sellStopWalk()
+    if controller.sellMoveTarget then
+        local root = rootPart()
+        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if root and humanoid then pcall(function() humanoid:MoveTo(root.Position) end) end
+        controller.sellMoveTarget = nil
+    end
+end
+
+local function shopSellStep(now)
+    if not controller.sell then return end
+    local phase = controller.sellPhase
+    if phase == "DONE" or phase == "PAUSED" then return end
+    local root = rootPart()
+    if not root then
+        controller.sellStage = "Waiting for character"
+        return
+    end
+    if phase == "TELEPORT_OPEN" then
+        local shops, count = shopsWarpDestination()
+        if shops then
+            controller.sellWarpOrigin = root.Position
+            controller.sellShopsAttempts = controller.sellShopsAttempts + 1
+            controller.sellActionTarget = describe(shops)
+            local ok, reason = sellClick(shops)
+            if ok then
+                sellSetPhase("WARP_WAIT", "Shops destination clicked ("..reason..")",now)
+            else
+                sellSetPhase("PAUSED", "Shops click failed: "..reason,now)
+            end
+            return
+        end
+        local button = shopsTeleportLauncher()
+        if not button then
+            controller.sellStage = count > 1 and "Multiple Shops options; no automatic selection"
+                or "TeleportButton not found"
+            if now - controller.sellPhaseAt > 15 then
+                sellSetPhase("PAUSED", controller.sellStage, now)
+            end
+            return
+        end
+        controller.sellWarpOrigin = root.Position
+        controller.sellActionTarget = describe(button)
+        controller.sellWarpAttempts = controller.sellWarpAttempts + 1
+        local ok,reason = sellClick(button)
+        if not ok then
+            sellSetPhase("PAUSED","Teleport click failed: "..reason,now)
+        else
+            sellSetPhase("SHOPS_PICK", "Teleport opened; looking for Shops destination",now)
+        end
+        return
+    end
+    if phase == "SHOPS_PICK" or phase == "WARP_WAIT" then
+        local moved = controller.sellWarpOrigin
+            and (root.Position - controller.sellWarpOrigin).Magnitude or 0
+        if moved > 50 then
+            sellSetPhase("VENDOR_WALK",("Warp movement %.1f studs; searching Sell Items stand"):format(moved),now)
+            return
+        end
+        if phase == "SHOPS_PICK" then
+            local shops,count = shopsWarpDestination()
+            if shops then
+                controller.sellShopsAttempts = controller.sellShopsAttempts + 1
+                controller.sellActionTarget = describe(shops)
+                local ok,reason = sellClick(shops)
+                if ok then
+                    sellSetPhase("WARP_WAIT","Shops destination clicked ("..reason..")",now)
+                else
+                    sellSetPhase("PAUSED","Shops click failed: "..reason,now)
+                end
+                return
+            end
+            controller.sellStage = count > 1 and "Multiple Shops targets; diagnostics needed"
+                or "Waiting for Shops option after Teleport"
+        else
+            controller.sellStage = "Waiting to arrive at Shops"
+        end
+        if now - controller.sellPhaseAt > 14 then
+            sellSetPhase("PAUSED","Shops warp not confirmed; copy SELL ROUTE DIAGNOSTICS",now)
+        end
+        return
+    end
+    if phase == "VENDOR_WALK" then
+        local candidates = sellVendorTargets()
+        local vendor = candidates[1]
+        if not vendor then
+            controller.sellStage = "Shop warp reached; Sell Items stand target not found"
+            if now-controller.sellPhaseAt > 18 then
+                sellSetPhase("PAUSED",controller.sellStage,now)
+            end
+            return
+        end
+        controller.sellVendorPath = describe(vendor.target)
+        controller.sellVendorDistance = vendor.distance
+        if vendor.distance > 185 then
+            sellSetPhase("PAUSED",("Sell stand %.1f studs away (>185 limit)"):format(vendor.distance),now)
+            return
+        end
+        local required = math.max(3, math.min(10, vendor.maxRange - 1))
+        if vendor.distance <= required then
+            sellStopWalk()
+            if vendor.type == "marker" then
+                sellSetPhase("PAUSED","At Sell stand, but interaction prompt/click missing",now)
+                return
+            end
+            if vendor.maxRange <= 0 then
+                sellSetPhase("PAUSED","Sell stand interaction disabled",now)
+                return
+            end
+            local ok,reason
+            if vendor.type == "prompt" and type(fireproximityprompt) == "function" then
+                ok,reason = pcall(fireproximityprompt,vendor.target)
+            elseif vendor.type == "detector" and type(fireclickdetector) == "function" then
+                ok,reason = pcall(fireclickdetector,vendor.target)
+            else
+                sellSetPhase("PAUSED","Sell stand interaction API missing",now)
+                return
+            end
+            controller.sellVendorAttempts = controller.sellVendorAttempts + 1
+            if ok then sellSetPhase("SELL_MENU","Sell stand interaction sent; looking for ore-only Sell action",now)
+            else sellSetPhase("PAUSED","Sell stand action error: "..tostring(reason),now) end
+            return
+        end
+        local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then
+            sellSetPhase("PAUSED","No living Humanoid for walking",now)
+            return
+        end
+        if controller.sellMoveTarget ~= vendor.target then
+            sellStopWalk()
+            controller.sellMoveTarget = vendor.target
+            controller.sellLastProgressAt = now
+            controller.sellLastDistance = vendor.distance
+            controller.sellLastMoveAt = 0
+        end
+        if vendor.distance < (controller.sellLastDistance or math.huge)-1 then
+            controller.sellLastDistance = vendor.distance
+            controller.sellLastProgressAt = now
+        end
+        if now - controller.sellLastProgressAt > 14 then
+            sellStopWalk()
+            sellSetPhase("PAUSED","Walk to Sell stand blocked for 14s",now)
+            return
+        end
+        if now - controller.sellLastMoveAt > 1.8 then
+            controller.sellLastMoveAt = now
+            controller.sellWalkAttempts = controller.sellWalkAttempts+1
+            local ok,err = pcall(function() humanoid:MoveTo(vendor.position) end)
+            if not ok then
+                sellStopWalk()
+                sellSetPhase("PAUSED","Sell stand MoveTo error: "..tostring(err),now)
+                return
+            end
+        end
+        controller.sellStage = ("Walking to Sell Items %.1f studs"):format(vendor.distance)
+        return
+    end
+    if phase == "SELL_MENU" then
+        local action,count = oreSellButton()
+        if action then
+            controller.sellActionTarget = describe(action)
+            local ok,reason = sellClick(action)
+            controller.sellSent = true
+            controller.sellAttempts = controller.sellAttempts+1
+            if ok then
+                controller.sellCallsOK = controller.sellCallsOK+1
+                sellSetPhase("DONE","Sell Ores click sent; currency NOT verified",now)
+            else
+                sellSetPhase("PAUSED","Sell Ores click error: "..reason,now)
+            end
+        elseif now-controller.sellPhaseAt > 14 then
+            sellSetPhase("PAUSED", count>1 and "Ambiguous ore-only Sell buttons"
+                or "Sell interface does not expose an ore-only button; no Sell All attempted",now)
+        else
+            controller.sellStage = "Waiting for verified Sell Ores action"
+        end
+    end
+end
+
 local function resolveUpgradeFeedback(now)
     local pending = controller.upgradePending
     if not pending or now - pending.started < 2.7 then return end
