@@ -1044,30 +1044,78 @@ local function isUpgradeAction(button)
     return true
 end
 
+local function nearbyButtonContext(item)
+    local labels = {}
+    local cursor = item.Parent
+    for i = 1, 3 do
+        if not cursor or cursor == playerGui then break end
+        labels[#labels + 1] = tostring(cursor.Name)
+        -- Keep UI labels next to icon-only buttons discoverable.
+        for _, child in ipairs(cursor:GetChildren()) do
+            if child:IsA("TextLabel") then
+                local t = textOf(child)
+                if t ~= "" then labels[#labels + 1] = t:sub(1, 45) end
+            end
+        end
+        cursor = cursor.Parent
+    end
+    return table.concat(labels, " ")
+end
+
 local function scanActionButtons()
     local equip, inventory, upgrades, stats = {}, {}, {}, {}
+    local visibleSamples, hiddenSamples = {}, {}
     local count = 0
     local ok, err = pcall(function()
         for _, item in ipairs(playerGui:GetDescendants()) do
-            if gameGuiButton(item) and isVisible(item) then
-                count = count + 1
+            if gameGuiButton(item) then
+                local visible = isVisible(item)
+                local context = nearbyButtonContext(item)
                 local label = normalizeLabel(actionLabel(item))
                 local named = normalizeLabel(item.Name)
                 local buttonText = normalizeLabel(textOf(item))
-                if label:find("equipbest", 1, true)
-                    or named:find("bestcrew", 1, true) then
-                    equip[#equip + 1] = item
-                elseif named == "inventory" or named == "inventorybutton"
-                    or named == "openinventory" or named == "inventorytoggle"
-                    or named == "inventoryicon" or buttonText == "inventory" then
-                    inventory[#inventory + 1] = item
-                end
-                if isUpgradeAction(item) then
-                    upgrades[#upgrades + 1] = item
-                end
-                if named == "stats" or named == "statsbutton"
-                    or named == "statstab" or buttonText == "stats" then
-                    stats[#stats + 1] = item
+                local nearby = normalizeLabel(context)
+                if visible then
+                    count = count + 1
+                    if #visibleSamples < 70 then
+                        visibleSamples[#visibleSamples + 1] = item
+                    end
+                    local insideInventory = nearby:find("inventory", 1, true) ~= nil
+                    local looksEquip = label:find("equipbest", 1, true)
+                        or named:find("bestcrew", 1, true)
+                        or (insideInventory and (named == "best" or named == "bestbutton"
+                            or buttonText == "best"))
+                    local looksInventory = named == "inventory" or named == "inventorybutton"
+                        or named == "openinventory" or named == "inventorytoggle"
+                        or named == "inventoryicon" or named == "backpack"
+                        or named == "backpackbutton" or named == "itemsbutton"
+                        or buttonText == "inventory" or buttonText == "backpack"
+                        or (nearby:find("inventory", 1, true)
+                            and (nearby:find("toolbar", 1, true)
+                                or nearby:find("hotbar", 1, true)
+                                or nearby:find("navbar", 1, true))
+                            and (named == "button" or named == "icon"))
+                    if looksEquip and not isPremiumAction(item) then
+                        equip[#equip + 1] = item
+                    elseif looksInventory and not isPremiumAction(item) then
+                        inventory[#inventory + 1] = item
+                    end
+                    if isUpgradeAction(item) then upgrades[#upgrades + 1] = item end
+                    if named == "stats" or named == "statsbutton"
+                        or named == "statstab" or buttonText == "stats" then
+                        stats[#stats + 1] = item
+                    end
+                else
+                    if #hiddenSamples < 70 then
+                        local clue = label .. nearby
+                        if clue:find("inventory", 1, true)
+                            or clue:find("equip", 1, true)
+                            or clue:find("upgrade", 1, true)
+                            or clue:find("stats", 1, true)
+                            or clue:find("backpack", 1, true) then
+                            hiddenSamples[#hiddenSamples + 1] = item
+                        end
+                    end
                 end
             end
         end
@@ -1081,6 +1129,8 @@ local function scanActionButtons()
     controller.upgradeCandidates = upgrades
     controller.statsCandidates = stats
     controller.actionGuiCount = count
+    controller.guiButtonSamples = visibleSamples
+    controller.guiHiddenSamples = hiddenSamples
 end
 
 local function firstAvailable(list)
