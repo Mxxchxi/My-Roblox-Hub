@@ -1,8 +1,9 @@
--- My Roblox Hub | My Anime Mine v0.1 (discovery + conservative automation)
+-- My Roblox Hub | My Anime Mine v0.2 (chest discovery + action diagnostics)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
--- Auto Collect uses nearby chest/ore ProximityPrompts where provided by the game.
+-- Auto Collect tries nearby collection prompts and visible Take All GUI buttons.
+-- Mining in this game is normally performed by placed characters.
 -- Both are OFF by default; no purchases, selling, or teleporting are performed.
 
 if game.PlaceId ~= 79389059854988 then
@@ -36,8 +37,13 @@ local controller = {
     collect = false,
     mineActions = 0,
     collectActions = 0,
+    takeAllActions = 0,
+    mineAttempts = 0,
+    collectAttempts = 0,
+    takeAllAttempts = 0,
     detectors = {},
     prompts = {},
+    takeAllButtons = {},
     logs = {},
     connections = {},
 }
@@ -100,8 +106,8 @@ local gui = make("ScreenGui", playerGui, {
 })
 controller.gui = gui
 local panel = make("Frame", gui, {
-    Name = "Main", Size = UDim2.fromOffset(510, 378),
-    Position = UDim2.new(0.5, -255, 0.5, -189),
+    Name = "Main", Size = UDim2.fromOffset(510, 425),
+    Position = UDim2.new(0.5, -255, 0.5, -212),
     BackgroundColor3 = palette.background, BorderSizePixel = 0,
 })
 make("UICorner", panel, { CornerRadius = UDim.new(0, 12) })
@@ -143,29 +149,30 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.1 | Nearby interactables only. Toggle features ON to try them. No sell or purchase actions.",
+    Text = "V0.2 | Characters mine automatically. Collect from Chest / Take All. Actions are experimental.",
 })
-local mineButton = button("AutoMine", "AUTO MINE: OFF", 16, 104, 230, 41)
+local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
-local scanButton = button("Scan", "SCAN GAME", 16, 156, 230, 38)
-local copyButton = button("CopyLog", "COPY LOG", 264, 156, 230, 38)
+local scanButton = button("Scan", "SCAN GAME", 16, 158, 230, 38)
+local copyButton = button("CopyLog", "COPY LOG", 264, 158, 230, 38)
+local detailButton = button("Diagnostics", "COPY TARGET DIAGNOSTICS", 16, 205, 478, 38)
 local statusLabel = make("TextLabel", panel, {
-    Name = "Status", Position = UDim2.fromOffset(17, 204),
+    Name = "Status", Position = UDim2.fromOffset(17, 251),
     Size = UDim2.fromOffset(478, 43),
     BackgroundTransparency = 1, Font = Enum.Font.Code, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.accent, Text = "Discovering...",
 })
 make("TextLabel", panel, {
-    Name = "LogTitle", Position = UDim2.fromOffset(16, 251),
+    Name = "LogTitle", Position = UDim2.fromOffset(16, 298),
     Size = UDim2.fromOffset(478, 20),
     BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 13,
     TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = palette.text,
     Text = "LOG / DIAGNOSTICS",
 })
 local logFrame = make("Frame", panel, {
-    Name = "LogPanel", Position = UDim2.fromOffset(16, 274),
-    Size = UDim2.fromOffset(478, 87), BackgroundColor3 = palette.panel,
+    Name = "LogPanel", Position = UDim2.fromOffset(16, 321),
+    Size = UDim2.fromOffset(478, 89), BackgroundColor3 = palette.panel,
     BorderSizePixel = 0,
 })
 make("UICorner", logFrame, { CornerRadius = UDim.new(0, 6) })
@@ -232,10 +239,54 @@ local function positionOf(instance)
 end
 
 local mineWords = { "rock", "ore", "stone", "mine", "mineral", "crystal" }
-local collectWords = { "collect", "claim", "chest", "loot", "ore" }
+local collectWords = { "collect", "claim", "chest", "loot" }
 
-local function scan()
-    local detectors, prompts = {}, {}
+local function describe(item)
+    local pieces = {}
+    local cursor = item
+    for _ = 1, 6 do
+        if not cursor then break end
+        table.insert(pieces, 1, tostring(cursor.Name))
+        cursor = cursor.Parent
+    end
+    return table.concat(pieces, "/")
+end
+
+local function labelOf(button)
+    local parts = { tostring(button.Name), tostring(button.Text or "") }
+    if not button.Text or button.Text == "" then
+        local count = 0
+        for _, child in ipairs(button:GetDescendants()) do
+            count = count + 1
+            if child:IsA("TextLabel") then
+                table.insert(parts, tostring(child.Text or ""))
+            end
+            table.insert(parts, tostring(child.Name))
+            if count >= 16 then break end
+        end
+    end
+    return table.concat(parts, " ")
+end
+
+local function isTakeAll(button)
+    local normalized = labelOf(button):lower():gsub("[^%w]", "")
+    return normalized:find("takeall", 1, true) ~= nil
+        or normalized:find("claimall", 1, true) ~= nil
+        or normalized:find("collectall", 1, true) ~= nil
+end
+
+local function isVisible(button)
+    local cursor = button
+    while cursor and cursor ~= playerGui do
+        if cursor:IsA("GuiObject") and cursor.Visible == false then return false end
+        if cursor:IsA("ScreenGui") and cursor.Enabled == false then return false end
+        cursor = cursor.Parent
+    end
+    return cursor == playerGui
+end
+
+local function scan(verbose)
+    local detectors, prompts, takeAllButtons = {}, {}, {}
     local remoteCount, guiButtons, sampleRemotes, sampleButtons = 0, 0, {}, {}
     local successes, err = pcall(function()
         for _, item in ipairs(workspace:GetDescendants()) do
@@ -244,41 +295,69 @@ local function scan()
             elseif item:IsA("ProximityPrompt") and
                 (relevant(item.Parent, collectWords) or
                  relevant(item, collectWords) or
-                 relevant({Name = item.ActionText, Parent = nil}, collectWords)) then
+                 relevant({Name = tostring(item.ActionText), Parent = nil}, collectWords)) then
                 prompts[#prompts + 1] = item
             end
         end
         for _, item in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
             if item:IsA("RemoteEvent") or item:IsA("RemoteFunction") then
                 remoteCount = remoteCount + 1
-                if #sampleRemotes < 12 then sampleRemotes[#sampleRemotes + 1] = item.Name end
+                if #sampleRemotes < 15 then sampleRemotes[#sampleRemotes + 1] = item.Name end
             end
         end
         for _, item in ipairs(playerGui:GetDescendants()) do
             if item:IsA("TextButton") and not item:IsDescendantOf(gui) then
                 guiButtons = guiButtons + 1
+                if isTakeAll(item) then
+                    table.insert(takeAllButtons, item)
+                end
                 if #sampleButtons < 12 then
-                    sampleButtons[#sampleButtons + 1] = tostring(item.Text):sub(1, 38)
+                    local text = tostring(item.Text or "")
+                    if text ~= "" and #text <= 50 then
+                        sampleButtons[#sampleButtons + 1] = text
+                    end
                 end
             end
         end
     end)
     if not successes then writeLog("Scan failed: " .. tostring(err)); return end
-    controller.detectors, controller.prompts = detectors, prompts
-    writeLog("Scan: rock clicks=" .. #detectors .. ", collection prompts=" .. #prompts)
-    writeLog("Scan: remotes=" .. remoteCount .. ", other UI buttons=" .. guiButtons)
-    if #sampleRemotes > 0 then writeLog("Remote names (read-only): " .. table.concat(sampleRemotes, ", ")) end
-    if #sampleButtons > 0 then writeLog("Game buttons: " .. table.concat(sampleButtons, " | ")) end
+    local previous = controller.lastCounts
+    local changed = not previous or previous.clicks ~= #detectors
+        or previous.prompts ~= #prompts
+        or previous.takeAll ~= #takeAllButtons
+    controller.detectors, controller.prompts, controller.takeAllButtons =
+        detectors, prompts, takeAllButtons
+    controller.lastCounts = {clicks = #detectors, prompts = #prompts, takeAll = #takeAllButtons}
+    if changed or verbose then
+        writeLog(("Scan: rock clicks=%d, collection prompts=%d, Take All buttons=%d"):format(
+            #detectors, #prompts, #takeAllButtons))
+    end
+    if verbose then
+        writeLog(("Scan: remotes=%d, other UI buttons=%d"):format(remoteCount, guiButtons))
+        if #sampleRemotes > 0 then writeLog("Remotes (read-only): " .. table.concat(sampleRemotes, ", ")) end
+        if #sampleButtons > 0 then writeLog("Visible text samples: " .. table.concat(sampleButtons, " | ")) end
+        for i = 1, math.min(5, #prompts) do
+            local prompt = prompts[i]
+            writeLog("Prompt[" .. i .. "]: " .. describe(prompt) .. " | action=" ..
+                tostring(prompt.ActionText) .. " | object=" .. tostring(prompt.ObjectText))
+        end
+        for i = 1, math.min(5, #takeAllButtons) do
+            local b = takeAllButtons[i]
+            writeLog("TakeAll[" .. i .. "]: " .. describe(b) .. " | visible=" ..
+                tostring(isVisible(b)) .. " | label=" .. labelOf(b):sub(1, 100))
+        end
+    end
 end
 
 local function nearest(targets, range)
     local root = rootPart()
-    if not root then return nil end
-    local chosen, distance = nil, range
+    if not root then return nil, nil, "Character/HumanoidRootPart missing" end
+    local chosen, distance, valid = nil, range, 0
     for _, item in ipairs(targets) do
         if item.Parent and item:IsDescendantOf(workspace) then
             local point = positionOf(item)
             if point then
+                valid = valid + 1
                 local length = (point - root.Position).Magnitude
                 local maxRange = tonumber(item.MaxActivationDistance) or range
                 if length < distance and length <= maxRange then
@@ -287,44 +366,102 @@ local function nearest(targets, range)
             end
         end
     end
-    return chosen
+    if not chosen then
+        return nil, nil, valid == 0 and "No positioned targets" or "Targets out of interaction range"
+    end
+    return chosen, distance, nil
+end
+
+local function findTakeAll()
+    for _, b in ipairs(controller.takeAllButtons) do
+        if b.Parent and isVisible(b) then return b end
+    end
+    return nil
+end
+
+local function diagnosticReport()
+    local out = {}
+    local function append(v) out[#out + 1] = v end
+    append("MY ANIME MINE | V0.2 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
+        tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect))
+    append(("Targets: rocks=%d prompts=%d TakeAll=%d"):format(
+        #controller.detectors, #controller.prompts, #controller.takeAllButtons))
+    local root = rootPart()
+    append("Root=" .. (root and tostring(root.Position) or "NOT FOUND"))
+    local nearMine, distMine, whyMine = nearest(controller.detectors, 70)
+    local nearCollect, distCollect, whyCollect = nearest(controller.prompts, 30)
+    append("Mine candidate: " .. (nearMine and
+        (describe(nearMine) .. (" distance=%.1f"):format(distMine)) or tostring(whyMine)))
+    append("Collect candidate: " .. (nearCollect and
+        (describe(nearCollect) .. (" distance=%.1f"):format(distCollect)) or tostring(whyCollect)))
+    append("TakeAll visible: " .. (findTakeAll() and describe(findTakeAll()) or "NONE"))
+    append("Executor: fireclickdetector=" .. tostring(type(fireclickdetector) == "function")
+        .. " fireproximityprompt=" .. tostring(type(fireproximityprompt) == "function")
+        .. " firesignal=" .. tostring(type(firesignal) == "function"))
+    append(("Dispatch attempts: mine=%d collect=%d TakeAll=%d; call OK: mine=%d collect=%d TakeAll=%d"):format(
+        controller.mineAttempts, controller.collectAttempts, controller.takeAllAttempts,
+        controller.mineActions, controller.collectActions, controller.takeAllActions))
+    for i = 1, math.min(12, #controller.prompts) do
+        local item = controller.prompts[i]
+        append("Prompt " .. i .. ": " .. describe(item) .. " | action=" .. tostring(item.ActionText))
+    end
+    for i = 1, math.min(12, #controller.takeAllButtons) do
+        local item = controller.takeAllButtons[i]
+        append("TakeAll " .. i .. ": " .. describe(item) .. " | visible=" .. tostring(isVisible(item)))
+    end
+    append("NOTE: successful executor dispatch is not confirmation of reward.")
+    return table.concat(out, "\n")
 end
 
 local function refreshStatus()
     if not controller.running then return end
-    mineButton.Text = "AUTO MINE: " .. (controller.mine and "ON" or "OFF")
+    mineButton.Text = "AUTO MINE (CLICK): " .. (controller.mine and "ON" or "OFF")
     collectButton.Text = "AUTO COLLECT: " .. (controller.collect and "ON" or "OFF")
     mineButton.BackgroundColor3 = controller.mine and palette.accent or palette.button
     collectButton.BackgroundColor3 = controller.collect and palette.accent or palette.button
-    statusLabel.Text = ("Targets: %d rocks / %d collect | actions: mine %d, collect %d\nExecutor: click %s / prompt %s"):format(
-        #controller.detectors, #controller.prompts, controller.mineActions,
-        controller.collectActions,
+    statusLabel.Text = ("Rock: %d | Prompt: %d | TakeAll: %d | dispatch mine %d / collect %d / chest %d\nExecutor: click %s | prompt %s | signal %s"):format(
+        #controller.detectors, #controller.prompts, #controller.takeAllButtons,
+        controller.mineActions, controller.collectActions, controller.takeAllActions,
         type(fireclickdetector) == "function" and "YES" or "NO",
-        type(fireproximityprompt) == "function" and "YES" or "NO"
-    )
+        type(fireproximityprompt) == "function" and "YES" or "NO",
+        type(firesignal) == "function" and "YES" or "NO")
 end
+
 connect(mineButton.Activated, function()
     if type(fireclickdetector) ~= "function" then
         writeLog("Auto Mine unavailable: executor has no fireclickdetector")
         return
     end
     controller.mine = not controller.mine
-    writeLog("Auto Mine " .. (controller.mine and "ON" or "OFF"))
+    writeLog("Auto Mine (rock click) " .. (controller.mine and "ON" or "OFF") ..
+        " | characters normally mine rocks without clicking them")
     refreshStatus()
 end)
 connect(collectButton.Activated, function()
-    if type(fireproximityprompt) ~= "function" then
-        writeLog("Auto Collect unavailable: executor has no fireproximityprompt")
+    if type(fireproximityprompt) ~= "function" and type(firesignal) ~= "function" then
+        writeLog("Auto Collect unavailable: requires fireproximityprompt or firesignal")
         return
     end
     controller.collect = not controller.collect
-    writeLog("Auto Collect " .. (controller.collect and "ON" or "OFF"))
+    writeLog("Auto Collect " .. (controller.collect and "ON" or "OFF") ..
+        " | tries collection prompts and visible Take All buttons")
     refreshStatus()
 end)
 connect(scanButton.Activated, function()
     writeLog("Manual scan requested")
-    scan()
+    scan(true)
     refreshStatus()
+end)
+connect(detailButton.Activated, function()
+    local report = diagnosticReport()
+    if type(setclipboard) == "function" then
+        local ok, err = pcall(setclipboard, report)
+        writeLog(ok and "Target diagnostics copied" or ("Target copy failed: " .. tostring(err)))
+    else
+        print(report)
+        writeLog("setclipboard unavailable; target diagnostics printed to console")
+    end
 end)
 connect(copyButton.Activated, function()
     local report = table.concat(controller.logs, "\n")
@@ -337,36 +474,74 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.1 started | toggles OFF | PlaceId 79389059854988")
-writeLog("No undocumented remotes used. Nearby game interactables only.")
-scan()
+writeLog("My Anime Mine v0.2 started | toggles OFF | PlaceId 79389059854988")
+writeLog("Characters mine automatically. Chest Take All may be required to claim ore.")
+writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
+scan(true)
 refreshStatus()
 
 task.spawn(function()
     local lastScan, lastMine, lastCollect, lastStatus = os.clock(), 0, 0, 0
+    local lastMineReason, lastCollectReason = "", ""
+    local lastMineLog, lastCollectLog = 0, 0
     while controller.running do
         task.wait(0.35)
         local now = os.clock()
         if now - lastScan >= 6 then
             lastScan = now
-            scan()
+            scan(false)
         end
         if controller.mine and now - lastMine >= 0.85 then
             lastMine = now
-            local target = nearest(controller.detectors, 70)
+            local target, dist, reason = nearest(controller.detectors, 70)
             if target and type(fireclickdetector) == "function" then
+                controller.mineAttempts = controller.mineAttempts + 1
                 local ok, err = pcall(fireclickdetector, target)
                 if ok then controller.mineActions = controller.mineActions + 1
-                else writeLog("Mine interaction error: " .. tostring(err)) end
+                else writeLog("Mine click ERROR: " .. tostring(err)) end
+                if now - lastMineLog >= 7 then
+                    lastMineLog = now
+                    writeLog(("Mine CLICK dispatched to %s (%.1f studs); attempts=%d; not confirmed reward"):format(
+                        describe(target), dist, controller.mineAttempts))
+                end
+                lastMineReason = ""
+            else
+                reason = reason or "fireclickdetector not available"
+                if reason ~= lastMineReason or now - lastMineLog >= 10 then
+                    lastMineLog, lastMineReason = now, reason
+                    writeLog("Mine idle: " .. reason .. " | scanned=" .. #controller.detectors)
+                end
             end
         end
         if controller.collect and now - lastCollect >= 2 then
             lastCollect = now
-            local target = nearest(controller.prompts, 30)
+            local target, dist, reason = nearest(controller.prompts, 30)
+            local action = "none"
             if target and type(fireproximityprompt) == "function" then
+                controller.collectAttempts = controller.collectAttempts + 1
                 local ok, err = pcall(fireproximityprompt, target)
-                if ok then controller.collectActions = controller.collectActions + 1
-                else writeLog("Collect interaction error: " .. tostring(err)) end
+                if ok then
+                    controller.collectActions = controller.collectActions + 1
+                    action = "PROMPT " .. describe(target) .. (" (%.1f studs)"):format(dist)
+                else writeLog("Collect prompt ERROR: " .. tostring(err)) end
+            end
+            local button = findTakeAll()
+            if button and type(firesignal) == "function" then
+                controller.takeAllAttempts = controller.takeAllAttempts + 1
+                local ok, err = pcall(firesignal, button.Activated)
+                if ok then
+                    controller.takeAllActions = controller.takeAllActions + 1
+                    action = "TAKE ALL " .. describe(button)
+                else writeLog("Take All ERROR: " .. tostring(err)) end
+            elseif button and type(firesignal) ~= "function" then
+                action = "Take All button visible but firesignal unavailable"
+            end
+            local idleReason = action == "none" and
+                (reason or "No active collection prompt") or action
+            if idleReason ~= lastCollectReason or now - lastCollectLog >= 10 then
+                lastCollectLog, lastCollectReason = now, idleReason
+                writeLog("Collect: " .. idleReason .. " | prompt-dispatch=" ..
+                    controller.collectActions .. " chest-dispatch=" .. controller.takeAllActions)
             end
         end
         if now - lastStatus >= 0.75 then
