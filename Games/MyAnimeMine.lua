@@ -1840,12 +1840,11 @@ local function shopSellStep(now)
     if phase == "CHEST_HANDOFF" then
         local chest,chestOpen=gameChestFrame()
         local pending=controller.takeAllPending ~= nil
-        local collectButtonVisible=findTakeAll() ~= nil
         local elapsed=now-controller.sellPhaseAt
         controller.sellChestHandoffAttempts=controller.sellChestHandoffAttempts+1
-        if chestOpen or pending or collectButtonVisible then
+        if chestOpen or pending then
             controller.sellChestHandoffState=chestOpen and "CHEST_OPEN"
-                or pending and "TAKE_ALL_PENDING" or "TAKE_ALL_VISIBLE"
+                or "TAKE_ALL_PENDING"
             if elapsed > 24 then
                 sellSetPhase("PAUSED",
                     "Chest still open/pending after 24s; finish Take All or close Chest manually",now)
@@ -1867,7 +1866,7 @@ local function shopSellStep(now)
     end
     if phase == "TELEPORT_OPEN" then
         local chest,chestOpen=gameChestFrame()
-        if chestOpen or controller.takeAllPending or findTakeAll() then
+        if chestOpen or controller.takeAllPending then
             sellSetPhase("CHEST_HANDOFF","Chest reopened; wait for Take All before Shops teleport",now)
             controller.sellChestHandoffState="CHEST_REOPENED"
             return
@@ -2785,7 +2784,8 @@ task.spawn(function()
         -- During handoff only the already-visible Take All control may run.
         -- Do not walk back to Chest or open Chest after sale was requested.
         if controller.collect and (not controller.sell
-            or (controller.sellPhase == "CHEST_HANDOFF" and findTakeAll() ~= nil))
+            or (controller.sellPhase == "CHEST_HANDOFF"
+                and select(2, gameChestFrame()) and findTakeAll() ~= nil))
             and not controller.upgradeWalkTarget
             and now >= (controller.upgradeBusyUntil or 0)
             and now - lastCollect >= 1.25 then
