@@ -624,7 +624,7 @@ assert(clipboard:find("SHOP SELL ROUTE",1,true)
        and clipboard:find("Ore-only Sell candidates=",1,true),
        "sale route must expose warp/vendor/sell diagnostics")
 findButton("SellDiagnostics").Activated:Fire()
-assert(clipboard:find("V0.15 SHOP SELL ROUTE",1,true)
+assert(clipboard:find("V0.16 SHOP SELL ROUTE",1,true)
        and clipboard:find("Shops destination candidates=",1,true)
        and clipboard:find("Explicit ore-only Sell controls=",1,true)
        and clipboard:find("Select All clicks=1/1",1,true)
@@ -709,6 +709,41 @@ first.sellPhase="SELL_MENU"
 assert(not helpers.isExactSellStandButton(exactButton),
        "non-ore sell control in SellFrame must block generic SellButton")
 forbidden.Parent=nil
+
+-- Missing Select All must pause before ANY sale.
+first.sell=true
+first.sellPhase="SELECT_ALL"
+first.sellPhaseAt=30
+first.sellSelectAllSent=false
+local lastExact=exactClicks
+selectAll.Parent=nil
+helpers.shopSellStep(31)
+assert(first.sellPhase=="SELECT_ALL" and exactClicks==lastExact,
+       "missing Select All must wait without clicking Sell")
+helpers.shopSellStep(46)
+assert(first.sellPhase=="PAUSED" and exactClicks==lastExact,
+       "missing Select All must pause; no silent Sell")
+-- A Select All label inside a nested control is also supported.
+local nestedSelect=instance("TextButton")
+nestedSelect.Name="ActionButton";nestedSelect.Text="";nestedSelect.Parent=selectContent
+local nestedLabel=instance("TextLabel")
+nestedLabel.Name="Text";nestedLabel.Text="Select All";nestedLabel.Parent=nestedSelect
+local nestedClicks=0
+nestedSelect.MouseButton1Click:Connect(function() nestedClicks=nestedClicks+1 end)
+first.sellPhase="SELECT_ALL"
+local foundNested,nestedCount=helpers.sellSelectAllButton()
+assert(foundNested==nestedSelect and nestedCount==1,
+       "nested TextLabel Select All should be resolved within seller Content")
+local duplicate=instance("TextButton")
+duplicate.Name="SelectAllButton";duplicate.Parent=selectContent
+duplicate.MouseButton1Click:Connect(function() error("ambiguous Select All must not click") end)
+local beforeNested=nestedClicks
+helpers.shopSellStep(47)
+assert(first.sellPhase=="PAUSED" and nestedClicks==beforeNested and exactClicks==lastExact,
+       "ambiguous Select All must pause with no button dispatched")
+duplicate.Parent=nil
+nestedSelect.Parent=nil
+selectAll.Parent=selectContent
 first.sell=false
 first.sellPhase="OFF"
 sellScreen.Visible=false
