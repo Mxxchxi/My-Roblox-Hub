@@ -2518,6 +2518,14 @@ local function sellRouteDiagnosticReport()
             " | vendorDist="..tostring(controller.sellVendorDistance)..
             " | vendorTouched="..tostring(controller.sellVendorTouched),
         "CharacterPos="..tostring(rootPart() and rootPart().Position),
+        "Return Base: originalPlot="..tostring(controller.sellReturnOriginalPlot)..
+            " | status="..tostring(controller.sellReturnStatus)..
+            " | verified="..tostring(controller.sellReturnVerified)..
+            " | buttonClicks="..tostring(controller.sellReturnClicks)..
+            " | destinationClicks="..tostring(controller.sellReturnChoiceClicks)..
+            " | target="..tostring(controller.sellReturnTarget)..
+            " | distanceBefore="..tostring(controller.sellReturnStartDistance)..
+            " | distanceNow="..tostring(controller.sellReturnCurrentDistance),
     }
     local tele=shopsTeleportLauncher()
     local shops,shopCount=shopsWarpDestination()
@@ -2547,6 +2555,9 @@ local function sellRouteDiagnosticReport()
             " | mouse="..tostring(c.MouseButton1Click)..
             " activated="..tostring(c.Activated)
     end
+    local base,baseCount=baseReturnDestination()
+    lines[#lines+1]="Return Base visible destination candidates="..baseCount..
+        " | selected="..(base and describe(base) or "NONE")
     lines[#lines+1]="Teleport button="..(tele and describe(tele) or "NOT FOUND")
     lines[#lines+1]="Shops destination candidates="..shopCount..
         " | selected="..(shops and describe(shops) or "NONE")
@@ -2584,7 +2595,7 @@ local function sellRouteDiagnosticReport()
             end
         end
     end
-    lines[#lines+1]="NOTE: an eligible Take All within 8s on this Plot may be reused; otherwise wait for a new dispatch. Take All and Sell are NOT proof of inventory or currency credit."
+    lines[#lines+1]="NOTE: after Sell, toggle Base/Shops and verify distance to original Plot Chest before resuming Collect. Sale/money and Plot ownership NOT verified."
     return table.concat(lines,"\n")
 end
 
@@ -2703,8 +2714,8 @@ local function refreshStatus()
     manualWatchButton.Text = "WATCH TAKE ALL: " .. (controller.watchManual and "ON" or "OFF")
     local sellIndicator = controller.sellPhase == "RETURNED_BASE" and "RETURNED"
         or not controller.sell and "OFF"
-        or controller.sellPhase == "RETURN_BASE_OPEN"
-            or controller.sellPhase == "RETURN_BASE_WAIT" and "RETURNING"
+        or (controller.sellPhase == "RETURN_BASE_OPEN"
+            or controller.sellPhase == "RETURN_BASE_WAIT") and "RETURNING"
         or controller.sellPhase == "DONE" and "SENT"
         or controller.sellPhase == "PAUSED" and "PAUSED" or "ROUTING"
     sellButton.Text = "AUTO SELL ORES: " .. sellIndicator
