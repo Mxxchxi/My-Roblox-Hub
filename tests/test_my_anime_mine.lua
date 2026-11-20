@@ -755,7 +755,7 @@ first.sell=true
 first.sellPhase="VENDOR_WALK"
 root.Position=vector(579,0,0)
 helpers.shopSellStep(24)
-assert(first.sellPhase=="SELL_MENU", "touch-only Sell Items stand should enter Sell GUI detection")
+assert(first.sellPhase=="SELECT_ALL", "touch-only Sell Items stand must enter Select All phase")
 first.sell=false
 first.sellPhase="OFF"
 root.Position=vector(0,0,0)
