@@ -530,8 +530,7 @@ local teleClicks = 0
 local teleMenu = instance("Frame")
 teleMenu.Name = "TeleportFrame"; teleMenu.Visible = false; teleMenu.Parent = mineGui
 local shopsButton
-local baseButton
-local baseClicks=0
+env.baseReturnTest={button=nil, clicks=0, before=0, teleBefore=0, target=nil, count=0}
 teleport.MouseButton1Click:Connect(function()
     teleClicks = teleClicks + 1
     teleMenu.Visible = true
@@ -544,12 +543,12 @@ teleport.MouseButton1Click:Connect(function()
             teleMenu.Visible = false
         end)
     end
-    if not baseButton then
-        baseButton = instance("TextButton")
-        baseButton.Name="BaseButton";baseButton.Text="Base"
-        baseButton.Parent=teleMenu
-        baseButton.MouseButton1Click:Connect(function()
-            baseClicks=baseClicks+1
+    if not env.baseReturnTest.button then
+        env.baseReturnTest.button = instance("TextButton")
+        env.baseReturnTest.button.Name="BaseButton";env.baseReturnTest.button.Text="Base"
+        env.baseReturnTest.button.Parent=teleMenu
+        env.baseReturnTest.button.MouseButton1Click:Connect(function()
+            env.baseReturnTest.clicks=env.baseReturnTest.clicks+1
             root.Position=vector(0,0,0)
             teleMenu.Visible=false
         end)
@@ -659,16 +658,17 @@ assert(clipboard:find("V0.21 SHOP SELL ROUTE",1,true)
 assert(clipboard:find("Return Base: originalPlot=MinePlot7",1,true)
        and clipboard:find("verified=false",1,true),
        "return diagnostics must identify plot and pending validation")
-local teleBeforeReturn=teleClicks
+env.baseReturnTest.teleBefore=teleClicks
 helpers.shopSellStep(24)
-assert(first.sellPhase=="RETURN_BASE_WAIT" and teleClicks==teleBeforeReturn+1
+assert(first.sellPhase=="RETURN_BASE_WAIT" and teleClicks==env.baseReturnTest.teleBefore+1
        and first.sellReturnClicks==1 and not first.sellReturnVerified,
        "after Sell, game must dispatch the native Base/Shops toggle once")
-local baseChoice,baseCount=helpers.baseReturnDestination()
-assert(baseChoice==baseButton and baseCount==1,
+env.baseReturnTest.target,env.baseReturnTest.count=helpers.baseReturnDestination()
+assert(env.baseReturnTest.target==env.baseReturnTest.button
+       and env.baseReturnTest.count==1,
        "visible Base choice from TeleportFrame must be recognized")
 helpers.shopSellStep(26)
-assert(first.sellPhase=="RETURN_BASE_WAIT" and baseClicks==1
+assert(first.sellPhase=="RETURN_BASE_WAIT" and env.baseReturnTest.clicks==1
        and first.sellReturnChoiceClicks==1,
        "Base destination should be clicked only once")
 first.collect=true
@@ -696,11 +696,12 @@ first.sellReturnStartDistance=538
 first.sellReturnVerified=false
 first.sellReturnChoiceClicks=0
 root.Position=vector(578,0,0)
-local directBaseBefore=baseClicks
+env.baseReturnTest.before=env.baseReturnTest.clicks
 root.Position=vector(0,0,0)
 helpers.returnBaseStep(32,"RETURN_BASE_WAIT")
 assert(first.sellPhase=="RETURNED_BASE" and not first.sell
-       and first.sellReturnVerified and baseClicks==directBaseBefore,
+       and first.sellReturnVerified
+       and env.baseReturnTest.clicks==env.baseReturnTest.before,
        "Base/Shops direct toggle must verify return without an extra destination click")
 
 -- A click that leaves the player at Shops cannot unlock Collect.
