@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.11 (live Inventory launcher and Holder action diagnostics)
+-- My Roblox Hub | My Anime Mine v0.12 (headless actions without game UI openers)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -37,6 +37,11 @@ local controller = {
     collect = false,
     equip = false,
     upgrade = false,
+    headlessOnly = true,
+    headlessEquipStatus = "NOT TESTED",
+    headlessUpgradeStatus = "NOT TESTED",
+    headlessEquipTarget = "none",
+    headlessRemoteTargets = {},
     equipAttempts = 0,
     equipActions = 0,
     inventoryOpenAttempts = 0,
@@ -275,7 +280,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.11 | Detect Inventory hotbar button and verify Holder upgrade actions. Auto Collect preserved.",
+    Text = "V0.12 | HEADLESS ONLY: never auto-open Inventory, Stats, Holders or Upgrades UI.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -1312,6 +1317,96 @@ local function approachUpgradeHolder(target, now)
     return ("Walking to holder %.1f / %.1f studs"):format(target.distance, target.allowed)
 end
 
+
+-- Never click the Inventory launcher, Holder upgrade detector, Stats tab
+-- or the global Upgrades menu in headless mode.
+-- A loaded but hidden Equip Best button can still have a usable GUI
+-- click listener. This is not a network protocol and may not change gear.
+local function gameGuiAncestorNamed(item, name)
+    local cursor = item
+    while cursor and cursor ~= playerGui do
+        if cursor.Name == name then return true end
+        cursor = cursor.Parent
+    end
+    return false
+end
+
+local function hiddenEquipBestCandidates()
+    local results = {}
+    for _, item in ipairs(playerGui:GetDescendants()) do
+        if gameGuiButton(item)
+            and gameGuiAncestorNamed(item, "MineGui")
+            and gameGuiAncestorNamed(item, "InventoryFrame")
+            and not gameGuiAncestorNamed(item, "Shop")
+            and not gameGuiAncestorNamed(item, "Gamepass")
+            and not isPremiumAction(item) then
+            local text = normalizeLabel(actionLabel(item))
+            if text:find("equipbest", 1, true) or text:find("bestcrew", 1, true) then
+                results[#results + 1] = item
+            end
+        end
+    end
+    return results
+end
+
+local function headlessRemotes()
+    local list = {}
+    local all = {}
+    local ok, remotes = pcall(function()
+        return game:GetService("ReplicatedStorage"):GetDescendants()
+    end)
+    if not ok then return list end
+    for _, item in ipairs(remotes) do
+        if item:IsA("RemoteEvent") or item:IsA("RemoteFunction") then
+            local name = tostring(item.Name):lower()
+            local entry = {
+                remote = item,
+                name = item.Name,
+                path = describe(item),
+                kind = item.ClassName,
+            }
+            all[#all + 1] = entry
+            if name:find("equip", 1, true) or name:find("upgrade", 1, true)
+                or name:find("miner", 1, true) or name:find("unit", 1, true)
+                or name:find("inventory", 1, true) then
+                list[#list + 1] = entry
+            end
+        end
+    end
+    if #list == 0 then
+        for i = 1, math.min(35, #all) do list[#list + 1] = all[i] end
+    end
+    controller.headlessRemoteTargets = list
+    controller.headlessRemoteCount = #all
+    return list
+end
+
+local function tryHeadlessEquip()
+    if type(firesignal) ~= "function" then
+        return false, "NO_FIRESIGNAL"
+    end
+    local candidates = hiddenEquipBestCandidates()
+    if #candidates == 0 then return false, "HEADLESS_TARGET_UNKNOWN" end
+    for _, button in ipairs(candidates) do
+        local counts = takeAllConnections(button)
+        local event = nil
+        if type(counts.MouseButton1Click) == "number" and counts.MouseButton1Click > 0 then
+            event = "MouseButton1Click"
+        elseif type(counts.Activated) == "number" and counts.Activated > 0 then
+            event = "Activated"
+        end
+        if event then
+            controller.headlessEquipTarget = describe(button)
+            local ok, err = pcall(firesignal, button[event])
+            if ok then
+                return true, "HIDDEN_EQUIP_SIGNAL_SENT; RESULT_UNVERIFIED"
+            end
+            return false, "HIDDEN_EQUIP_SIGNAL_ERROR: " .. tostring(err)
+        end
+    end
+    return false, "NO_ACTIVE_EQUIP_BEST_LISTENER"
+end
+
 local function resolveUpgradeFeedback(now)
     local pending = controller.upgradePending
     if not pending or now - pending.started < 2.7 then return end
@@ -1336,7 +1431,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.11 EQUIP / UPGRADE TARGETS | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.12 EQUIP / UPGRADE TARGETS | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -1419,7 +1514,7 @@ end
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.11 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.12 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoEquip=" .. tostring(controller.equip) .. " autoUpgrade=" .. tostring(controller.upgrade))
@@ -1677,7 +1772,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.11 started | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.12 started | headless Equip/Upgrade | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
