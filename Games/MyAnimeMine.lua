@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.19 (finish in-progress Auto Collect before Shops)
+-- My Roblox Hub | My Anime Mine v0.20 (reuse recent Take All during Shops handoff)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -44,6 +44,8 @@ local controller = {
     sellHandoffNeedsCollect = false,
     sellHandoffBaselineTakeAllActions = 0,
     sellHandoffTakeAllObserved = false,
+    sellHandoffRecentTakeAll = false,
+    sellHandoffRecentAge = nil,
     sellHandoffChestEmpty = false,
     sellShopsAttempts = 0,
     sellVendorAttempts = 0,
@@ -135,6 +137,8 @@ local controller = {
     collectAttempts = 0,
     takeAllAttempts = 0,
     takeAllPending = nil,
+    takeAllLastDispatchAt = 0,
+    takeAllLastDispatchPlot = nil,
     takeAllNoChange = 0,
     takeAllNotDecreased = 0,
     lastChestCountBefore = nil,
@@ -330,7 +334,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.19 | Finish active Auto Collect before Shops warp; sell result unverified.",
+    Text = "V0.20 | Reuse recent Take All before Shops; selling and money unverified.",
 })
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
 local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
@@ -1830,6 +1834,29 @@ local function sellStopWalk()
     end
 end
 
+-- A user may arm Auto Sell immediately after the previous Chest Take All.
+-- Require same selected Plot, short freshness and evidence that this exact
+-- dispatch is still pending or closed the Chest. Client UI proof only.
+local function recentTakeAllForHandoff(now)
+    local at=controller.takeAllLastDispatchAt
+    if not controller.collect or type(at)~="number" or at<=0
+        or controller.selectedPlot==nil
+        or controller.takeAllLastDispatchPlot~=controller.selectedPlot then
+        return false,nil
+    end
+    local age=now-at
+    if age<0 or age>8 then return false,age end
+    local pending=controller.takeAllPending
+    if pending and type(pending.sentAt)=="number"
+        and math.abs(pending.sentAt-at)<0.25 then
+        return true,age
+    end
+    local _,chestOpen=gameChestFrame()
+    local closedOutcome=type(controller.takeAllOutcome)=="string"
+        and controller.takeAllOutcome:find("CHEST_CLOSED_AFTER_TAKE_ALL",1,true)~=nil
+    return not chestOpen and closedOutcome,age
+end
+
 local function shopSellStep(now)
     if not controller.sell then return end
     local phase = controller.sellPhase
@@ -1892,7 +1919,8 @@ local function shopSellStep(now)
         end
         if controller.sellHandoffNeedsCollect then
             controller.sellChestHandoffState=controller.sellHandoffChestEmpty
-                and "CHEST_EMPTY" or "COLLECT_FINISHED"
+                and "CHEST_EMPTY" or controller.sellHandoffRecentTakeAll
+                and "RECENT_TAKE_ALL_REUSED" or "COLLECT_FINISHED"
         else
             controller.sellChestHandoffState="CHEST_CLOSED"
         end
@@ -2136,7 +2164,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.19 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.20 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -2296,7 +2324,7 @@ end
 
 local function sellRouteDiagnosticReport()
     local lines={
-        "MY ANIME MINE V0.19 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.20 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
         "PlaceId="..tostring(game.PlaceId)..
             " | autoSell="..tostring(controller.sell)..
             " | autoCollect="..tostring(controller.collect)..
@@ -2326,6 +2354,9 @@ local function sellRouteDiagnosticReport()
     lines[#lines+1]="Chest handoff="..tostring(controller.sellChestHandoffState)..
         " | handoffTicks="..tostring(controller.sellChestHandoffAttempts)..
         " | collectFirst="..tostring(controller.sellHandoffNeedsCollect)..
+        " | reusedRecentTakeAll="..tostring(controller.sellHandoffRecentTakeAll)..
+        " | recentTakeAllAge="..tostring(controller.sellHandoffRecentAge)..
+        " | lastTakeAllPlot="..tostring(controller.takeAllLastDispatchPlot)..
         " | takeAllBaseline="..tostring(controller.sellHandoffBaselineTakeAllActions)..
         " | takeAllNow="..tostring(controller.takeAllActions)..
         " | takeAllObserved="..tostring(controller.sellHandoffTakeAllObserved)..
@@ -2381,14 +2412,14 @@ local function sellRouteDiagnosticReport()
             end
         end
     end
-    lines[#lines+1]="NOTE: if Auto Collect was ON, wait for new Take All attempt or confirmed empty Chest BEFORE Shops. Sell dispatch does not prove currency credit."
+    lines[#lines+1]="NOTE: an eligible Take All within 8s on this Plot may be reused; otherwise wait for a new dispatch. Take All and Sell are NOT proof of inventory or currency credit."
     return table.concat(lines,"\n")
 end
 
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.19 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.20 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
@@ -2598,6 +2629,8 @@ connect(sellButton.Activated, function()
         controller.sellHandoffNeedsCollect = controller.collect
         controller.sellHandoffBaselineTakeAllActions = controller.takeAllActions
         controller.sellHandoffTakeAllObserved = false
+        controller.sellHandoffRecentTakeAll = false
+        controller.sellHandoffRecentAge = nil
         controller.sellHandoffChestEmpty = false
         controller.sellShopsAttempts = 0
         controller.sellVendorAttempts = 0
@@ -2615,10 +2648,22 @@ connect(sellButton.Activated, function()
         controller.sellWarpOrigin = nil
         local now = os.clock()
         controller.sellStartedAt = now
+        if controller.sellHandoffNeedsCollect then
+            local reused,age=recentTakeAllForHandoff(now)
+            controller.sellHandoffRecentTakeAll=reused
+            controller.sellHandoffRecentAge=age
+            if reused then
+                controller.sellHandoffTakeAllObserved=true
+                writeLog(("SHOP SELL: Reusing recent Take All sent %.1fs ago on %s; inventory still unverified"):format(
+                    age,tostring(controller.selectedPlot)))
+            end
+        end
         sellSetPhase("CHEST_HANDOFF",
-            controller.sellHandoffNeedsCollect
-                and "Finishing Auto Collect before Shops"
-                or "Checking Chest before Shops",now)
+            controller.sellHandoffRecentTakeAll and
+                "Recent Take All dispatched; waiting for Chest and pending feedback to clear"
+            or controller.sellHandoffNeedsCollect and
+                "Finishing Auto Collect before Shops"
+            or "Checking Chest before Shops",now)
         -- Do not cancel an already-running Chest walk. It must finish Take All
         -- (or time out safely) before Shops takes ownership of movement.
         if not controller.sellHandoffNeedsCollect then stopWalking() end
@@ -2722,7 +2767,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.19 started | finish Auto Collect before Shops warp | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.20 started | recent Take All reuse before Shops | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
@@ -2884,6 +2929,8 @@ task.spawn(function()
                         local ok, err = pcall(firesignal, button[eventName])
                         if ok then
                             controller.takeAllActions = controller.takeAllActions + 1
+                            controller.takeAllLastDispatchAt = now
+                            controller.takeAllLastDispatchPlot = controller.selectedPlot
                             controller.takeAllPending = {
                                 button = button, before = snapshot, beforeCount = beforeCount,
                                 sentAt = now, event = eventName,
