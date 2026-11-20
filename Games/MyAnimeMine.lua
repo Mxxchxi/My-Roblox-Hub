@@ -1324,6 +1324,9 @@ local function actionDiagnosticReport()
             " unchanged=" .. controller.upgradeNoChange ..
             " holderClicks=" .. controller.holderActions .. "/" .. controller.holderAttempts,
         "Selected holder=" .. (controller.openedHolder and describe(controller.openedHolder) or "none"),
+        "Upgrade walk=" .. tostring(controller.upgradeWalkTarget ~= nil) ..
+            " | attempts=" .. tostring(controller.upgradeWalkAttempts) ..
+            " lastTarget=" .. tostring(controller.upgradeWalkLastTarget),
         "Executor: firesignal=" .. tostring(type(firesignal) == "function") ..
             " fireclickdetector=" .. tostring(type(fireclickdetector) == "function") ..
             " getconnections=" .. tostring(type(getconnections) == "function"),
@@ -1343,11 +1346,37 @@ local function actionDiagnosticReport()
     addButtons("Inventory", controller.inventoryCandidates)
     addButtons("Stats", controller.statsCandidates)
     addButtons("Upgrade", controller.upgradeCandidates)
-    local holder, distance = nextHolderDetector(true)
+    local holders = holderTargets()
+    lines[#lines + 1] = "Holders on plot=" .. tostring(#holders) ..
+        " | selectedPlot=" .. tostring(controller.selectedPlot) ..
+        " | root=" .. tostring(rootPart() and rootPart().Position)
+    for i = 1, math.min(30, #holders) do
+        local h = holders[i]
+        lines[#lines + 1] = ("Holder[%d]: %s | distance=%.1f maxRange=%.1f inRange=%s"):format(
+            i, describe(h.detector), h.distance, h.allowed, tostring(h.inRange))
+    end
+    local holder, distance, closest = nextHolderDetector(true)
     lines[#lines + 1] = "Holder candidate=" .. (holder and
-        (describe(holder) .. (" distance=%.1f"):format(distance)) or "NONE IN RANGE")
+        (describe(holder) .. (" distance=%.1f"):format(distance)) or
+        (closest and (describe(closest.detector) ..
+            (" OUT OF RANGE distance=%.1f maxRange=%.1f"):format(
+                closest.distance, closest.allowed)) or "NONE FOUND"))
+    lines[#lines + 1] = "ALL VISIBLE GAME GUI BUTTONS (read-only):"
+    for i, button in ipairs(controller.guiButtonSamples) do
+        local connections = takeAllConnections(button)
+        lines[#lines + 1] = ("Button[%02d]: %s | class=%s | name=%s | text=%s | context=%s | click=%s activated=%s"):format(
+            i, describe(button), tostring(button.ClassName), tostring(button.Name),
+            textOf(button):sub(1, 60), nearbyButtonContext(button):sub(1, 90),
+            tostring(connections.MouseButton1Click), tostring(connections.Activated))
+    end
+    lines[#lines + 1] = "HIDDEN GAME GUI CANDIDATES (read-only):"
+    for i, button in ipairs(controller.guiHiddenSamples) do
+        lines[#lines + 1] = ("Hidden[%02d]: %s | class=%s | name=%s | text=%s | context=%s"):format(
+            i, describe(button), tostring(button.ClassName), tostring(button.Name),
+            textOf(button):sub(1, 45), nearbyButtonContext(button):sub(1, 75))
+    end
     lines[#lines + 1] =
-        "NOTE: button dispatch/click does not prove Equip or stat change; no paid Robux actions are targeted."
+        "NOTE: no game UI path has been verified live; dispatch is not proof of equip/stat gains. No premium actions targeted."
     return table.concat(lines, "\n")
 end
 
