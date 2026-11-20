@@ -766,6 +766,7 @@ assert(first.sellPhase=="PAUSED"
     "bounded handoff timeout must pause rather than abandon Collect")
 findButton("AutoSell").Activated:Fire()
 first.collect=false
+first.walkToChest=false -- restore OFF-by-default test fixture after Collect handoff
 
 -- V0.14 REAL RUNTIME LOG: GingerbreadKeeper's SellPrompt opens a
 -- visible MineGui/SellFrame/Content/SellButton with one MouseButton1Click
