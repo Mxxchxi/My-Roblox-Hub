@@ -1634,7 +1634,7 @@ local function refreshStatus()
     manualWatchButton.Text = "WATCH MANUAL TAKE ALL: " .. (controller.watchManual and "ON" or "OFF")
     manualWatchButton.BackgroundColor3 = controller.watchManual and palette.accent or palette.button
     equipButton.Text = "AUTO EQUIP BEST: " .. (controller.equip and "ON" or "OFF")
-    upgradeButton.Text = "AUTO UPGRADE STATS: " .. (controller.upgrade and "ON" or "OFF")
+    upgradeButton.Text = "AUTO UPGRADE STATS: " .. (controller.upgrade and "DIAG ONLY" or "OFF")
     equipButton.BackgroundColor3 = controller.equip and palette.accent or palette.button
     upgradeButton.BackgroundColor3 = controller.upgrade and palette.accent or palette.button
     statusLabel.Text = ("Rock %d | Chest %d | TakeAll %d | collect calls %d/%d\nEquip: %s (%d OK) | Upgrade: %s (%d OK)\nCollect: %s"):format(
