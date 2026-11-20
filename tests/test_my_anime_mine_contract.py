@@ -36,6 +36,9 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn("local function chestSnapshot(button)", SOURCE)
         self.assertIn("local function takeAllConnections(button)", SOURCE)
         self.assertIn("local function settleTakeAll(now)", SOURCE)
+        self.assertIn("local function chestItemCount(button)", SOURCE)
+        self.assertIn("takeAllNotDecreased >= 3", SOURCE)
+        self.assertIn("takeAllAttempts >= 6", SOURCE)
 
     def test_diagnostic_and_conservative_interactions(self):
         for token in ("SCAN GAME", "COPY LOG", "COPY TARGET DIAGNOSTICS", "SET MY PLOT", "WALK TO CHEST", "MouseButton1Click", "getconnections", "ClickDetector", "ProximityPrompt",
