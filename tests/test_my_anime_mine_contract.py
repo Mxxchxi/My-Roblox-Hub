@@ -34,6 +34,8 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn("local function sellVendorTargets()", SOURCE)
         self.assertIn("local function oreSellButton()", SOURCE)
         self.assertIn("SHOP SELL ROUTE", SOURCE)
+        self.assertIn("local function sellRouteDiagnosticReport()", SOURCE)
+        self.assertIn('button("SellDiagnostics", "COPY SELL ROUTE"', SOURCE)
         self.assertIn("not controller.sell", SOURCE)
         self.assertIn("Sell interface does not expose an ore-only button", SOURCE)
         self.assertIn("AUTO_SELL_STATE_UNKNOWN (no toggle sent)", SOURCE)
@@ -97,7 +99,7 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn("takeAllAttempts >= 6", SOURCE)
 
     def test_diagnostic_and_conservative_interactions(self):
-        for token in ("SCAN GAME", "COPY LOG", "COPY TARGET DIAGNOSTICS", "PLOT AUTO:", "WALK AUTO:", "WATCH MANUAL TAKE ALL", "AUTO EQUIP BEST", "AUTO UPGRADE STATS", "AUTO SELL ORES", "COPY EQUIP / UPGRADE TARGETS", "MouseButton1Click", "getconnections", "ClickDetector", "ProximityPrompt",
+        for token in ("SCAN GAME", "COPY LOG", "COPY TARGET DIAGNOSTICS", "PLOT AUTO:", "WALK AUTO:", "WATCH MANUAL TAKE ALL", "AUTO EQUIP BEST", "AUTO UPGRADE STATS", "AUTO SELL ORES", "COPY SELL ROUTE", "COPY EQUIP / UPGRADE TARGETS", "MouseButton1Click", "getconnections", "ClickDetector", "ProximityPrompt",
                       "fireclickdetector", "fireproximityprompt", "firesignal", "setclipboard"):
             self.assertIn(token, SOURCE)
         self.assertIn("minePlotName(prompt) == controller.selectedPlot", SOURCE)
