@@ -594,7 +594,8 @@ local function chestItemCount(button)
             if text:lower():find("items", 1, true) then
                 local count = text:match("^%s*([%d,]+)%s*/")
                 if count then
-                    local parsed = tonumber(count:gsub(",", ""))
+                    local cleaned = count:gsub(",", "")
+                    local parsed = tonumber(cleaned)
                     if parsed then return parsed end
                 end
             end
@@ -922,18 +923,18 @@ task.spawn(function()
                         action = "CHEST EMPTY, Take All not dispatched"
                     else
                         local ok, err = pcall(firesignal, button[eventName])
-                    if ok then
-                        controller.takeAllActions = controller.takeAllActions + 1
-                        controller.takeAllPending = {
-                            button = button, before = snapshot, beforeCount = beforeCount,
-                            sentAt = now, event = eventName,
-                        }
-                        action = "TAKE ALL dispatched (" .. eventName .. ") " .. describe(button) ..
-                            " | connections=" .. tostring(counts[eventName])
-                    else
-                        action = "Take All " .. eventName .. " ERROR " .. tostring(err)
-                        controller.takeAllOutcome = "DISPATCH_ERROR"
-                    end
+                        if ok then
+                            controller.takeAllActions = controller.takeAllActions + 1
+                            controller.takeAllPending = {
+                                button = button, before = snapshot, beforeCount = beforeCount,
+                                sentAt = now, event = eventName,
+                            }
+                            action = "TAKE ALL dispatched (" .. eventName .. ") " .. describe(button) ..
+                                " | connections=" .. tostring(counts[eventName])
+                        else
+                            action = "Take All " .. eventName .. " ERROR " .. tostring(err)
+                            controller.takeAllOutcome = "DISPATCH_ERROR"
+                        end
                     end
                 end
             else
