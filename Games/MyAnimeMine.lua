@@ -35,6 +35,7 @@ local controller = {
     running = true,
     mine = false,
     collect = false,
+    minimized = false,
     mineActions = 0,
     collectActions = 0,
     takeAllActions = 0,
@@ -111,6 +112,40 @@ local panel = make("Frame", gui, {
     BackgroundColor3 = palette.background, BorderSizePixel = 0,
 })
 make("UICorner", panel, { CornerRadius = UDim.new(0, 12) })
+
+-- Keep the restore control outside Main so it remains usable while Main is hidden.
+local restoreButton = make("TextButton", gui, {
+    Name = "RestoreWindow",
+    Position = UDim2.fromOffset(12, 110),
+    Size = UDim2.fromOffset(168, 39),
+    BackgroundColor3 = palette.panel,
+    BorderSizePixel = 0,
+    TextColor3 = palette.text,
+    Font = Enum.Font.GothamBold,
+    TextSize = 12,
+    Text = "MY ANIME MINE  [+]",
+    Visible = false,
+    AutoButtonColor = true,
+})
+make("UICorner", restoreButton, { CornerRadius = UDim.new(0, 8) })
+
+local function setMinimized(minimized)
+    if not controller.running then return end
+    controller.minimized = minimized
+    panel.Visible = not minimized
+    restoreButton.Visible = minimized
+end
+
+connect(restoreButton.Activated, function()
+    setMinimized(false)
+end)
+connect(UserInputService.InputBegan, function(input, gameProcessed)
+    if gameProcessed or input.KeyCode ~= Enum.KeyCode.LeftAlt then return end
+    -- Avoid toggling the window when the user is editing a TextBox.
+    if type(UserInputService.GetFocusedTextBox) == "function"
+        and UserInputService:GetFocusedTextBox() then return end
+    setMinimized(not controller.minimized)
+end)
 local header = make("Frame", panel, {
     Name = "DragHandle", Size = UDim2.new(1, 0, 0, 51),
     BackgroundColor3 = palette.panel, BorderSizePixel = 0, Active = true,
