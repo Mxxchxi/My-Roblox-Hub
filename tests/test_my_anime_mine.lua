@@ -24,7 +24,15 @@ local function instance(className)
     local props = {ClassName = className, Name = className, Visible = true, Enabled = true, children = {}, events = {}}
     local obj = {}
     local methods = {}
-    function methods:IsA(kind) return kind == props.ClassName end
+    function methods:IsA(kind)
+        if kind == props.ClassName then return true end
+        if kind == "GuiObject" then
+            return props.ClassName == "Frame" or props.ClassName == "TextButton"
+                or props.ClassName == "ImageButton" or props.ClassName == "TextLabel"
+                or props.ClassName == "ImageLabel"
+        end
+        return false
+    end
     function methods:GetChildren()
         local list = {}
         for _, value in ipairs(props.children) do list[#list + 1] = value end
