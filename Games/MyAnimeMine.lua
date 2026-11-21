@@ -1746,6 +1746,15 @@ local function finishVerifiedBaseReturn(distance,now)
     controller.sell=false
     controller.sellPhase="RETURNED_BASE"
     controller.sellPhaseAt=now
+    if controller.cycleEnabled and controller.cyclePhase=="SELLING" then
+        controller.cyclePhase="WAITING"
+        controller.cycleLastReturnAt=now
+        if controller.cycleNextAt<=0 then
+            controller.cycleNextAt=now+controller.cycleMinutes*60
+        end
+        writeLog(("AUTO FARM: Returned to Base; next Collect in %.0fs"):format(
+            math.max(0,controller.cycleNextAt-now)))
+    end
     controller.sellStage=("Returned near %s Chest (%.1f studs); Auto Collect %s"):format(
         tostring(controller.selectedPlot),distance,controller.collect and "can resume" or "is OFF")
     writeLog("SHOP SELL: "..controller.sellStage..
@@ -2838,10 +2847,14 @@ connect(actionDiagnosticsButton.Activated, function()
         writeLog("Clipboard unavailable; Equip/Upgrade targets printed to console")
     end
 end)
-connect(sellButton.Activated, function()
-    controller.sell = not controller.sell
+-- Single entry point for both manual sell tests and the timed farm.
+-- The scheduled path may already have completed the current Chest Take All,
+-- so it must not reopen that Chest during handoff.
+local function armSellRoute(now,source)
+    if controller.sell then return false end
+    controller.sell = true
     sellStopWalk()
-    if controller.sell then
+    controller.sellRouteSource = source or "MANUAL"
         controller.sellSent = false
         controller.sellAttempts = 0
         controller.sellCallsOK = 0
@@ -2878,7 +2891,6 @@ connect(sellButton.Activated, function()
         controller.sellReturnStatus = "NOT_STARTED"
         controller.sellReturnCloseSent = false
         controller.sellWarpOrigin = nil
-        local now = os.clock()
         controller.sellStartedAt = now
         if controller.sellHandoffNeedsCollect then
             local reused,age=recentTakeAllForHandoff(now)
@@ -2899,10 +2911,18 @@ connect(sellButton.Activated, function()
         -- Do not cancel an already-running Chest walk. It must finish Take All
         -- (or time out safely) before Shops takes ownership of movement.
         if not controller.sellHandoffNeedsCollect then stopWalking() end
-    else
-        controller.sellPhase = "OFF"
-        controller.sellStage = "OFF (shop route stopped)"
+    return true
+end
+
+connect(sellButton.Activated, function()
+    if controller.sell then
+        controller.sell=false
+        sellStopWalk()
+        controller.sellPhase="OFF"
+        controller.sellStage="OFF (shop route stopped)"
         writeLog("SHOP SELL OFF. Auto Collect can resume after returning to your Plot.")
+    else
+        armSellRoute(os.clock(),"MANUAL")
     end
     refreshStatus()
 end)
@@ -3006,7 +3026,170 @@ scan(true)
 autoSelectPlot()
 refreshStatus()
 
+-- Timed mode performs ONE collection attempt per interval. Collection
+-- remains paused during selling and while waiting for the next due time.
+local function collectIntervalSeconds()
+    return controller.cycleMinutes*60
+end
+
+local function updateCycleMinutes(value)
+    local number=tonumber(value)
+    if not number or number~=number then return false end
+    local minutes=math.floor(number+0.5)
+    if minutes<1 then minutes=1 elseif minutes>180 then minutes=180 end
+    controller.cycleMinutes=minutes
+    intervalInput.Text=tostring(minutes)
+    if controller.cycleEnabled and controller.cycleCollectionAt>0 then
+        controller.cycleNextAt=controller.cycleCollectionAt+collectIntervalSeconds()
+    end
+    writeLog("AUTO FARM interval set to "..minutes.." minute(s)")
+    refreshStatus()
+    return true
+end
+
+local function beginCollectionCycle(now)
+    if controller.sell then
+        controller.cyclePhase="PAUSED"
+        controller.cycleLastError="Cannot collect during active seller route"
+        writeLog("AUTO FARM paused: "..controller.cycleLastError)
+        return false
+    end
+    if not controller.selectedPlot then autoSelectPlot() end
+    controller.cycleRun=controller.cycleRun+1
+    controller.cyclePhase="COLLECTING"
+    controller.cycleStartedAt=now
+    controller.cycleCollectionBaseline=controller.takeAllActions
+    controller.cycleLastError="none"
+    controller.collect=true
+    controller.walkToChest=true
+    controller.takeAllReopenAt=math.min(controller.takeAllReopenAt or 0,now)
+    writeLog(("AUTO FARM cycle %d: collecting from %s (every %d min)"):format(
+        controller.cycleRun,tostring(controller.selectedPlot),controller.cycleMinutes))
+    return true
+end
+
+local function updateFarmCycle(now)
+    if not controller.cycleEnabled then return end
+    if controller.cyclePhase=="COLLECTING" then
+        if controller.takeAllActions>controller.cycleCollectionBaseline then
+            if controller.takeAllPending then
+                controller.cycleLastMessage="Take All dispatched; awaiting Chest close"
+                return
+            end
+            local _,chestOpen=gameChestFrame()
+            if chestOpen then
+                controller.cycleLastMessage="Waiting for Chest to close"
+                return
+            end
+            if type(controller.takeAllOutcome)~="string" or
+                not controller.takeAllOutcome:find("CHEST_CLOSED_AFTER_TAKE_ALL",1,true) then
+                if now-controller.cycleStartedAt>100 then
+                    controller.cyclePhase="PAUSED"
+                    controller.cycleLastError="Take All result not confirmed by Chest UI"
+                    controller.collect=false
+                    writeLog("AUTO FARM paused: "..controller.cycleLastError)
+                end
+                return
+            end
+            controller.cycleCollectionAt=controller.takeAllLastDispatchAt>0
+                and controller.takeAllLastDispatchAt or now
+            controller.cycleNextAt=controller.cycleCollectionAt+collectIntervalSeconds()
+            controller.cyclePhase="SELLING"
+            controller.cycleLastMessage="Collect sent; go sell at Shops"
+            if not armSellRoute(now,"TIMED_FARM") then
+                controller.cyclePhase="PAUSED"
+                controller.cycleLastError="Another sale is already active"
+                writeLog("AUTO FARM paused: "..controller.cycleLastError)
+                return
+            end
+            -- This cycle already dispatched and settled its Take All. Reusing
+            -- it prevents the older manual handoff from reopening Chest.
+            controller.sellHandoffTakeAllObserved=true
+            controller.sellHandoffNeedsCollect=true
+            writeLog(("AUTO FARM cycle %d: Take All UI settled; Shops sale armed; next due in %ds"):format(
+                controller.cycleRun,math.max(0,math.floor(controller.cycleNextAt-now))))
+            return
+        end
+        if now-controller.cycleStartedAt>90 then
+            controller.cyclePhase="PAUSED"
+            controller.cycleLastError="No Chest Take All within 90s"
+            controller.collect=false
+            stopWalking()
+            writeLog("AUTO FARM paused: "..controller.cycleLastError)
+        end
+    elseif controller.cyclePhase=="SELLING" then
+        if controller.sellPhase=="PAUSED" then
+            controller.cyclePhase="PAUSED"
+            controller.cycleLastError=tostring(controller.sellStage)
+            writeLog("AUTO FARM paused at Shops/Base: "..controller.cycleLastError)
+        elseif controller.sellPhase=="RETURNED_BASE" and controller.sellReturnVerified then
+            controller.cyclePhase="WAITING"
+            controller.cycleLastReturnAt=now
+            if controller.cycleNextAt<=0 then
+                controller.cycleNextAt=now+collectIntervalSeconds()
+            end
+        end
+    elseif controller.cyclePhase=="WAITING" then
+        if not controller.sell and now>=controller.cycleNextAt
+            and now-controller.cycleLastReturnAt>=1.5 then
+            beginCollectionCycle(now)
+        end
+    end
+end
+
+local function setFarmCycleEnabled(enabled,now)
+    if enabled==controller.cycleEnabled then return end
+    if enabled and controller.sell then
+        writeLog("AUTO FARM: stop the current Sell route before enabling timed farming.")
+        return
+    end
+    controller.cycleEnabled=enabled
+    if enabled then
+        controller.cycleRun=0
+        controller.cycleNextAt=0
+        controller.cycleCollectionAt=0
+        controller.cycleLastReturnAt=0
+        scan(false)
+        autoSelectPlot()
+        beginCollectionCycle(now)
+    else
+        controller.cyclePhase="OFF"
+        controller.cycleNextAt=0
+        controller.cycleLastError="none"
+        controller.collect=false
+        controller.walkToChest=false
+        if controller.sell then
+            controller.sell=false
+            controller.sellPhase="OFF"
+            controller.sellStage="Stopped by Auto Farm OFF"
+        end
+        sellStopWalk()
+        stopWalking()
+        writeLog("AUTO FARM stopped; all scheduled collection and sale commands OFF")
+    end
+    refreshStatus()
+end
+
+connect(farmCycleButton.Activated,function()
+    setFarmCycleEnabled(not controller.cycleEnabled,os.clock())
+end)
+connect(minuteMinusButton.Activated,function()
+    updateCycleMinutes(controller.cycleMinutes-1)
+end)
+connect(minutePlusButton.Activated,function()
+    updateCycleMinutes(controller.cycleMinutes+1)
+end)
+connect(intervalInput.FocusLost,function()
+    if not updateCycleMinutes(intervalInput.Text) then
+        intervalInput.Text=tostring(controller.cycleMinutes)
+        writeLog("Invalid collection interval; enter 1-180 whole minutes")
+    end
+end)
+
 local function canCollectDuringSell()
+    if controller.cycleEnabled and controller.cyclePhase~="COLLECTING" then
+        return false
+    end
     return not controller.sell
         or (controller.sellPhase == "CHEST_HANDOFF"
             and controller.sellHandoffNeedsCollect
@@ -3110,6 +3293,7 @@ task.spawn(function()
         if controller.watchManual then monitorManualButton() end
         if controller.manualPending then settleManualTakeAll(now) end
         if controller.takeAllPending then settleTakeAll(now) end
+        updateFarmCycle(now)
         if not controller.selectedPlot and now - lastAutoPlotCheck >= 5 then
             lastAutoPlotCheck = now
             autoSelectPlot()
