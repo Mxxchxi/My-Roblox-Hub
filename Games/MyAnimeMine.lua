@@ -2553,6 +2553,24 @@ local function actionDiagnosticReport()
     addButtons("Stats", controller.statsCandidates)
     addButtons("Upgrade", controller.upgradeCandidates)
     addButtons("GameUpgradesMenu (read-only, not auto-purchased)", controller.guiUpgradeMenu)
+    local upgradeSafe,upgradeSafeStatus,upgradeFrames=safeHeadlessStatsUpgrades()
+    lines[#lines+1] = "NATIVE HEADLESS STATS UPGRADE status="..upgradeSafeStatus..
+        " | frames="..tostring(upgradeFrames)..
+        " | safeButtons="..#upgradeSafe..
+        " | selectedPlot="..tostring(controller.selectedPlot)..
+        " | pending="..tostring(controller.upgradePending~=nil)
+    lines[#lines+1] = "Upgrade last action="..tostring(controller.upgradeLastTarget)..
+        " | stat="..tostring(controller.upgradeLastStat)..
+        " | event="..tostring(controller.upgradeLastEvent)..
+        " | UI feedback="..tostring(controller.upgradeLastConfirmedUI)..
+        " | attempted="..controller.upgradeAttempts..
+        " | sent="..controller.upgradeActions
+    for i,entry in ipairs(upgradeSafe) do
+        lines[#lines+1] = "NativeStat["..i.."] "..entry.stat..
+            " | "..entry.path.." | event="..entry.event..
+            " | visible="..tostring(isVisible(entry.button))..
+            " | premiumExcluded=true"
+    end
     local sellButtons, sellLabels = scanNativeAutoSell()
     local tele = shopsTeleportLauncher()
     local shopsWarp, shopsCount = shopsWarpDestination()
@@ -2658,6 +2676,8 @@ local function actionDiagnosticReport()
             i, describe(button), tostring(button.ClassName), tostring(button.Name),
             textOf(button):sub(1, 45), nearbyButtonContext(button):sub(1, 75))
     end
+    lines[#lines + 1] =
+        "NOTE: Upgrade only loaded crew Stats callback buttons, without Roblox premium/currency purchases from unknown panels. Native GUI signal/UI changes are NOT confirmation of a level increase."
     lines[#lines + 1] =
         "NOTE: Select All must dispatch before Sell; sale requires ore-only button or exact GingerbreadKeeper SellFrame/SellButton. No generic Sell All."
     return table.concat(lines, "\n")
@@ -2951,8 +2971,8 @@ connect(equipButton.Activated, function()
     refreshStatus()
 end)
 connect(upgradeButton.Activated, function()
-    if type(firesignal) ~= "function" or type(fireclickdetector) ~= "function" then
-        writeLog("Auto Upgrade requires firesignal and fireclickdetector")
+    if type(firesignal) ~= "function" or type(getconnections) ~= "function" then
+        writeLog("Auto Upgrade needs firesignal and getconnections for native Stats buttons")
         return
     end
     controller.upgrade = not controller.upgrade
@@ -2964,6 +2984,11 @@ connect(upgradeButton.Activated, function()
         controller.lastHolderProbeInRange = "none"
         controller.upgradeAttempts = 0
         controller.upgradeNoChange = 0
+        controller.upgradeLastConfirmedUI="NOT_TESTED"
+        controller.upgradeLastTarget="none"
+        controller.upgradeLastStat="none"
+        controller.upgradeLastEvent="none"
+        controller.upgradeSafeCandidates=0
         controller.upgradePending = nil
         controller.upgradeIndex = 1
         controller.holderIndex = 1
@@ -2977,8 +3002,8 @@ connect(upgradeButton.Activated, function()
         controller.upgradePending = nil
         controller.upgradeStage = "OFF"
     end
-    writeLog("AUTO UPGRADE STATS " .. (controller.upgrade and "ON" or "OFF") ..
-        " | HEADLESS ONLY: remote command requires verified protocol; no UI opens")
+    writeLog("AUTO UPGRADE STATS "..(controller.upgrade and "ON" or "OFF")..
+        " | native crew Stats listeners only; game currency may be spent; no windows or unknown remotes")
     refreshStatus()
 end)
 connect(actionDiagnosticsButton.Activated, function()
