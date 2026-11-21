@@ -2873,62 +2873,62 @@ local function armSellRoute(now,source)
     controller.sell = true
     sellStopWalk()
     controller.sellRouteSource = source or "MANUAL"
-        controller.sellSent = false
-        controller.sellAttempts = 0
-        controller.sellCallsOK = 0
-        controller.sellWarpAttempts = 0
-        controller.sellChestHandoffAttempts = 0
-        controller.sellChestHandoffState = "STARTING"
-        controller.sellHandoffNeedsCollect = controller.collect
-        controller.sellHandoffBaselineTakeAllActions = controller.takeAllActions
-        controller.sellHandoffTakeAllObserved = false
-        controller.sellHandoffRecentTakeAll = false
-        controller.sellHandoffRecentAge = nil
-        controller.sellHandoffChestEmpty = false
-        controller.sellShopsAttempts = 0
-        controller.sellVendorAttempts = 0
-        controller.sellVendorTouched = false
-        controller.sellWalkAttempts = 0
-        controller.sellVendorPath = "none"
-        controller.sellActionTarget = "none"
-        controller.sellSelectAllTarget = "none"
-        controller.sellSelectAllAttempts = 0
-        controller.sellSelectAllCallsOK = 0
-        controller.sellSelectAllSent = false
-        controller.sellSelectAllAt = 0
-        controller.sellSelectAllEvent = "none"
-        controller.sellActionKind = nil
-        controller.sellReturnTarget = "none"
-        controller.sellReturnOriginalPlot = controller.selectedPlot
-        controller.sellReturnOrigin = nil
-        controller.sellReturnStartDistance = nil
-        controller.sellReturnCurrentDistance = nil
-        controller.sellReturnClicks = 0
-        controller.sellReturnChoiceClicks = 0
-        controller.sellReturnVerified = false
-        controller.sellReturnStatus = "NOT_STARTED"
-        controller.sellReturnCloseSent = false
-        controller.sellWarpOrigin = nil
-        controller.sellStartedAt = now
-        if controller.sellHandoffNeedsCollect then
-            local reused,age=recentTakeAllForHandoff(now)
-            controller.sellHandoffRecentTakeAll=reused
-            controller.sellHandoffRecentAge=age
-            if reused then
-                controller.sellHandoffTakeAllObserved=true
-                writeLog(("SHOP SELL: Reusing recent Take All sent %.1fs ago on %s; inventory still unverified"):format(
-                    age,tostring(controller.selectedPlot)))
-            end
+    controller.sellSent = false
+    controller.sellAttempts = 0
+    controller.sellCallsOK = 0
+    controller.sellWarpAttempts = 0
+    controller.sellChestHandoffAttempts = 0
+    controller.sellChestHandoffState = "STARTING"
+    controller.sellHandoffNeedsCollect = controller.collect
+    controller.sellHandoffBaselineTakeAllActions = controller.takeAllActions
+    controller.sellHandoffTakeAllObserved = false
+    controller.sellHandoffRecentTakeAll = false
+    controller.sellHandoffRecentAge = nil
+    controller.sellHandoffChestEmpty = false
+    controller.sellShopsAttempts = 0
+    controller.sellVendorAttempts = 0
+    controller.sellVendorTouched = false
+    controller.sellWalkAttempts = 0
+    controller.sellVendorPath = "none"
+    controller.sellActionTarget = "none"
+    controller.sellSelectAllTarget = "none"
+    controller.sellSelectAllAttempts = 0
+    controller.sellSelectAllCallsOK = 0
+    controller.sellSelectAllSent = false
+    controller.sellSelectAllAt = 0
+    controller.sellSelectAllEvent = "none"
+    controller.sellActionKind = nil
+    controller.sellReturnTarget = "none"
+    controller.sellReturnOriginalPlot = controller.selectedPlot
+    controller.sellReturnOrigin = nil
+    controller.sellReturnStartDistance = nil
+    controller.sellReturnCurrentDistance = nil
+    controller.sellReturnClicks = 0
+    controller.sellReturnChoiceClicks = 0
+    controller.sellReturnVerified = false
+    controller.sellReturnStatus = "NOT_STARTED"
+    controller.sellReturnCloseSent = false
+    controller.sellWarpOrigin = nil
+    controller.sellStartedAt = now
+    if controller.sellHandoffNeedsCollect then
+        local reused,age=recentTakeAllForHandoff(now)
+        controller.sellHandoffRecentTakeAll=reused
+        controller.sellHandoffRecentAge=age
+        if reused then
+            controller.sellHandoffTakeAllObserved=true
+            writeLog(("SHOP SELL: Reusing recent Take All sent %.1fs ago on %s; inventory still unverified"):format(
+                age,tostring(controller.selectedPlot)))
         end
-        sellSetPhase("CHEST_HANDOFF",
-            controller.sellHandoffRecentTakeAll and
-                "Recent Take All dispatched; waiting for Chest and pending feedback to clear"
-            or controller.sellHandoffNeedsCollect and
-                "Finishing Auto Collect before Shops"
-            or "Checking Chest before Shops",now)
-        -- Do not cancel an already-running Chest walk. It must finish Take All
-        -- (or time out safely) before Shops takes ownership of movement.
-        if not controller.sellHandoffNeedsCollect then stopWalking() end
+    end
+    sellSetPhase("CHEST_HANDOFF",
+        controller.sellHandoffRecentTakeAll and
+            "Recent Take All dispatched; waiting for Chest and pending feedback to clear"
+        or controller.sellHandoffNeedsCollect and
+            "Finishing Auto Collect before Shops"
+        or "Checking Chest before Shops",now)
+    -- Do not cancel an already-running Chest walk. It must finish Take All
+    -- (or time out safely) before Shops takes ownership of movement.
+    if not controller.sellHandoffNeedsCollect then stopWalking() end
     return true
 end
 
@@ -3090,6 +3090,16 @@ local function updateFarmCycle(now)
     if not controller.cycleEnabled then return end
     if controller.cyclePhase=="COLLECTING" then
         if controller.takeAllActions>controller.cycleCollectionBaseline then
+            local sinceDispatch=now-(controller.takeAllLastDispatchAt>0
+                and controller.takeAllLastDispatchAt or controller.cycleStartedAt)
+            if sinceDispatch>25 then
+                controller.cyclePhase="PAUSED"
+                controller.cycleLastError="Take All feedback/Chest close exceeded 25s"
+                controller.collect=false
+                stopWalking()
+                writeLog("AUTO FARM paused: "..controller.cycleLastError)
+                return
+            end
             if controller.takeAllPending then
                 controller.cycleLastMessage="Take All dispatched; awaiting Chest close"
                 return
@@ -3159,6 +3169,11 @@ local function setFarmCycleEnabled(enabled,now)
     if enabled==controller.cycleEnabled then return end
     if enabled and controller.sell then
         writeLog("AUTO FARM: stop the current Sell route before enabling timed farming.")
+        return
+    end
+    if enabled and (type(fireproximityprompt)~="function"
+        or type(firesignal)~="function") then
+        writeLog("AUTO FARM unavailable: executor requires fireproximityprompt and firesignal")
         return
     end
     controller.cycleEnabled=enabled
