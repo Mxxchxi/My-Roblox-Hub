@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.21 (return to selected Base after Sell)
+-- My Roblox Hub | My Anime Mine v0.22 (timed Collect > Sell > Base farming cycle)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -35,6 +35,17 @@ local controller = {
     running = true,
     mine = false,
     collect = false,
+    cycleEnabled = false,
+    cycleMinutes = 5,
+    cyclePhase = "OFF",
+    cycleRun = 0,
+    cycleCollectionBaseline = 0,
+    cycleCollectionAt = 0,
+    cycleStartedAt = 0,
+    cycleNextAt = 0,
+    cycleLastReturnAt = 0,
+    cycleLastError = "none",
+    cycleLastMessage = "",
     sell = false,
     sellStage = "OFF",
     sellPhase = "OFF",
@@ -268,8 +279,8 @@ local gui = make("ScreenGui", playerGui, {
 })
 controller.gui = gui
 local panel = make("Frame", gui, {
-    Name = "Main", Size = UDim2.fromOffset(510, 648),
-    Position = UDim2.new(0.5, -255, 0.5, -324),
+    Name = "Main", Size = UDim2.fromOffset(510, 614),
+    Position = UDim2.new(0.5, -255, 0.5, -307),
     BackgroundColor3 = palette.background, BorderSizePixel = 0,
 })
 make("UICorner", panel, { CornerRadius = UDim.new(0, 12) })
@@ -340,54 +351,61 @@ make("UICorner", close, { CornerRadius = UDim.new(0, 7) })
 connect(close.Activated, function() controller:Stop() end)
 
 make("TextLabel", panel, {
-    Name = "Description", Position = UDim2.fromOffset(16, 61),
-    Size = UDim2.fromOffset(480, 34),
+    Name = "Description", Position = UDim2.fromOffset(16, 58),
+    Size = UDim2.fromOffset(478, 36),
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.21 | Sell > return to selected Base > resume Auto Collect (when verified).",
+    Text = "V0.22 | Collect once, sell ores, return to Base, then wait for next timed collection.",
 })
-local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
-local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
-local scanButton = button("Scan", "SCAN GAME", 16, 158, 230, 38)
-local copyButton = button("CopyLog", "COPY LOG", 264, 158, 230, 38)
-local detailButton = button("Diagnostics", "COPY TARGET DIAGNOSTICS", 16, 205, 478, 38)
-local autoPlotLabel = make("TextLabel", panel, {
-    Name = "AutoPlotStatus", Position = UDim2.fromOffset(16, 250),
-    Size = UDim2.fromOffset(478, 38),
-    BackgroundColor3 = palette.panel,
-    BorderSizePixel = 0,
+local farmCycleButton = button("FarmCycle", "AUTO FARM CYCLE: OFF", 16, 103, 478, 43)
+farmCycleButton.TextSize = 14
+make("TextLabel", panel, {
+    Name = "IntervalTitle", Position = UDim2.fromOffset(16, 152),
+    Size = UDim2.fromOffset(478, 23), BackgroundTransparency = 1,
     Font = Enum.Font.GothamSemibold, TextSize = 12,
-    TextXAlignment = Enum.TextXAlignment.Center,
-    TextColor3 = palette.subtle,
-    Text = "PLOT: AUTO DETECT  |  WALK: AUTO WITH COLLECT",
+    TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = palette.subtle,
+    Text = "COLLECT EVERY (MINUTES)  |  1-180",
+})
+local minuteMinusButton = button("MinuteMinus", "- 1", 16, 178, 65, 38)
+local intervalInput = make("TextBox", panel, {
+    Name = "IntervalMinutes", Position = UDim2.fromOffset(89, 178),
+    Size = UDim2.fromOffset(330, 38), BackgroundColor3 = palette.panel,
+    BorderSizePixel = 0, Text = "5", ClearTextOnFocus = false,
+    Font = Enum.Font.GothamBold, TextSize = 17, TextColor3 = palette.text,
+    PlaceholderText = "Minutes (1-180)",
+})
+make("UICorner", intervalInput, { CornerRadius = UDim.new(0, 7) })
+local minutePlusButton = button("MinutePlus", "+ 1", 427, 178, 67, 38)
+local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 230, 230, 40)
+local equipButton = button("AutoEquip", "AUTO EQUIP BEST: OFF", 264, 230, 230, 40)
+local copyButton = button("CopyLog", "COPY LOG", 16, 282, 230, 40)
+local sellDiagnosticsButton = button("SellDiagnostics", "COPY SELL ROUTE", 264, 282, 230, 40)
+local autoPlotLabel = make("TextLabel", panel, {
+    Name = "AutoPlotStatus", Position = UDim2.fromOffset(16, 334),
+    Size = UDim2.fromOffset(478, 41), BackgroundColor3 = palette.panel,
+    BorderSizePixel = 0, Font = Enum.Font.GothamSemibold, TextSize = 12,
+    TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = palette.subtle,
+    Text = "PLOT: AUTO DETECT  |  COLLECT TIMER: OFF",
 })
 make("UICorner", autoPlotLabel, { CornerRadius = UDim.new(0, 7) })
-local equipButton = button("AutoEquip", "AUTO EQUIP BEST: OFF", 16, 298, 230, 38)
-local upgradeButton = button("AutoUpgrade", "AUTO UPGRADE STATS: OFF", 264, 298, 230, 38)
-local sellButton = button("AutoSell", "AUTO SELL ORES: OFF", 16, 345, 230, 38)
-local manualWatchButton = button("ManualWatch", "WATCH MANUAL TAKE ALL: OFF", 264, 345, 230, 38)
-manualWatchButton.TextSize = 11
-local actionDiagnosticsButton = button("ActionDiagnostics", "COPY EQUIP / UPGRADE TARGETS", 16, 393, 230, 38)
-actionDiagnosticsButton.TextSize = 11
-local sellDiagnosticsButton = button("SellDiagnostics", "COPY SELL ROUTE", 264, 393, 230, 38)
 local statusLabel = make("TextLabel", panel, {
-    Name = "Status", Position = UDim2.fromOffset(17, 437),
-    Size = UDim2.fromOffset(478, 65),
+    Name = "Status", Position = UDim2.fromOffset(17, 385),
+    Size = UDim2.fromOffset(478, 78),
     BackgroundTransparency = 1, Font = Enum.Font.Code, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.accent, Text = "Discovering...",
 })
 make("TextLabel", panel, {
-    Name = "LogTitle", Position = UDim2.fromOffset(16, 507),
+    Name = "LogTitle", Position = UDim2.fromOffset(16, 476),
     Size = UDim2.fromOffset(478, 20),
     BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 13,
     TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = palette.text,
-    Text = "LOG / DIAGNOSTICS",
+    Text = "ACTIVITY / LOG",
 })
 local logFrame = make("Frame", panel, {
-    Name = "LogPanel", Position = UDim2.fromOffset(16, 531),
-    Size = UDim2.fromOffset(478, 101), BackgroundColor3 = palette.panel,
+    Name = "LogPanel", Position = UDim2.fromOffset(16, 500),
+    Size = UDim2.fromOffset(478, 102), BackgroundColor3 = palette.panel,
     BorderSizePixel = 0,
 })
 make("UICorner", logFrame, { CornerRadius = UDim.new(0, 6) })
@@ -399,6 +417,24 @@ controller.logLabel = make("TextLabel", logFrame, {
     TextXAlignment = Enum.TextXAlignment.Left,
     TextYAlignment = Enum.TextYAlignment.Top, Text = "Ready",
 })
+
+-- Legacy test/diagnostic actions stay in the controller for compatibility,
+-- but are not part of the streamlined visible UI.
+local legacyPanel = make("Frame", panel, {
+    Name = "LegacyHiddenControls", Visible = false,
+    BackgroundTransparency = 1, Size = UDim2.fromOffset(1,1),
+})
+local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 0, 0, 1, 1)
+local sellButton = button("AutoSell", "AUTO SELL ORES: OFF", 0, 0, 1, 1)
+local scanButton = button("Scan", "SCAN GAME", 0, 0, 1, 1)
+local detailButton = button("Diagnostics", "COPY TARGET DIAGNOSTICS", 0, 0, 1, 1)
+local upgradeButton = button("AutoUpgrade", "AUTO UPGRADE STATS: OFF", 0, 0, 1, 1)
+local manualWatchButton = button("ManualWatch", "WATCH MANUAL TAKE ALL: OFF", 0, 0, 1, 1)
+local actionDiagnosticsButton = button("ActionDiagnostics", "COPY EQUIP / UPGRADE TARGETS", 0, 0, 1, 1)
+for _,legacy in ipairs({collectButton, sellButton, scanButton, detailButton,
+    upgradeButton, manualWatchButton, actionDiagnosticsButton}) do
+    legacy.Parent = legacyPanel
+end
 
 local dragging, dragOrigin, panelOrigin
 connect(header.InputBegan, function(input)
@@ -1710,6 +1746,15 @@ local function finishVerifiedBaseReturn(distance,now)
     controller.sell=false
     controller.sellPhase="RETURNED_BASE"
     controller.sellPhaseAt=now
+    if controller.cycleEnabled and controller.cyclePhase=="SELLING" then
+        controller.cyclePhase="WAITING"
+        controller.cycleLastReturnAt=now
+        if controller.cycleNextAt<=0 then
+            controller.cycleNextAt=now+controller.cycleMinutes*60
+        end
+        writeLog(("AUTO FARM: Returned to Base; next Collect in %.0fs"):format(
+            math.max(0,controller.cycleNextAt-now)))
+    end
     controller.sellStage=("Returned near %s Chest (%.1f studs); Auto Collect %s"):format(
         tostring(controller.selectedPlot),distance,controller.collect and "can resume" or "is OFF")
     writeLog("SHOP SELL: "..controller.sellStage..
@@ -2336,7 +2381,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.21 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.22 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -2496,13 +2541,23 @@ end
 
 local function sellRouteDiagnosticReport()
     local lines={
-        "MY ANIME MINE V0.21 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.22 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
         "PlaceId="..tostring(game.PlaceId)..
             " | autoSell="..tostring(controller.sell)..
             " | autoCollect="..tostring(controller.collect)..
             " | plot="..tostring(controller.selectedPlot),
         "Phase="..tostring(controller.sellPhase)..
             " | Stage="..tostring(controller.sellStage),
+        "Auto Farm timer="..tostring(controller.cycleEnabled)..
+            " | collectEveryMinutes="..tostring(controller.cycleMinutes)..
+            " | cyclePhase="..tostring(controller.cyclePhase)..
+            " | cycleNumber="..tostring(controller.cycleRun)..
+            " | lastTakeAllAt="..tostring(controller.cycleCollectionAt)..
+            " | nextCollectAt="..tostring(controller.cycleNextAt)..
+            " | secondsUntilNext="..tostring(math.max(0,math.ceil(
+                controller.cycleNextAt-os.clock())))..
+            " | lastReturnAt="..tostring(controller.cycleLastReturnAt)..
+            " | cycleError="..tostring(controller.cycleLastError),
         "Warp button clicks="..controller.sellWarpAttempts..
             " | Shops destination clicks="..controller.sellShopsAttempts..
             " | walk commands="..controller.sellWalkAttempts..
@@ -2595,14 +2650,14 @@ local function sellRouteDiagnosticReport()
             end
         end
     end
-    lines[#lines+1]="NOTE: after Sell, toggle Base/Shops and verify distance to original Plot Chest before resuming Collect. Sale/money and Plot ownership NOT verified."
+    lines[#lines+1]="NOTE: Timed mode: ONE Take All -> Shops Sell -> Base verification -> wait specified minutes. Sale/credit and Plot ownership NOT verified."
     return table.concat(lines,"\n")
 end
 
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.21 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.22 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
@@ -2705,12 +2760,22 @@ end
 
 local function refreshStatus()
     if not controller.running then return end
+    local timerInfo = controller.cyclePhase
+    if controller.cycleEnabled and controller.cyclePhase=="WAITING" then
+        local remaining=math.max(0,math.ceil(controller.cycleNextAt-os.clock()))
+        timerInfo=("NEXT %02d:%02d"):format(math.floor(remaining/60),remaining%60)
+    end
+    farmCycleButton.Text = "AUTO FARM: " .. (controller.cycleEnabled
+        and (controller.cyclePhase=="PAUSED" and "PAUSED" or "ON / "..timerInfo)
+        or "OFF")
+    farmCycleButton.BackgroundColor3 = controller.cycleEnabled
+        and palette.accent or palette.button
     mineButton.Text = "AUTO MINE (CLICK): " .. (controller.mine and "ON" or "OFF")
     collectButton.Text = "AUTO COLLECT: " .. (controller.collect and "ON" or "OFF")
     mineButton.BackgroundColor3 = controller.mine and palette.accent or palette.button
     collectButton.BackgroundColor3 = controller.collect and palette.accent or palette.button
-    autoPlotLabel.Text = "PLOT AUTO: " .. tostring(controller.selectedPlot or "SEARCHING") ..
-        "  |  WALK AUTO: " .. (controller.walkToChest and "ON" or "OFF")
+    autoPlotLabel.Text = "PLOT: " .. tostring(controller.selectedPlot or "SEARCHING") ..
+        ("  |  EVERY %d MIN  |  %s"):format(controller.cycleMinutes,timerInfo)
     manualWatchButton.Text = "WATCH TAKE ALL: " .. (controller.watchManual and "ON" or "OFF")
     local sellIndicator = controller.sellPhase == "RETURNED_BASE" and "RETURNED"
         or not controller.sell and "OFF"
@@ -2725,13 +2790,11 @@ local function refreshStatus()
     upgradeButton.Text = "AUTO UPGRADE STATS: " .. (controller.upgrade and "DIAG ONLY" or "OFF")
     equipButton.BackgroundColor3 = controller.equip and palette.accent or palette.button
     upgradeButton.BackgroundColor3 = controller.upgrade and palette.accent or palette.button
-    statusLabel.Text = ("Rock %d | Chest %d | TakeAll %d | Collect calls %d/%d\nSell: %s | Equip: %s | Upgrade: %s\nCollect: %s"):format(
-        #controller.detectors, #controller.prompts, #controller.takeAllButtons,
-        controller.collectActions, controller.takeAllActions,
-        tostring(controller.sellStage):sub(1, 37),
-        tostring(controller.equipStage):sub(1, 22),
-        tostring(controller.upgradeStage):sub(1, 22),
-        tostring(controller.collectionStage):sub(1, 67))
+    statusLabel.Text = ("Cycle #%d | %s | Take All %d | Sell clicks %d\nCollect: %s\nSell/Base: %s"):format(
+        controller.cycleRun,tostring(controller.cyclePhase),
+        controller.takeAllActions,controller.sellCallsOK,
+        tostring(controller.collectionStage):sub(1,75),
+        tostring(controller.sellStage):sub(1,75))
 end
 
 connect(mineButton.Activated, function()
@@ -2802,71 +2865,82 @@ connect(actionDiagnosticsButton.Activated, function()
         writeLog("Clipboard unavailable; Equip/Upgrade targets printed to console")
     end
 end)
-connect(sellButton.Activated, function()
-    controller.sell = not controller.sell
+-- Single entry point for both manual sell tests and the timed farm.
+-- The scheduled path may already have completed the current Chest Take All,
+-- so it must not reopen that Chest during handoff.
+local function armSellRoute(now,source)
+    if controller.sell then return false end
+    controller.sell = true
     sellStopWalk()
-    if controller.sell then
-        controller.sellSent = false
-        controller.sellAttempts = 0
-        controller.sellCallsOK = 0
-        controller.sellWarpAttempts = 0
-        controller.sellChestHandoffAttempts = 0
-        controller.sellChestHandoffState = "STARTING"
-        controller.sellHandoffNeedsCollect = controller.collect
-        controller.sellHandoffBaselineTakeAllActions = controller.takeAllActions
-        controller.sellHandoffTakeAllObserved = false
-        controller.sellHandoffRecentTakeAll = false
-        controller.sellHandoffRecentAge = nil
-        controller.sellHandoffChestEmpty = false
-        controller.sellShopsAttempts = 0
-        controller.sellVendorAttempts = 0
-        controller.sellVendorTouched = false
-        controller.sellWalkAttempts = 0
-        controller.sellVendorPath = "none"
-        controller.sellActionTarget = "none"
-        controller.sellSelectAllTarget = "none"
-        controller.sellSelectAllAttempts = 0
-        controller.sellSelectAllCallsOK = 0
-        controller.sellSelectAllSent = false
-        controller.sellSelectAllAt = 0
-        controller.sellSelectAllEvent = "none"
-        controller.sellActionKind = nil
-        controller.sellReturnTarget = "none"
-        controller.sellReturnOriginalPlot = controller.selectedPlot
-        controller.sellReturnOrigin = nil
-        controller.sellReturnStartDistance = nil
-        controller.sellReturnCurrentDistance = nil
-        controller.sellReturnClicks = 0
-        controller.sellReturnChoiceClicks = 0
-        controller.sellReturnVerified = false
-        controller.sellReturnStatus = "NOT_STARTED"
-        controller.sellReturnCloseSent = false
-        controller.sellWarpOrigin = nil
-        local now = os.clock()
-        controller.sellStartedAt = now
-        if controller.sellHandoffNeedsCollect then
-            local reused,age=recentTakeAllForHandoff(now)
-            controller.sellHandoffRecentTakeAll=reused
-            controller.sellHandoffRecentAge=age
-            if reused then
-                controller.sellHandoffTakeAllObserved=true
-                writeLog(("SHOP SELL: Reusing recent Take All sent %.1fs ago on %s; inventory still unverified"):format(
-                    age,tostring(controller.selectedPlot)))
-            end
+    controller.sellRouteSource = source or "MANUAL"
+    controller.sellSent = false
+    controller.sellAttempts = 0
+    controller.sellCallsOK = 0
+    controller.sellWarpAttempts = 0
+    controller.sellChestHandoffAttempts = 0
+    controller.sellChestHandoffState = "STARTING"
+    controller.sellHandoffNeedsCollect = controller.collect
+    controller.sellHandoffBaselineTakeAllActions = controller.takeAllActions
+    controller.sellHandoffTakeAllObserved = false
+    controller.sellHandoffRecentTakeAll = false
+    controller.sellHandoffRecentAge = nil
+    controller.sellHandoffChestEmpty = false
+    controller.sellShopsAttempts = 0
+    controller.sellVendorAttempts = 0
+    controller.sellVendorTouched = false
+    controller.sellWalkAttempts = 0
+    controller.sellVendorPath = "none"
+    controller.sellActionTarget = "none"
+    controller.sellSelectAllTarget = "none"
+    controller.sellSelectAllAttempts = 0
+    controller.sellSelectAllCallsOK = 0
+    controller.sellSelectAllSent = false
+    controller.sellSelectAllAt = 0
+    controller.sellSelectAllEvent = "none"
+    controller.sellActionKind = nil
+    controller.sellReturnTarget = "none"
+    controller.sellReturnOriginalPlot = controller.selectedPlot
+    controller.sellReturnOrigin = nil
+    controller.sellReturnStartDistance = nil
+    controller.sellReturnCurrentDistance = nil
+    controller.sellReturnClicks = 0
+    controller.sellReturnChoiceClicks = 0
+    controller.sellReturnVerified = false
+    controller.sellReturnStatus = "NOT_STARTED"
+    controller.sellReturnCloseSent = false
+    controller.sellWarpOrigin = nil
+    controller.sellStartedAt = now
+    if controller.sellHandoffNeedsCollect then
+        local reused,age=recentTakeAllForHandoff(now)
+        controller.sellHandoffRecentTakeAll=reused
+        controller.sellHandoffRecentAge=age
+        if reused then
+            controller.sellHandoffTakeAllObserved=true
+            writeLog(("SHOP SELL: Reusing recent Take All sent %.1fs ago on %s; inventory still unverified"):format(
+                age,tostring(controller.selectedPlot)))
         end
-        sellSetPhase("CHEST_HANDOFF",
-            controller.sellHandoffRecentTakeAll and
-                "Recent Take All dispatched; waiting for Chest and pending feedback to clear"
-            or controller.sellHandoffNeedsCollect and
-                "Finishing Auto Collect before Shops"
-            or "Checking Chest before Shops",now)
-        -- Do not cancel an already-running Chest walk. It must finish Take All
-        -- (or time out safely) before Shops takes ownership of movement.
-        if not controller.sellHandoffNeedsCollect then stopWalking() end
-    else
-        controller.sellPhase = "OFF"
-        controller.sellStage = "OFF (shop route stopped)"
+    end
+    sellSetPhase("CHEST_HANDOFF",
+        controller.sellHandoffRecentTakeAll and
+            "Recent Take All dispatched; waiting for Chest and pending feedback to clear"
+        or controller.sellHandoffNeedsCollect and
+            "Finishing Auto Collect before Shops"
+        or "Checking Chest before Shops",now)
+    -- Do not cancel an already-running Chest walk. It must finish Take All
+    -- (or time out safely) before Shops takes ownership of movement.
+    if not controller.sellHandoffNeedsCollect then stopWalking() end
+    return true
+end
+
+connect(sellButton.Activated, function()
+    if controller.sell then
+        controller.sell=false
+        sellStopWalk()
+        controller.sellPhase="OFF"
+        controller.sellStage="OFF (shop route stopped)"
         writeLog("SHOP SELL OFF. Auto Collect can resume after returning to your Plot.")
+    else
+        armSellRoute(os.clock(),"MANUAL")
     end
     refreshStatus()
 end)
@@ -2963,14 +3037,192 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.21 started | Shops sell and verified return Base | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.22 started | scheduled Collect-Sell-Base loop | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
 autoSelectPlot()
 refreshStatus()
 
+-- Timed mode performs ONE collection attempt per interval. Collection
+-- remains paused during selling and while waiting for the next due time.
+local function collectIntervalSeconds()
+    return controller.cycleMinutes*60
+end
+
+local function updateCycleMinutes(value)
+    local number=tonumber(value)
+    if not number or number~=number then return false end
+    local minutes=math.floor(number+0.5)
+    if minutes<1 then minutes=1 elseif minutes>180 then minutes=180 end
+    controller.cycleMinutes=minutes
+    intervalInput.Text=tostring(minutes)
+    if controller.cycleEnabled and controller.cycleCollectionAt>0 then
+        controller.cycleNextAt=controller.cycleCollectionAt+collectIntervalSeconds()
+    end
+    writeLog("AUTO FARM interval set to "..minutes.." minute(s)")
+    refreshStatus()
+    return true
+end
+
+local function beginCollectionCycle(now)
+    if controller.sell then
+        controller.cyclePhase="PAUSED"
+        controller.cycleLastError="Cannot collect during active seller route"
+        writeLog("AUTO FARM paused: "..controller.cycleLastError)
+        return false
+    end
+    if not controller.selectedPlot then autoSelectPlot() end
+    controller.cycleRun=controller.cycleRun+1
+    controller.cyclePhase="COLLECTING"
+    controller.cycleStartedAt=now
+    controller.cycleCollectionBaseline=controller.takeAllActions
+    controller.cycleLastError="none"
+    controller.collect=true
+    controller.walkToChest=true
+    controller.takeAllReopenAt=math.min(controller.takeAllReopenAt or 0,now)
+    writeLog(("AUTO FARM cycle %d: collecting from %s (every %d min)"):format(
+        controller.cycleRun,tostring(controller.selectedPlot),controller.cycleMinutes))
+    return true
+end
+
+local function updateFarmCycle(now)
+    if not controller.cycleEnabled then return end
+    if controller.cyclePhase=="COLLECTING" then
+        if controller.takeAllActions>controller.cycleCollectionBaseline then
+            local sinceDispatch=now-(controller.takeAllLastDispatchAt>0
+                and controller.takeAllLastDispatchAt or controller.cycleStartedAt)
+            if sinceDispatch>25 then
+                controller.cyclePhase="PAUSED"
+                controller.cycleLastError="Take All feedback/Chest close exceeded 25s"
+                controller.collect=false
+                stopWalking()
+                writeLog("AUTO FARM paused: "..controller.cycleLastError)
+                return
+            end
+            if controller.takeAllPending then
+                controller.cycleLastMessage="Take All dispatched; awaiting Chest close"
+                return
+            end
+            local _,chestOpen=gameChestFrame()
+            if chestOpen then
+                controller.cycleLastMessage="Waiting for Chest to close"
+                return
+            end
+            if type(controller.takeAllOutcome)~="string" or
+                not controller.takeAllOutcome:find("CHEST_CLOSED_AFTER_TAKE_ALL",1,true) then
+                if now-controller.cycleStartedAt>100 then
+                    controller.cyclePhase="PAUSED"
+                    controller.cycleLastError="Take All result not confirmed by Chest UI"
+                    controller.collect=false
+                    writeLog("AUTO FARM paused: "..controller.cycleLastError)
+                end
+                return
+            end
+            controller.cycleCollectionAt=controller.takeAllLastDispatchAt>0
+                and controller.takeAllLastDispatchAt or now
+            controller.cycleNextAt=controller.cycleCollectionAt+collectIntervalSeconds()
+            controller.cyclePhase="SELLING"
+            controller.cycleLastMessage="Collect sent; go sell at Shops"
+            if not armSellRoute(now,"TIMED_FARM") then
+                controller.cyclePhase="PAUSED"
+                controller.cycleLastError="Another sale is already active"
+                writeLog("AUTO FARM paused: "..controller.cycleLastError)
+                return
+            end
+            -- This cycle already dispatched and settled its Take All. Reusing
+            -- it prevents the older manual handoff from reopening Chest.
+            controller.sellHandoffTakeAllObserved=true
+            controller.sellHandoffNeedsCollect=true
+            writeLog(("AUTO FARM cycle %d: Take All UI settled; Shops sale armed; next due in %ds"):format(
+                controller.cycleRun,math.max(0,math.floor(controller.cycleNextAt-now))))
+            return
+        end
+        if now-controller.cycleStartedAt>90 then
+            controller.cyclePhase="PAUSED"
+            controller.cycleLastError="No Chest Take All within 90s"
+            controller.collect=false
+            stopWalking()
+            writeLog("AUTO FARM paused: "..controller.cycleLastError)
+        end
+    elseif controller.cyclePhase=="SELLING" then
+        if controller.sellPhase=="PAUSED" then
+            controller.cyclePhase="PAUSED"
+            controller.cycleLastError=tostring(controller.sellStage)
+            writeLog("AUTO FARM paused at Shops/Base: "..controller.cycleLastError)
+        elseif controller.sellPhase=="RETURNED_BASE" and controller.sellReturnVerified then
+            controller.cyclePhase="WAITING"
+            controller.cycleLastReturnAt=now
+            if controller.cycleNextAt<=0 then
+                controller.cycleNextAt=now+collectIntervalSeconds()
+            end
+        end
+    elseif controller.cyclePhase=="WAITING" then
+        if not controller.sell and now>=controller.cycleNextAt
+            and now-controller.cycleLastReturnAt>=1.5 then
+            beginCollectionCycle(now)
+        end
+    end
+end
+
+local function setFarmCycleEnabled(enabled,now)
+    if enabled==controller.cycleEnabled then return end
+    if enabled and controller.sell then
+        writeLog("AUTO FARM: stop the current Sell route before enabling timed farming.")
+        return
+    end
+    if enabled and (type(fireproximityprompt)~="function"
+        or type(firesignal)~="function") then
+        writeLog("AUTO FARM unavailable: executor requires fireproximityprompt and firesignal")
+        return
+    end
+    controller.cycleEnabled=enabled
+    if enabled then
+        controller.cycleRun=0
+        controller.cycleNextAt=0
+        controller.cycleCollectionAt=0
+        controller.cycleLastReturnAt=0
+        scan(false)
+        autoSelectPlot()
+        beginCollectionCycle(now)
+    else
+        controller.cyclePhase="OFF"
+        controller.cycleNextAt=0
+        controller.cycleLastError="none"
+        controller.collect=false
+        controller.walkToChest=false
+        if controller.sell then
+            controller.sell=false
+            controller.sellPhase="OFF"
+            controller.sellStage="Stopped by Auto Farm OFF"
+        end
+        sellStopWalk()
+        stopWalking()
+        writeLog("AUTO FARM stopped; all scheduled collection and sale commands OFF")
+    end
+    refreshStatus()
+end
+
+connect(farmCycleButton.Activated,function()
+    setFarmCycleEnabled(not controller.cycleEnabled,os.clock())
+end)
+connect(minuteMinusButton.Activated,function()
+    updateCycleMinutes(controller.cycleMinutes-1)
+end)
+connect(minutePlusButton.Activated,function()
+    updateCycleMinutes(controller.cycleMinutes+1)
+end)
+connect(intervalInput.FocusLost,function()
+    if not updateCycleMinutes(intervalInput.Text) then
+        intervalInput.Text=tostring(controller.cycleMinutes)
+        writeLog("Invalid collection interval; enter 1-180 whole minutes")
+    end
+end)
+
 local function canCollectDuringSell()
+    if controller.cycleEnabled and controller.cyclePhase~="COLLECTING" then
+        return false
+    end
     return not controller.sell
         or (controller.sellPhase == "CHEST_HANDOFF"
             and controller.sellHandoffNeedsCollect
@@ -3074,6 +3326,7 @@ task.spawn(function()
         if controller.watchManual then monitorManualButton() end
         if controller.manualPending then settleManualTakeAll(now) end
         if controller.takeAllPending then settleTakeAll(now) end
+        updateFarmCycle(now)
         if not controller.selectedPlot and now - lastAutoPlotCheck >= 5 then
             lastAutoPlotCheck = now
             autoSelectPlot()

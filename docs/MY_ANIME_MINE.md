@@ -41,7 +41,7 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 - **Improvement:** retain the latest successful **GUI Take All dispatch** time and selected Plot. When Auto Sell is enabled with Auto Collect ON, a dispatch **within the last eight seconds on the same Plot** can satisfy the collection handoff **only if that dispatch is still pending or its last Chest UI outcome was `CHEST_CLOSED_AFTER_TAKE_ALL` and the Chest is closed**. If pending, continue waiting for feedback and closure. This avoids an unnecessary repeat Chest reopening after a just-completed Take All.
 - **Safety:** stale dispatches, another Plot's dispatch, absent/invalid feedback, or no Collect toggle do not grant reuse. The existing bounded wait for a new Take All remains; the known Shops → SellStand → Select All → Sell actions and Auto Collect worker are not changed. A closed Chest following a GUI dispatch still does **not** verify an inventory increase or money credit.
 - **Diagnostics:** `COPY SELL ROUTE` includes `reusedRecentTakeAll`, the measured `recentTakeAllAge`, and `lastTakeAllPlot` as well as baseline/current dispatch counters.
-- **Still unavailable:** there is no authoritative server cash/inventory schema or known verified Plot ownership API. V0.21 attempts Base/Shops return and resumes Auto Collect only after proximity verification, but requires an actual Potassium playtest. Sell remains one-shot, not a recurring trigger.
+- **Still unavailable:** there is no authoritative server cash/inventory schema or known verified Plot ownership API. V0.22 offers automatic recurring scheduled collection and sale, conditional on a verified Base return; it requires an actual Potassium playtest.
 
 ## V0.21: Return to Base after selling
 
@@ -50,6 +50,14 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 - On a **verified near-base return**, Auto Sell ends automatically (its UI shows **RETURNED**) and previously enabled Auto Collect can resume its existing Chest navigation/collection. Auto Sell is still **one-shot**: it does not autonomously start another sale after the player returns. Auto Mine and the legacy Equip/Upgrade diagnostic logic remain unchanged.
 - If the native Base/Shops button is hidden, the SellFrame remains open, there are multiple Base destinations, or the character does not approach the original MinePlot within the bounded wait, the sell route pauses and **Auto Collect stays paused**. Use `COPY SELL ROUTE` for the observed original Plot, Base button target, return click count, current distance, and verification status.
 - **Important limitation:** selectedPlot was originally chosen by proximity; the game has not exposed a verified ownership field in current logs. Nearness to that Plot is a safety check, **not proof that the Plot belongs to the user**. Likewise, sending a GUI Sell click is **not proof of cash credit or successful ore sale**.
+
+## V0.22: Timed automatic collection, sale and return
+
+- **Clean main UI:** the visible hub now has **AUTO FARM CYCLE**, an editable **collection interval in minutes** (1–180; default 5), adjacent **−1 / +1** buttons, optional **Auto Mine / Auto Equip Best**, **COPY LOG**, and **COPY SELL ROUTE**. The old manual Take All watcher, diagnostic-only Auto Upgrade, separate Auto Collect/Sell switches, manual scan and duplicate target diagnostics are hidden from the main view for clarity. Their backend test hooks remain to preserve historical regression tests; they are not user-facing.
+- **Cycle semantics:** turning on **AUTO FARM CYCLE** begins **one Chest collection immediately**. The scheduler waits until a Take All GUI event is dispatched, Chest closes and its pending UI feedback settles, then automatically runs the already-tested **Shops → GingerbreadKeeper SellPrompt → Select All → Sell → Base/Shops return** route. It accepts only the same MinePlot's proximity-verified return before releasing further collection.
+- **Time between collections:** the next Chest collection is due **N minutes after the prior Take All dispatch**, not N minutes after the sale or return. After returning to Base, Auto Collect remains paused until the due time; if selling/return took longer than the interval, the next collection begins as soon as the Base return is verified. The interval can be changed during WAITING and the countdown is recalculated from the preceding collection.
+- **Boundaries:** no Take All in 90 seconds, Take All feedback/Chest close pending longer than 25 seconds, or a paused seller/return phase leads to **PAUSED**. The user's Auto Farm ON/OFF switch cancels the schedule, sale route and Chest movement. The script does not continue collecting from Shops or a mismatched Plot. No fabricated server remotes or CFrame teleports are added.
+- **Limitations:** the clicked Take All / Select All / Sell buttons and return proximity are checked as client UI and position evidence. There is still **no authoritative confirmation that ore reached inventory, that Sell credited money, or that the nearest Plot is owned by the user**. The game's GUI may change and live Potassium testing is needed to verify the entire repeating loop.
 
 ## Features and limitations
 
@@ -103,6 +111,13 @@ For reporting a failure: enter the actual game, select SCAN GAME, select COPY LO
 ## Regression checklist
 
 - [ ] UI loads when entering My Anime Mine.
+- [ ] Main UI shows AUTO FARM CYCLE, minutes textbox and -1/+1 buttons, Mine/Equip and Log/Sell Route; test-only/diagnostic-only buttons are hidden.
+- [ ] Interval accepts a valid 1-180 minute value, clamps out-of-range values and rejects non-numbers; edits while WAITING reschedule from last Take All.
+- [ ] Turning cycle ON starts one Chest collection immediately; pending or unclosed Chest cannot initiate Shops sale.
+- [ ] After Take All UI closes, scheduler arms exactly one Shops Sell route, without reopening Chest for a second Take All.
+- [ ] On verified return to the same MinePlot, Auto Collect stays paused until the timer expires; then the next collection starts.
+- [ ] When seller/return is PAUSED, no further timed Chest interactions happen; OFF cancels the whole cycle.
+- [ ] COPY SELL ROUTE shows cycle number, minutes, phase, next due timestamp and seconds remaining.
 - [ ] After Select All and Sell are dispatched, route enters RETURN_BASE_OPEN then RETURN_BASE_WAIT instead of stopping at DONE.
 - [ ] Return uses the native Base/Shops TeleportButton once; if a visible Base menu destination exists, choose it only if unambiguous.
 - [ ] Only return within 75 studs of the same selected Plot Chest can transition to RETURNED_BASE, turn Sell OFF, and release Auto Collect.
