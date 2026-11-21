@@ -1,4 +1,4 @@
-# My Anime Mine (v0.23)
+# My Anime Mine (v0.24)
 
 - Roblox game: https://www.roblox.com/games/79389059854988/My-Anime-Mine
 - PlaceId: `79389059854988`
@@ -50,6 +50,14 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 - On a **verified near-base return**, Auto Sell ends automatically (its UI shows **RETURNED**) and previously enabled Auto Collect can resume its existing Chest navigation/collection. Auto Sell is still **one-shot**: it does not autonomously start another sale after the player returns. Auto Mine and the legacy Equip/Upgrade diagnostic logic remain unchanged.
 - If the native Base/Shops button is hidden, the SellFrame remains open, there are multiple Base destinations, or the character does not approach the original MinePlot within the bounded wait, the sell route pauses and **Auto Collect stays paused**. Use `COPY SELL ROUTE` for the observed original Plot, Base button target, return click count, current distance, and verification status.
 - **Important limitation:** selectedPlot was originally chosen by proximity; the game has not exposed a verified ownership field in current logs. Nearness to that Plot is a safety check, **not proof that the Plot belongs to the user**. Likewise, sending a GUI Sell click is **not proof of cash credit or successful ore sale**.
+
+## V0.24: Diagnose and recognize the game's actual miner Stats GUI
+
+- **Live runtime evidence (14:08:33–14:09:05):** the Auto Upgrade switch was ON, but its scanner reported `NO_LOADED_STATS_BUTTON_WITH_LISTENER (frames=0)`. No native Stats upgrade GUI click was sent and no miner stat level-up was observed. The game requires the player to **select a deployed miner and open its Stats tab** to expose the relevant panel. The prior headless scan recognized only a few exact frame names, which could also exclude a valid alternate name.
+- **Discovery enhancement:** recognize alternate names such as `CharacterStatsPanel`, `UnitStatsPanel`, and similarly named Stats containers **only inside known game-owned crew/character GUI contexts**, while continuing to require an explicit Damage/Speed/Mining Speed stat row, a real active native click listener, and existing premium/shop exclusions.
+- **Detailed read-only capture:** `COPY UPGRADE DIAGNOSTICS` now lists possible Stats panel paths and visibility; potential upgrade buttons' labels, stat contexts, premium status and listener counts. It also displays actionable instructions when the game hasn't loaded any Stats panel. This scanner never opens panels, buys currency or calls undocumented remotes.
+- **How to verify:** in the Roblox game, click a **character already placed on your own MinePlot**, select **Stats** in the character window, keep the Stats panel open, then press the hub's **COPY UPGRADE DIAGNOSTICS** and share the complete report. If the button remains unrecognized, that report provides the concrete hierarchy needed for a targeted follow-up patch rather than guessing a purchase.
+- **Unchanged safety/limits:** without a sufficiently identified GUI button, Auto Upgrade does **not** purchase anything. Auto Farm Sell/Return and premium safeguards are unchanged; simulated Lua tests do not demonstrate a successful real-game level increase.
 
 ## V0.23: Safe native Stats Auto Upgrade
 
@@ -122,6 +130,10 @@ For reporting a failure: enter the actual game, select SCAN GAME, select COPY LO
 ## Regression checklist
 
 - [ ] UI loads when entering My Anime Mine.
+- [ ] Auto Upgrade logs that no loaded Stats button was found and instructs opening a deployed miner's Stats tab; it sends no upgrade action.
+- [ ] COPY UPGRADE DIAGNOSTICS captures alternate Stats panel names and button paths, labels, premium flags and native listener counts.
+- [ ] Alternate crew Stats frame names such as CharacterStatsPanel are accepted only when explicit stat row and active listener pass all safety filters.
+- [ ] Unknown remotes, Roblox premium buttons, game shop/research windows remain excluded.
 - [ ] AUTO UPGRADE STATS and COPY UPGRADE DIAGNOSTICS are visible and OFF is the initial state.
 - [ ] The headless upgrade worker calls only a loaded Stats row with exactly one verified native callback; Robux and duplicate panels never trigger clicks.
 - [ ] UI row changes are reported as unverified evidence; an unchanged row pauses instead of endlessly repeating purchases.

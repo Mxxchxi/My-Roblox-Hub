@@ -173,7 +173,7 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, safeHeadlessStatsUpgrades=safeHeadlessStatsUpgrades, headlessUpgradeStep=headlessUpgradeStep, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, baseReturnDestination=baseReturnDestination, returnBaseStep=returnBaseStep, returnBaseDistance=returnBaseDistance, finishVerifiedBaseReturn=finishVerifiedBaseReturn, sellStopWalk=sellStopWalk, recentTakeAllForHandoff=recentTakeAllForHandoff, canCollectDuringSell=canCollectDuringSell, gameChestFrame=gameChestFrame, teleportLauncherCandidates=teleportLauncherCandidates, validatedSellStandSession=validatedSellStandSession, isExactSellStandButton=isExactSellStandButton, sellSelectAllButton=sellSelectAllButton, knownOreSellFrame=knownOreSellFrame, armSellRoute=armSellRoute, updateCycleMinutes=updateCycleMinutes, beginCollectionCycle=beginCollectionCycle, updateFarmCycle=updateFarmCycle, setFarmCycleEnabled=setFarmCycleEnabled}"
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, safeHeadlessStatsUpgrades=safeHeadlessStatsUpgrades, upgradeUiDiscoveryReport=upgradeUiDiscoveryReport, headlessUpgradeStep=headlessUpgradeStep, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, baseReturnDestination=baseReturnDestination, returnBaseStep=returnBaseStep, returnBaseDistance=returnBaseDistance, finishVerifiedBaseReturn=finishVerifiedBaseReturn, sellStopWalk=sellStopWalk, recentTakeAllForHandoff=recentTakeAllForHandoff, canCollectDuringSell=canCollectDuringSell, gameChestFrame=gameChestFrame, teleportLauncherCandidates=teleportLauncherCandidates, validatedSellStandSession=validatedSellStandSession, isExactSellStandButton=isExactSellStandButton, sellSelectAllButton=sellSelectAllButton, knownOreSellFrame=knownOreSellFrame, armSellRoute=armSellRoute, updateCycleMinutes=updateCycleMinutes, beginCollectionCycle=beginCollectionCycle, updateFarmCycle=updateFarmCycle, setFarmCycleEnabled=setFarmCycleEnabled}"
     local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
     return assert(env.MyAnimeMineHubController), helpers
 end
@@ -618,6 +618,61 @@ statsPanel.Visible=true
 damageLabel.Text="Damage"
 env.upgradeTest.speedLabel.Parent=nil
 
+-- V0.24: the live game may not load a StatsFrame until a deployed miner
+-- is selected. A read-only report must explain that, not guess purchases.
+statsGui.Parent=nil
+env.upgradeDiscoveryTest={}
+env.upgradeDiscoveryTest.actions,env.upgradeDiscoveryTest.status,
+    env.upgradeDiscoveryTest.frameCount=helpers.safeHeadlessStatsUpgrades()
+assert(env.upgradeDiscoveryTest.status=="NO_LOADED_STATS_BUTTON_WITH_LISTENER"
+       and env.upgradeDiscoveryTest.frameCount==0,
+       "without an opened miner Stats UI, do not send an upgrade")
+env.upgradeDiscoveryTest.report=helpers.upgradeUiDiscoveryReport()
+assert(env.upgradeDiscoveryTest.report:find("Stats UI discovery:",1,true)
+       and env.upgradeDiscoveryTest.report:find("Click a deployed miner",1,true),
+       "missing Stats UI must produce actionable read-only diagnostics")
+-- The real game's panel name is not yet verified. Simulate a legitimate
+-- alternate name under a known character UI namespace and require the
+-- same native listener, stat row and premium restrictions.
+env.upgradeDiscoveryTest.gui=instance("ScreenGui")
+env.upgradeDiscoveryTest.gui.Name="CharacterGui"
+env.upgradeDiscoveryTest.gui.Parent=playerGui
+env.upgradeDiscoveryTest.panel=instance("Frame")
+env.upgradeDiscoveryTest.panel.Name="CharacterStatsPanel"
+env.upgradeDiscoveryTest.panel.Parent=env.upgradeDiscoveryTest.gui
+env.upgradeDiscoveryTest.row=instance("Frame")
+env.upgradeDiscoveryTest.row.Name="DamageRow"
+env.upgradeDiscoveryTest.row.Parent=env.upgradeDiscoveryTest.panel
+env.upgradeDiscoveryTest.label=instance("TextLabel")
+env.upgradeDiscoveryTest.label.Name="StatName"
+env.upgradeDiscoveryTest.label.Text="Damage"
+env.upgradeDiscoveryTest.label.Parent=env.upgradeDiscoveryTest.row
+env.upgradeDiscoveryTest.button=instance("TextButton")
+env.upgradeDiscoveryTest.button.Name="UpgradeButton"
+env.upgradeDiscoveryTest.button.Text="Upgrade"
+env.upgradeDiscoveryTest.button.Parent=env.upgradeDiscoveryTest.row
+env.upgradeDiscoveryTest.button.MouseButton1Click:Connect(function()
+    env.upgradeDiscoveryTest.label.Text="Damage Lv. 2"
+end)
+env.upgradeDiscoveryTest.actions,env.upgradeDiscoveryTest.status,
+    env.upgradeDiscoveryTest.frameCount=helpers.safeHeadlessStatsUpgrades()
+assert(env.upgradeDiscoveryTest.status=="READY"
+       and #env.upgradeDiscoveryTest.actions==1
+       and env.upgradeDiscoveryTest.actions[1].button==env.upgradeDiscoveryTest.button
+       and env.upgradeDiscoveryTest.frameCount==1,
+       "safe native GUI upgrades should support alternate named crew Stats panels")
+env.upgradeDiscoveryTest.report=helpers.upgradeUiDiscoveryReport()
+assert(env.upgradeDiscoveryTest.report:find("CharacterStatsPanel",1,true)
+       and env.upgradeDiscoveryTest.report:find("PossibleUpgrade",1,true)
+       and env.upgradeDiscoveryTest.report:find("mouse=1",1,true),
+       "manual Stats capture report must include real GUI path and listener counts")
+findButton("ActionDiagnostics").Activated:Fire()
+assert(clipboard:find("Stats UI discovery:",1,true)
+       and clipboard:find("CharacterStatsPanel",1,true),
+       "COPY UPGRADE DIAGNOSTICS must include dynamic Stats panels")
+env.upgradeDiscoveryTest.gui.Parent=nil
+statsGui.Parent=playerGui
+
 -- User-confirmed route: click Teleport > Shops, walk to Sell Items,
 -- then an explicit ore-only Sell action. Do not use the paid Chest Auto Sell.
 local teleport = instance("TextButton")
@@ -746,7 +801,7 @@ assert(clipboard:find("SHOP SELL ROUTE",1,true)
        and clipboard:find("Ore-only Sell candidates=",1,true),
        "sale route must expose warp/vendor/sell diagnostics")
 findButton("SellDiagnostics").Activated:Fire()
-assert(clipboard:find("V0.23 SHOP SELL ROUTE",1,true)
+assert(clipboard:find("V0.24 SHOP SELL ROUTE",1,true)
        and clipboard:find("Shops destination candidates=",1,true)
        and clipboard:find("Explicit ore-only Sell controls=",1,true)
        and clipboard:find("Select All clicks=1/1",1,true)
@@ -1443,4 +1498,4 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.23 native Stats GUI Auto Upgrade, no premium, no Shop overlap, timed farm and seller regressions")
+print("PASS My Anime Mine V0.24 alternate Stats panel discovery, no-panel diagnostics, premium exclusions and timed sell regressions")
