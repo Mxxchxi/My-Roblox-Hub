@@ -44,6 +44,8 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn("updateFarmCycle(now)", SOURCE)
         self.assertIn("Take All feedback/Chest close exceeded 25s", SOURCE)
         self.assertIn("LegacyHiddenControls", SOURCE)
+        self.assertIn('button("AutoUpgrade", "AUTO UPGRADE STATS: OFF"', SOURCE)
+        self.assertIn('button("ActionDiagnostics", "COPY UPGRADE DIAGNOSTICS"', SOURCE)
         self.assertIn("secondsUntilNext=", SOURCE)
         self.assertIn("local function shopSellStep(now)", SOURCE)
         self.assertIn("local function baseReturnDestination()", SOURCE)
@@ -118,7 +120,12 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn("local function hiddenEquipBestCandidates()", SOURCE)
         self.assertIn("local function tryHeadlessEquip()", SOURCE)
         self.assertIn("local function headlessRemotes()", SOURCE)
-        self.assertIn("HEADLESS_PROTOCOL_UNKNOWN", SOURCE)
+        self.assertIn("local function safeHeadlessStatsUpgrades()", SOURCE)
+        self.assertIn("local function headlessUpgradeStep(now)", SOURCE)
+        self.assertIn("NO_LOADED_STATS_BUTTON_WITH_LISTENER", SOURCE)
+        self.assertIn("MULTIPLE_CREW_STATS_PANELS", SOURCE)
+        self.assertIn("NATIVE HEADLESS STATS UPGRADE status=", SOURCE)
+        self.assertIn("controller.upgradePending", SOURCE)
         self.assertIn("HEADLESS REMOTE DISCOVERY", SOURCE)
         self.assertIn("controller.headlessEquipStatus", SOURCE)
         self.assertIn("upgrade = false", SOURCE)
@@ -140,7 +147,7 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn("and not controller.upgradeWalkTarget", SOURCE)
         self.assertIn("local function actionDiagnosticReport()", SOURCE)
         self.assertIn("local function resolveUpgradeFeedback(now)", SOURCE)
-        self.assertIn("controller.upgradeNoChange >= 3", SOURCE)
+        self.assertIn("controller.upgradeNoChange >= 1", SOURCE)
         self.assertIn("function controller:Stop()", SOURCE)
         self.assertIn('connect(close.Activated, function() controller:Stop() end)', SOURCE)
         self.assertIn("previous:Stop()", SOURCE)
@@ -171,7 +178,7 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn("takeAllAttempts >= 6", SOURCE)
 
     def test_diagnostic_and_conservative_interactions(self):
-        for token in ("SCAN GAME", "COPY LOG", "COPY TARGET DIAGNOSTICS", "PLOT:", "EVERY %d MIN", "WATCH MANUAL TAKE ALL", "AUTO EQUIP BEST", "AUTO UPGRADE STATS", "AUTO SELL ORES", "COPY SELL ROUTE", "COPY EQUIP / UPGRADE TARGETS", "MouseButton1Click", "getconnections", "ClickDetector", "ProximityPrompt",
+        for token in ("SCAN GAME", "COPY LOG", "COPY TARGET DIAGNOSTICS", "PLOT:", "EVERY %d MIN", "WATCH MANUAL TAKE ALL", "AUTO EQUIP BEST", "AUTO UPGRADE STATS", "AUTO SELL ORES", "COPY SELL ROUTE", "COPY UPGRADE DIAGNOSTICS", "MouseButton1Click", "getconnections", "ClickDetector", "ProximityPrompt",
                       "fireclickdetector", "fireproximityprompt", "firesignal", "setclipboard"):
             self.assertIn(token, SOURCE)
         self.assertIn("minePlotName(prompt) == controller.selectedPlot", SOURCE)
