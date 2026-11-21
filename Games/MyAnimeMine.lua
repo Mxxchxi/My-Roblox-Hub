@@ -1514,6 +1514,126 @@ local function tryHeadlessEquip()
     return false, "NO_ACTIVE_EQUIP_BEST_LISTENER"
 end
 
+-- Upgrade ONLY preloaded native crew Stats controls. They may be hidden,
+-- like the confirmed Equip Best callback, but must have an actual listener.
+-- Never open an Inventory, click a Holder, buy a Game Pass, or invent a remote.
+local function safeHeadlessStatsUpgrades()
+    local candidates,frames={},{}
+    local frameCount=0
+    for _,button in ipairs(playerGui:GetDescendants()) do
+        if gameGuiButton(button) and isUpgradeAction(button) then
+            local frame=nil
+            local cursor=button.Parent
+            while cursor and cursor~=playerGui do
+                if cursor.Name=="StatsFrame" or cursor.Name=="UnitUpgradeFrame"
+                    or cursor.Name=="CharacterUpgradeFrame" then
+                    frame=cursor
+                    break
+                end
+                cursor=cursor.Parent
+            end
+            if frame and (gameGuiAncestorNamed(button,"UnitGui")
+                or gameGuiAncestorNamed(button,"MineGui")
+                or gameGuiAncestorNamed(button,"CrewGui")) then
+                if not frames[frame] then
+                    frames[frame]=true
+                    frameCount=frameCount+1
+                end
+                local stat=statContext(button)
+                if stat=="Damage" or stat=="Speed" or stat=="Mining Speed" then
+                    local connections=takeAllConnections(button)
+                    local event=nil
+                    if type(connections.MouseButton1Click)=="number"
+                        and connections.MouseButton1Click>0 then
+                        event="MouseButton1Click"
+                    elseif type(connections.Activated)=="number"
+                        and connections.Activated>0 then
+                        event="Activated"
+                    end
+                    if event then candidates[#candidates+1]={
+                        button=button,stat=stat,event=event,frame=frame,
+                        path=describe(button),
+                    } end
+                end
+            end
+        end
+    end
+    if frameCount>1 then return {}, "MULTIPLE_CREW_STATS_PANELS",frameCount end
+    if #candidates==0 then
+        return {},"NO_LOADED_STATS_BUTTON_WITH_LISTENER",frameCount
+    end
+    -- Never guess between two potential purchases for the same stat.
+    local unique,byStat={},{}
+    for _,entry in ipairs(candidates) do
+        byStat[entry.stat]=(byStat[entry.stat] or 0)+1
+        unique[entry.stat]=entry
+    end
+    for _,count in pairs(byStat) do
+        if count~=1 then return {},"AMBIGUOUS_STAT_UPGRADE_BUTTON",frameCount end
+    end
+    local ordered={}
+    for _,stat in ipairs({"Damage","Speed","Mining Speed"}) do
+        if unique[stat] then ordered[#ordered+1]=unique[stat] end
+    end
+    return ordered,"READY",frameCount
+end
+
+local function headlessUpgradeStep(now)
+    if not controller.upgrade then return end
+    if controller.sell or controller.takeAllPending
+        or (controller.cycleEnabled and controller.cyclePhase~="WAITING") then
+        controller.upgradeStage="WAITING_FOR_SAFE_BASE_IDLE"
+        return
+    end
+    if type(firesignal)~="function" or type(getconnections)~="function" then
+        controller.upgradeStage="NO_SAFE_GUI_LISTENERS"
+        return
+    end
+    if not controller.selectedPlot then
+        controller.upgradeStage="WAITING_FOR_SELECTED_PLOT"
+        return
+    end
+    local chest,distance=selectedChest()
+    if not chest or type(distance)~="number" or distance>75 then
+        controller.upgradeStage="WAITING_FOR_BASE_NEAR_SELECTED_PLOT"
+        return
+    end
+    if controller.upgradePending then return end
+    local choices,status,frames=safeHeadlessStatsUpgrades()
+    controller.upgradeSafeCandidates=#choices
+    if status~="READY" then
+        controller.upgradeStage=status.." (frames="..tostring(frames)..")"
+        controller.headlessUpgradeStatus=controller.upgradeStage
+        return
+    end
+    local chosen=choices[(controller.upgradeIndex-1)%#choices+1]
+    controller.upgradeIndex=controller.upgradeIndex+1
+    -- The purchase is made through the game-native GUI listener. Never
+    -- dispatch twice while confirmation of the prior click is outstanding.
+    controller.upgradeAttempts=controller.upgradeAttempts+1
+    controller.upgradeLastTarget=chosen.path
+    controller.upgradeLastStat=chosen.stat
+    controller.upgradeLastEvent=chosen.event
+    local before=upgradeRowSnapshot(chosen.button)
+    local ok,err=pcall(firesignal,chosen.button[chosen.event])
+    if not ok then
+        controller.upgradeStage="GUI_SIGNAL_ERROR: "..tostring(err)
+        controller.headlessUpgradeStatus=controller.upgradeStage
+        controller.upgrade=false
+        writeLog("AUTO UPGRADE paused: "..controller.upgradeStage)
+        return
+    end
+    controller.upgradeActions=controller.upgradeActions+1
+    controller.upgradePending={
+        button=chosen.button,stat=chosen.stat,event=chosen.event,
+        before=before,started=now,
+    }
+    controller.upgradeStage="STATS_SIGNAL_SENT "..chosen.stat.."; VERIFYING"
+    controller.headlessUpgradeStatus=controller.upgradeStage
+    writeLog("AUTO UPGRADE: "..chosen.stat.." game GUI listener sent ("..
+        chosen.event.."); result NOT verified | "..chosen.path)
+end
+
 -- Auto Sell is confined to the game's ChestFrame and never touches
 -- inventory cards, pets, character sales, or global shop purchases.
 -- It only attempts a preloaded native Chest Auto Sell control, whether
@@ -2366,17 +2486,19 @@ local function resolveUpgradeFeedback(now)
     local current = upgradeRowSnapshot(pending.button)
     if current ~= pending.before then
         controller.upgradeNoChange = 0
-        controller.upgradeStage = "Stats UI changed (upgrade not verified)"
+        controller.upgradeLastConfirmedUI="STATS_ROW_CHANGED_UNVERIFIED"
+        controller.upgradeStage = "Stats row changed; purchase STILL UNVERIFIED"
     else
         controller.upgradeNoChange = controller.upgradeNoChange + 1
-        controller.upgradeStage = "Stats UI unchanged " .. controller.upgradeNoChange .. "/3"
+        controller.upgradeLastConfirmedUI="STATS_ROW_UNCHANGED"
+        controller.upgradeStage = "Stats UI unchanged; no repeated purchase"
     end
     writeLog("Upgrade feedback: " .. controller.upgradeStage ..
         " | " .. pending.stat .. " | event=" .. pending.event)
-    if controller.upgradeNoChange >= 3 then
+    if controller.upgradeNoChange >= 1 then
         controller.upgrade = false
-        controller.upgradeStage = "PAUSED: no Stats UI change after 3 attempts"
-        writeLog("AUTO UPGRADE paused; use COPY EQUIP / UPGRADE TARGETS.")
+        controller.upgradeStage = "PAUSED: no Stats UI change; no repeated purchase"
+        writeLog("AUTO UPGRADE paused; press COPY UPGRADE DIAGNOSTICS.")
     end
 end
 
@@ -3311,20 +3433,22 @@ task.spawn(function()
             end
         end
 
-        -- Live captures did not identify the server's upgrade Remote/method
-        -- or arguments. Do NOT click a Holder, Stats button or BuyButton,
-        -- as each may open a window or spend the wrong currency.
+        -- Use only real loaded crew Stats buttons with active native
+        -- callbacks. Unknown RemoteEvents and premium/gamepass controls
+        -- remain read-only. During Farm, upgrade only while idle at Base.
+        if controller.upgradePending then resolveUpgradeFeedback(now) end
         if controller.upgrade and not controller.watchManual
-            and now - lastUpgradeTick >= 8 then
-            lastUpgradeTick = now
-            local remotes = headlessRemotes()
-            controller.headlessUpgradeStatus =
-                "HEADLESS_PROTOCOL_UNKNOWN (" .. #remotes .. " remote candidates)"
-            controller.upgradeStage = controller.headlessUpgradeStatus
-            if controller.lastHeadlessUpgradeMessage ~= controller.upgradeStage then
-                controller.lastHeadlessUpgradeMessage = controller.upgradeStage
-                writeLog("HEADLESS UPGRADE: " .. controller.upgradeStage ..
-                    " | no game UI opened; no unverified remote invoked")
+            and now-lastUpgradeTick>=8 then
+            lastUpgradeTick=now
+            headlessUpgradeStep(now)
+            if controller.headlessUpgradeStatus~=controller.lastHeadlessUpgradeMessage then
+                controller.lastHeadlessUpgradeMessage=controller.headlessUpgradeStatus
+                if controller.upgradeStage:find("NO_LOADED",1,true)
+                    or controller.upgradeStage:find("MULTIPLE_",1,true)
+                    or controller.upgradeStage:find("AMBIGUOUS_",1,true) then
+                    writeLog("AUTO UPGRADE: "..controller.upgradeStage..
+                        " | use COPY UPGRADE DIAGNOSTICS; no purchase dispatched")
+                end
             end
         end
         if controller.watchManual then monitorManualButton() end
