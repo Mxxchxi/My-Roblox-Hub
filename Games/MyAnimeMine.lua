@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.22 (timed Collect > Sell > Base farming cycle)
+-- My Roblox Hub | My Anime Mine v0.23 (safe native Stats Auto Upgrade)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -118,6 +118,12 @@ local controller = {
     upgradeActions = 0,
     upgradeNoChange = 0,
     upgradeIndex = 1,
+    upgradeLastConfirmedUI = "NOT_TESTED",
+    upgradeLastTarget = "none",
+    upgradeLastStat = "none",
+    upgradeLastEvent = "none",
+    upgradeSafeCandidates = 0,
+    upgradeBlockedReason = "none",
     upgradeStage = "OFF",
     upgradePending = nil,
     holderAttempts = 0,
@@ -279,8 +285,8 @@ local gui = make("ScreenGui", playerGui, {
 })
 controller.gui = gui
 local panel = make("Frame", gui, {
-    Name = "Main", Size = UDim2.fromOffset(510, 614),
-    Position = UDim2.new(0.5, -255, 0.5, -307),
+    Name = "Main", Size = UDim2.fromOffset(510, 712),
+    Position = UDim2.new(0.5, -255, 0.5, -356),
     BackgroundColor3 = palette.background, BorderSizePixel = 0,
 })
 make("UICorner", panel, { CornerRadius = UDim.new(0, 12) })
@@ -356,7 +362,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.22 | Collect once, sell ores, return to Base, then wait for next timed collection.",
+    Text = "V0.23 | Timed farm + safe Stats upgrades (normal game currency only).",
 })
 local farmCycleButton = button("FarmCycle", "AUTO FARM CYCLE: OFF", 16, 103, 478, 43)
 farmCycleButton.TextSize = 14
@@ -379,10 +385,12 @@ make("UICorner", intervalInput, { CornerRadius = UDim.new(0, 7) })
 local minutePlusButton = button("MinutePlus", "+ 1", 427, 178, 67, 38)
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 230, 230, 40)
 local equipButton = button("AutoEquip", "AUTO EQUIP BEST: OFF", 264, 230, 230, 40)
-local copyButton = button("CopyLog", "COPY LOG", 16, 282, 230, 40)
-local sellDiagnosticsButton = button("SellDiagnostics", "COPY SELL ROUTE", 264, 282, 230, 40)
+local upgradeButton = button("AutoUpgrade", "AUTO UPGRADE STATS: OFF", 16, 280, 478, 40)
+local copyButton = button("CopyLog", "COPY LOG", 16, 331, 230, 39)
+local sellDiagnosticsButton = button("SellDiagnostics", "COPY SELL ROUTE", 264, 331, 230, 39)
+local actionDiagnosticsButton = button("ActionDiagnostics", "COPY UPGRADE DIAGNOSTICS", 16, 379, 478, 39)
 local autoPlotLabel = make("TextLabel", panel, {
-    Name = "AutoPlotStatus", Position = UDim2.fromOffset(16, 334),
+    Name = "AutoPlotStatus", Position = UDim2.fromOffset(16, 429),
     Size = UDim2.fromOffset(478, 41), BackgroundColor3 = palette.panel,
     BorderSizePixel = 0, Font = Enum.Font.GothamSemibold, TextSize = 12,
     TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = palette.subtle,
@@ -390,22 +398,22 @@ local autoPlotLabel = make("TextLabel", panel, {
 })
 make("UICorner", autoPlotLabel, { CornerRadius = UDim.new(0, 7) })
 local statusLabel = make("TextLabel", panel, {
-    Name = "Status", Position = UDim2.fromOffset(17, 385),
-    Size = UDim2.fromOffset(478, 78),
+    Name = "Status", Position = UDim2.fromOffset(17, 477),
+    Size = UDim2.fromOffset(478, 75),
     BackgroundTransparency = 1, Font = Enum.Font.Code, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.accent, Text = "Discovering...",
 })
 make("TextLabel", panel, {
-    Name = "LogTitle", Position = UDim2.fromOffset(16, 476),
+    Name = "LogTitle", Position = UDim2.fromOffset(16, 563),
     Size = UDim2.fromOffset(478, 20),
     BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 13,
     TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = palette.text,
     Text = "ACTIVITY / LOG",
 })
 local logFrame = make("Frame", panel, {
-    Name = "LogPanel", Position = UDim2.fromOffset(16, 500),
-    Size = UDim2.fromOffset(478, 102), BackgroundColor3 = palette.panel,
+    Name = "LogPanel", Position = UDim2.fromOffset(16, 587),
+    Size = UDim2.fromOffset(478, 111), BackgroundColor3 = palette.panel,
     BorderSizePixel = 0,
 })
 make("UICorner", logFrame, { CornerRadius = UDim.new(0, 6) })
@@ -417,9 +425,7 @@ controller.logLabel = make("TextLabel", logFrame, {
     TextXAlignment = Enum.TextXAlignment.Left,
     TextYAlignment = Enum.TextYAlignment.Top, Text = "Ready",
 })
-
--- Legacy test/diagnostic actions stay in the controller for compatibility,
--- but are not part of the streamlined visible UI.
+-- Keep only backwards-compatible diagnostic/test controls hidden.
 local legacyPanel = make("Frame", panel, {
     Name = "LegacyHiddenControls", Visible = false,
     BackgroundTransparency = 1, Size = UDim2.fromOffset(1,1),
@@ -428,13 +434,9 @@ local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 0, 0, 1, 1)
 local sellButton = button("AutoSell", "AUTO SELL ORES: OFF", 0, 0, 1, 1)
 local scanButton = button("Scan", "SCAN GAME", 0, 0, 1, 1)
 local detailButton = button("Diagnostics", "COPY TARGET DIAGNOSTICS", 0, 0, 1, 1)
-local upgradeButton = button("AutoUpgrade", "AUTO UPGRADE STATS: OFF", 0, 0, 1, 1)
 local manualWatchButton = button("ManualWatch", "WATCH MANUAL TAKE ALL: OFF", 0, 0, 1, 1)
-local actionDiagnosticsButton = button("ActionDiagnostics", "COPY EQUIP / UPGRADE TARGETS", 0, 0, 1, 1)
-for _,legacy in ipairs({collectButton, sellButton, scanButton, detailButton,
-    upgradeButton, manualWatchButton, actionDiagnosticsButton}) do
-    legacy.Parent = legacyPanel
-end
+for _,legacy in ipairs({collectButton,sellButton,scanButton,detailButton,
+    manualWatchButton}) do legacy.Parent=legacyPanel end
 
 local dragging, dragOrigin, panelOrigin
 connect(header.InputBegan, function(input)
@@ -2381,7 +2383,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.22 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.23 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -2541,7 +2543,7 @@ end
 
 local function sellRouteDiagnosticReport()
     local lines={
-        "MY ANIME MINE V0.22 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.23 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
         "PlaceId="..tostring(game.PlaceId)..
             " | autoSell="..tostring(controller.sell)..
             " | autoCollect="..tostring(controller.collect)..
@@ -2657,7 +2659,7 @@ end
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.22 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.23 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
@@ -2787,14 +2789,16 @@ local function refreshStatus()
     sellButton.BackgroundColor3 = controller.sell and palette.accent or palette.button
     manualWatchButton.BackgroundColor3 = controller.watchManual and palette.accent or palette.button
     equipButton.Text = "AUTO EQUIP BEST: " .. (controller.equip and "ON" or "OFF")
-    upgradeButton.Text = "AUTO UPGRADE STATS: " .. (controller.upgrade and "DIAG ONLY" or "OFF")
+    upgradeButton.Text = "AUTO UPGRADE STATS: " ..
+        (controller.upgrade and (controller.upgradeStage:find("PAUSED",1,true) and "PAUSED" or "ON") or "OFF")
     equipButton.BackgroundColor3 = controller.equip and palette.accent or palette.button
     upgradeButton.BackgroundColor3 = controller.upgrade and palette.accent or palette.button
-    statusLabel.Text = ("Cycle #%d | %s | Take All %d | Sell clicks %d\nCollect: %s\nSell/Base: %s"):format(
+    statusLabel.Text = ("Cycle #%d | %s | Take All %d | Sell clicks %d\nCollect: %s\nSell/Base: %s\nUpgrade: %s"):format(
         controller.cycleRun,tostring(controller.cyclePhase),
         controller.takeAllActions,controller.sellCallsOK,
-        tostring(controller.collectionStage):sub(1,75),
-        tostring(controller.sellStage):sub(1,75))
+        tostring(controller.collectionStage):sub(1,69),
+        tostring(controller.sellStage):sub(1,69),
+        tostring(controller.upgradeStage):sub(1,69))
 end
 
 connect(mineButton.Activated, function()
@@ -3037,7 +3041,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.22 started | scheduled Collect-Sell-Base loop | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.23 started | timed Farm and safe Stats Upgrade | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
