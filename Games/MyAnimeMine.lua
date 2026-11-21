@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.23 (safe native Stats Auto Upgrade)
+-- My Roblox Hub | My Anime Mine v0.24 (native Stats UI discovery with manual panel capture)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -362,7 +362,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.23 | Timed farm + safe Stats upgrades (normal game currency only).",
+    Text = "V0.24 | Auto Upgrade: open a placed miner > Stats if panel is not loaded.",
 })
 local farmCycleButton = button("FarmCycle", "AUTO FARM CYCLE: OFF", 16, 103, 478, 43)
 farmCycleButton.TextSize = 14
@@ -1517,24 +1517,33 @@ end
 -- Upgrade ONLY preloaded native crew Stats controls. They may be hidden,
 -- like the confirmed Equip Best callback, but must have an actual listener.
 -- Never open an Inventory, click a Holder, buy a Game Pass, or invent a remote.
+-- The game may use a custom Stats container name. A candidate still
+-- needs a known crew GUI, explicit stat row, active listener and no
+-- Robux/Shop context before any click is possible.
+local function crewStatsContainer(button)
+    local cursor=button.Parent
+    while cursor and cursor~=playerGui do
+        local name=normalizeLabel(cursor.Name)
+        if name:find("stats",1,true) or name=="unitupgradeframe"
+            or name=="characterupgradeframe" or name=="holderupgradeframe" then
+            return cursor
+        end
+        cursor=cursor.Parent
+    end
+    return nil
+end
+
 local function safeHeadlessStatsUpgrades()
     local candidates,frames={},{}
     local frameCount=0
     for _,button in ipairs(playerGui:GetDescendants()) do
         if gameGuiButton(button) and isUpgradeAction(button) then
-            local frame=nil
-            local cursor=button.Parent
-            while cursor and cursor~=playerGui do
-                if cursor.Name=="StatsFrame" or cursor.Name=="UnitUpgradeFrame"
-                    or cursor.Name=="CharacterUpgradeFrame" then
-                    frame=cursor
-                    break
-                end
-                cursor=cursor.Parent
-            end
+            local frame=crewStatsContainer(button)
             if frame and (gameGuiAncestorNamed(button,"UnitGui")
                 or gameGuiAncestorNamed(button,"MineGui")
-                or gameGuiAncestorNamed(button,"CrewGui")) then
+                or gameGuiAncestorNamed(button,"CrewGui")
+                or gameGuiAncestorNamed(button,"CharacterGui")
+                or gameGuiAncestorNamed(button,"MinerGui")) then
                 if not frames[frame] then
                     frames[frame]=true
                     frameCount=frameCount+1
@@ -1578,6 +1587,69 @@ local function safeHeadlessStatsUpgrades()
     return ordered,"READY",frameCount
 end
 
+-- Read-only diagnostic: capture the game's Stats panels AFTER a miner
+-- has been selected. Never opens panels or dispatches any purchase here.
+local function upgradeUiDiscoveryReport()
+    local lines={}
+    local panels,actions={},{}
+    local statsPanelCount,relatedButtons,clickListeners=0,0,0
+    for _,node in ipairs(playerGui:GetDescendants()) do
+        if not node:IsDescendantOf(gui) then
+            local name=normalizeLabel(node.Name)
+            local isPanel=node:IsA("Frame") or node:IsA("ScrollingFrame")
+            local likelyPanel=name:find("stats",1,true)~=nil
+                or name:find("unitupgrade",1,true)~=nil
+                or name:find("characterupgrade",1,true)~=nil
+            if isPanel and likelyPanel then
+                statsPanelCount=statsPanelCount+1
+                if #panels<30 then
+                    panels[#panels+1]=describe(node).." | visible="..tostring(isVisible(node))
+                end
+            end
+            if gameGuiButton(node) then
+                local frame=crewStatsContainer(node)
+                local stat=statContext(node)
+                local label=normalizeLabel(actionLabel(node))
+                if frame or (stat and (label:find("upgrade",1,true)
+                    or label:find("buy",1,true) or label:find("levelup",1,true))) then
+                    relatedButtons=relatedButtons+1
+                    local listeners=takeAllConnections(node)
+                    local mouse,active=listeners.MouseButton1Click,listeners.Activated
+                    if (type(mouse)=="number" and mouse>0)
+                        or (type(active)=="number" and active>0) then
+                        clickListeners=clickListeners+1
+                    end
+                    if #actions<70 then
+                        actions[#actions+1]=describe(node)..
+                            " | label="..actionLabel(node):sub(1,90)..
+                            " | stat="..tostring(stat)..
+                            " | statsParent="..(frame and describe(frame) or "NONE")..
+                            " | visible="..tostring(isVisible(node))..
+                            " | eligible="..tostring(isUpgradeAction(node))..
+                            " | premium="..tostring(isPremiumAction(node))..
+                            " | mouse="..tostring(mouse)..
+                            " activated="..tostring(active)
+                    end
+                end
+            end
+        end
+    end
+    lines[#lines+1]=("Stats UI discovery: panels=%d | potentialButtons=%d | activeListeners=%d"):format(
+        statsPanelCount,relatedButtons,clickListeners)
+    if statsPanelCount==0 then
+        lines[#lines+1]="NEXT STEP: Click a deployed miner at your Base, open Stats, then COPY UPGRADE DIAGNOSTICS again."
+    elseif clickListeners==0 then
+        lines[#lines+1]="NEXT STEP: Stats panel seen, but no native GUI callback found. Inspect possible actions below."
+    end
+    for i,line in ipairs(panels) do
+        lines[#lines+1]="StatsPanel["..i.."]: "..line
+    end
+    for i,line in ipairs(actions) do
+        lines[#lines+1]="PossibleUpgrade["..i.."]: "..line
+    end
+    return table.concat(lines,"\n")
+end
+
 local function headlessUpgradeStep(now)
     if not controller.upgrade then return end
     if controller.sell or controller.takeAllPending
@@ -1603,6 +1675,10 @@ local function headlessUpgradeStep(now)
     controller.upgradeSafeCandidates=#choices
     if status~="READY" then
         controller.upgradeStage=status.." (frames="..tostring(frames)..")"
+        if status=="NO_LOADED_STATS_BUTTON_WITH_LISTENER" then
+            controller.upgradeStage=controller.upgradeStage..
+                "; open a deployed miner's Stats tab then COPY UPGRADE DIAGNOSTICS"
+        end
         controller.headlessUpgradeStatus=controller.upgradeStage
         return
     end
@@ -2505,7 +2581,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.23 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.24 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -2554,6 +2630,7 @@ local function actionDiagnosticReport()
     addButtons("Upgrade", controller.upgradeCandidates)
     addButtons("GameUpgradesMenu (read-only, not auto-purchased)", controller.guiUpgradeMenu)
     local upgradeSafe,upgradeSafeStatus,upgradeFrames=safeHeadlessStatsUpgrades()
+    lines[#lines+1]=upgradeUiDiscoveryReport()
     lines[#lines+1] = "NATIVE HEADLESS STATS UPGRADE status="..upgradeSafeStatus..
         " | frames="..tostring(upgradeFrames)..
         " | safeButtons="..#upgradeSafe..
@@ -2685,7 +2762,7 @@ end
 
 local function sellRouteDiagnosticReport()
     local lines={
-        "MY ANIME MINE V0.23 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.24 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
         "PlaceId="..tostring(game.PlaceId)..
             " | autoSell="..tostring(controller.sell)..
             " | autoCollect="..tostring(controller.collect)..
@@ -2801,7 +2878,7 @@ end
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.23 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.24 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
@@ -3189,7 +3266,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.23 started | timed Farm and safe Stats Upgrade | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.24 started | Stats GUI discovery without guessed remotes | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
