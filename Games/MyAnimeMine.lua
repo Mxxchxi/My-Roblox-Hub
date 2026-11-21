@@ -3518,12 +3518,12 @@ task.spawn(function()
             and now - lastEquipTick >= 6 then
             lastEquipTick = now
             if now - (controller.lastEquipAt or 0) >= 20 then
+                controller.equipAttempts = controller.equipAttempts + 1
                 local ok, status = tryHeadlessEquip()
                 controller.headlessEquipStatus = status
                 controller.equipStage = status
                 controller.lastEquipAt = now
                 if ok then
-                    controller.equipAttempts = controller.equipAttempts + 1
                     controller.equipActions = controller.equipActions + 1
                     writeLog("HEADLESS EQUIP: " .. status ..
                         " | target=" .. controller.headlessEquipTarget ..
