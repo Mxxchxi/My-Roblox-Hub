@@ -2931,8 +2931,9 @@ local function refreshStatus()
     sellButton.BackgroundColor3 = controller.sell and palette.accent or palette.button
     manualWatchButton.BackgroundColor3 = controller.watchManual and palette.accent or palette.button
     equipButton.Text = "AUTO EQUIP BEST: " .. (controller.equip and "ON" or "OFF")
-    upgradeButton.Text = "AUTO UPGRADE STATS: " ..
-        (controller.upgrade and (controller.upgradeStage:find("PAUSED",1,true) and "PAUSED" or "ON") or "OFF")
+    local upgradeLabel = controller.upgradeStage:find("PAUSED",1,true) and "PAUSED"
+        or controller.upgrade and "ON" or "OFF"
+    upgradeButton.Text = "AUTO UPGRADE STATS: " .. upgradeLabel
     equipButton.BackgroundColor3 = controller.equip and palette.accent or palette.button
     upgradeButton.BackgroundColor3 = controller.upgrade and palette.accent or palette.button
     statusLabel.Text = ("Cycle #%d | %s | Take All %d | Sell clicks %d\nCollect: %s\nSell/Base: %s\nUpgrade: %s"):format(
