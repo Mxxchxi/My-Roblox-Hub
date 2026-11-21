@@ -28,6 +28,22 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn("local function nativeAutoSellState(button)", SOURCE)
         self.assertIn("local function setNativeAutoSell(desired)", SOURCE)
         self.assertIn("local function tryNativeAutoSell()", SOURCE)
+        self.assertIn("cycleEnabled = false", SOURCE)
+        self.assertIn("cycleMinutes = 5", SOURCE)
+        self.assertIn('button("FarmCycle", "AUTO FARM CYCLE: OFF"', SOURCE)
+        self.assertIn('Name = "IntervalMinutes"', SOURCE)
+        self.assertIn("connect(intervalInput.FocusLost,function()", SOURCE)
+        self.assertIn("local function beginCollectionCycle(now)", SOURCE)
+        self.assertIn("local function updateFarmCycle(now)", SOURCE)
+        self.assertIn("local function setFarmCycleEnabled(enabled,now)", SOURCE)
+        self.assertIn("local function armSellRoute(now,source)", SOURCE)
+        self.assertIn('controller.cyclePhase="WAITING"', SOURCE)
+        self.assertIn('controller.cyclePhase="SELLING"', SOURCE)
+        self.assertIn('controller.cyclePhase="COLLECTING"', SOURCE)
+        self.assertIn('controller.cyclePhase~="COLLECTING"', SOURCE)
+        self.assertIn("updateFarmCycle(now)", SOURCE)
+        self.assertIn("LegacyHiddenControls", SOURCE)
+        self.assertIn("secondsUntilNext=", SOURCE)
         self.assertIn("local function shopSellStep(now)", SOURCE)
         self.assertIn("local function baseReturnDestination()", SOURCE)
         self.assertIn("local function returnBaseDistance()", SOURCE)
@@ -154,7 +170,7 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn("takeAllAttempts >= 6", SOURCE)
 
     def test_diagnostic_and_conservative_interactions(self):
-        for token in ("SCAN GAME", "COPY LOG", "COPY TARGET DIAGNOSTICS", "PLOT AUTO:", "WALK AUTO:", "WATCH MANUAL TAKE ALL", "AUTO EQUIP BEST", "AUTO UPGRADE STATS", "AUTO SELL ORES", "COPY SELL ROUTE", "COPY EQUIP / UPGRADE TARGETS", "MouseButton1Click", "getconnections", "ClickDetector", "ProximityPrompt",
+        for token in ("SCAN GAME", "COPY LOG", "COPY TARGET DIAGNOSTICS", "PLOT:", "EVERY %d MIN", "WATCH MANUAL TAKE ALL", "AUTO EQUIP BEST", "AUTO UPGRADE STATS", "AUTO SELL ORES", "COPY SELL ROUTE", "COPY EQUIP / UPGRADE TARGETS", "MouseButton1Click", "getconnections", "ClickDetector", "ProximityPrompt",
                       "fireclickdetector", "fireproximityprompt", "firesignal", "setclipboard"):
             self.assertIn(token, SOURCE)
         self.assertIn("minePlotName(prompt) == controller.selectedPlot", SOURCE)
