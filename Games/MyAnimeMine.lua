@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.21 (return to selected Base after Sell)
+-- My Roblox Hub | My Anime Mine v0.22 (timed Collect > Sell > Base farming cycle)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -35,6 +35,17 @@ local controller = {
     running = true,
     mine = false,
     collect = false,
+    cycleEnabled = false,
+    cycleMinutes = 5,
+    cyclePhase = "OFF",
+    cycleRun = 0,
+    cycleCollectionBaseline = 0,
+    cycleCollectionAt = 0,
+    cycleStartedAt = 0,
+    cycleNextAt = 0,
+    cycleLastReturnAt = 0,
+    cycleLastError = "none",
+    cycleLastMessage = "",
     sell = false,
     sellStage = "OFF",
     sellPhase = "OFF",
@@ -268,8 +279,8 @@ local gui = make("ScreenGui", playerGui, {
 })
 controller.gui = gui
 local panel = make("Frame", gui, {
-    Name = "Main", Size = UDim2.fromOffset(510, 648),
-    Position = UDim2.new(0.5, -255, 0.5, -324),
+    Name = "Main", Size = UDim2.fromOffset(510, 614),
+    Position = UDim2.new(0.5, -255, 0.5, -307),
     BackgroundColor3 = palette.background, BorderSizePixel = 0,
 })
 make("UICorner", panel, { CornerRadius = UDim.new(0, 12) })
@@ -340,54 +351,61 @@ make("UICorner", close, { CornerRadius = UDim.new(0, 7) })
 connect(close.Activated, function() controller:Stop() end)
 
 make("TextLabel", panel, {
-    Name = "Description", Position = UDim2.fromOffset(16, 61),
-    Size = UDim2.fromOffset(480, 34),
+    Name = "Description", Position = UDim2.fromOffset(16, 58),
+    Size = UDim2.fromOffset(478, 36),
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.21 | Sell > return to selected Base > resume Auto Collect (when verified).",
+    Text = "V0.22 | Collect once, sell ores, return to Base, then wait for next timed collection.",
 })
-local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 104, 230, 41)
-local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 264, 104, 230, 41)
-local scanButton = button("Scan", "SCAN GAME", 16, 158, 230, 38)
-local copyButton = button("CopyLog", "COPY LOG", 264, 158, 230, 38)
-local detailButton = button("Diagnostics", "COPY TARGET DIAGNOSTICS", 16, 205, 478, 38)
-local autoPlotLabel = make("TextLabel", panel, {
-    Name = "AutoPlotStatus", Position = UDim2.fromOffset(16, 250),
-    Size = UDim2.fromOffset(478, 38),
-    BackgroundColor3 = palette.panel,
-    BorderSizePixel = 0,
+local farmCycleButton = button("FarmCycle", "AUTO FARM CYCLE: OFF", 16, 103, 478, 43)
+farmCycleButton.TextSize = 14
+make("TextLabel", panel, {
+    Name = "IntervalTitle", Position = UDim2.fromOffset(16, 152),
+    Size = UDim2.fromOffset(478, 23), BackgroundTransparency = 1,
     Font = Enum.Font.GothamSemibold, TextSize = 12,
-    TextXAlignment = Enum.TextXAlignment.Center,
-    TextColor3 = palette.subtle,
-    Text = "PLOT: AUTO DETECT  |  WALK: AUTO WITH COLLECT",
+    TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = palette.subtle,
+    Text = "COLLECT EVERY (MINUTES)  |  1-180",
+})
+local minuteMinusButton = button("MinuteMinus", "- 1", 16, 178, 65, 38)
+local intervalInput = make("TextBox", panel, {
+    Name = "IntervalMinutes", Position = UDim2.fromOffset(89, 178),
+    Size = UDim2.fromOffset(330, 38), BackgroundColor3 = palette.panel,
+    BorderSizePixel = 0, Text = "5", ClearTextOnFocus = false,
+    Font = Enum.Font.GothamBold, TextSize = 17, TextColor3 = palette.text,
+    PlaceholderText = "Minutes (1-180)",
+})
+make("UICorner", intervalInput, { CornerRadius = UDim.new(0, 7) })
+local minutePlusButton = button("MinutePlus", "+ 1", 427, 178, 67, 38)
+local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 230, 230, 40)
+local equipButton = button("AutoEquip", "AUTO EQUIP BEST: OFF", 264, 230, 230, 40)
+local copyButton = button("CopyLog", "COPY LOG", 16, 282, 230, 40)
+local sellDiagnosticsButton = button("SellDiagnostics", "COPY SELL ROUTE", 264, 282, 230, 40)
+local autoPlotLabel = make("TextLabel", panel, {
+    Name = "AutoPlotStatus", Position = UDim2.fromOffset(16, 334),
+    Size = UDim2.fromOffset(478, 41), BackgroundColor3 = palette.panel,
+    BorderSizePixel = 0, Font = Enum.Font.GothamSemibold, TextSize = 12,
+    TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = palette.subtle,
+    Text = "PLOT: AUTO DETECT  |  COLLECT TIMER: OFF",
 })
 make("UICorner", autoPlotLabel, { CornerRadius = UDim.new(0, 7) })
-local equipButton = button("AutoEquip", "AUTO EQUIP BEST: OFF", 16, 298, 230, 38)
-local upgradeButton = button("AutoUpgrade", "AUTO UPGRADE STATS: OFF", 264, 298, 230, 38)
-local sellButton = button("AutoSell", "AUTO SELL ORES: OFF", 16, 345, 230, 38)
-local manualWatchButton = button("ManualWatch", "WATCH MANUAL TAKE ALL: OFF", 264, 345, 230, 38)
-manualWatchButton.TextSize = 11
-local actionDiagnosticsButton = button("ActionDiagnostics", "COPY EQUIP / UPGRADE TARGETS", 16, 393, 230, 38)
-actionDiagnosticsButton.TextSize = 11
-local sellDiagnosticsButton = button("SellDiagnostics", "COPY SELL ROUTE", 264, 393, 230, 38)
 local statusLabel = make("TextLabel", panel, {
-    Name = "Status", Position = UDim2.fromOffset(17, 437),
-    Size = UDim2.fromOffset(478, 65),
+    Name = "Status", Position = UDim2.fromOffset(17, 385),
+    Size = UDim2.fromOffset(478, 78),
     BackgroundTransparency = 1, Font = Enum.Font.Code, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.accent, Text = "Discovering...",
 })
 make("TextLabel", panel, {
-    Name = "LogTitle", Position = UDim2.fromOffset(16, 507),
+    Name = "LogTitle", Position = UDim2.fromOffset(16, 476),
     Size = UDim2.fromOffset(478, 20),
     BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 13,
     TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = palette.text,
-    Text = "LOG / DIAGNOSTICS",
+    Text = "ACTIVITY / LOG",
 })
 local logFrame = make("Frame", panel, {
-    Name = "LogPanel", Position = UDim2.fromOffset(16, 531),
-    Size = UDim2.fromOffset(478, 101), BackgroundColor3 = palette.panel,
+    Name = "LogPanel", Position = UDim2.fromOffset(16, 500),
+    Size = UDim2.fromOffset(478, 102), BackgroundColor3 = palette.panel,
     BorderSizePixel = 0,
 })
 make("UICorner", logFrame, { CornerRadius = UDim.new(0, 6) })
@@ -399,6 +417,24 @@ controller.logLabel = make("TextLabel", logFrame, {
     TextXAlignment = Enum.TextXAlignment.Left,
     TextYAlignment = Enum.TextYAlignment.Top, Text = "Ready",
 })
+
+-- Legacy test/diagnostic actions stay in the controller for compatibility,
+-- but are not part of the streamlined visible UI.
+local legacyPanel = make("Frame", panel, {
+    Name = "LegacyHiddenControls", Visible = false,
+    BackgroundTransparency = 1, Size = UDim2.fromOffset(1,1),
+})
+local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 0, 0, 1, 1)
+local sellButton = button("AutoSell", "AUTO SELL ORES: OFF", 0, 0, 1, 1)
+local scanButton = button("Scan", "SCAN GAME", 0, 0, 1, 1)
+local detailButton = button("Diagnostics", "COPY TARGET DIAGNOSTICS", 0, 0, 1, 1)
+local upgradeButton = button("AutoUpgrade", "AUTO UPGRADE STATS: OFF", 0, 0, 1, 1)
+local manualWatchButton = button("ManualWatch", "WATCH MANUAL TAKE ALL: OFF", 0, 0, 1, 1)
+local actionDiagnosticsButton = button("ActionDiagnostics", "COPY EQUIP / UPGRADE TARGETS", 0, 0, 1, 1)
+for _,legacy in ipairs({collectButton, sellButton, scanButton, detailButton,
+    upgradeButton, manualWatchButton, actionDiagnosticsButton}) do
+    legacy.Parent = legacyPanel
+end
 
 local dragging, dragOrigin, panelOrigin
 connect(header.InputBegan, function(input)
