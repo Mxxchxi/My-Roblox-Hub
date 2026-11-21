@@ -1151,8 +1151,15 @@ helpers.updateFarmCycle(300)
 assert(first.cyclePhase=="COLLECTING" and first.cycleRun==2
        and helpers.canCollectDuringSell(),
        "after due time, a NEW Take All collection attempt must start")
-first.cyclePhase="SELLING"
-first.sell=true
+first.takeAllActions=first.cycleCollectionBaseline+1
+first.takeAllLastDispatchAt=301
+first.takeAllLastDispatchPlot="MinePlot7"
+first.takeAllOutcome="CHEST_CLOSED_AFTER_TAKE_ALL (matches manual UI; inventory unknown)"
+first.takeAllPending=nil
+helpers.updateFarmCycle(303)
+assert(first.cyclePhase=="SELLING" and first.sell
+       and first.cycleNextAt==481 and first.sellPhase=="CHEST_HANDOFF",
+       "second timed collection must automatically arm another Shops Sell")
 first.sellPhase="PAUSED"
 first.sellStage="Base return unverified"
 helpers.updateFarmCycle(305)
@@ -1163,6 +1170,20 @@ findButton("FarmCycle").Activated:Fire()
 assert(not first.cycleEnabled and first.cyclePhase=="OFF"
        and not first.collect and not first.sell and helpers.canCollectDuringSell(),
        "switching timed farm OFF must stop all scheduled Collect/Sell routes")
+
+-- If a dispatched Take All never closes the Chest or settles, pause
+-- instead of waiting forever or selling inventory with unknown contents.
+findButton("FarmCycle").Activated:Fire()
+first.takeAllActions=first.cycleCollectionBaseline+1
+first.takeAllLastDispatchAt=401
+first.takeAllPending={sentAt=401}
+helpers.updateFarmCycle(428)
+assert(first.cyclePhase=="PAUSED" and not first.collect and not first.sell
+       and first.cycleLastError:find("25s",1,true),
+       "unsettled Take All must pause after 25 seconds with no Shops action")
+findButton("FarmCycle").Activated:Fire()
+assert(not first.cycleEnabled and first.cyclePhase=="OFF", "timer must be cancellable after a failure")
+first.takeAllPending=nil
 env.timerTest.input.Text="5"
 env.timerTest.input.FocusLost:Fire(false)
 
