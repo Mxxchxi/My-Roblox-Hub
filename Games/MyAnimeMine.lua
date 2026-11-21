@@ -2381,7 +2381,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.21 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.22 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -2541,13 +2541,23 @@ end
 
 local function sellRouteDiagnosticReport()
     local lines={
-        "MY ANIME MINE V0.21 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.22 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
         "PlaceId="..tostring(game.PlaceId)..
             " | autoSell="..tostring(controller.sell)..
             " | autoCollect="..tostring(controller.collect)..
             " | plot="..tostring(controller.selectedPlot),
         "Phase="..tostring(controller.sellPhase)..
             " | Stage="..tostring(controller.sellStage),
+        "Auto Farm timer="..tostring(controller.cycleEnabled)..
+            " | collectEveryMinutes="..tostring(controller.cycleMinutes)..
+            " | cyclePhase="..tostring(controller.cyclePhase)..
+            " | cycleNumber="..tostring(controller.cycleRun)..
+            " | lastTakeAllAt="..tostring(controller.cycleCollectionAt)..
+            " | nextCollectAt="..tostring(controller.cycleNextAt)..
+            " | secondsUntilNext="..tostring(math.max(0,math.ceil(
+                controller.cycleNextAt-os.clock())))..
+            " | lastReturnAt="..tostring(controller.cycleLastReturnAt)..
+            " | cycleError="..tostring(controller.cycleLastError),
         "Warp button clicks="..controller.sellWarpAttempts..
             " | Shops destination clicks="..controller.sellShopsAttempts..
             " | walk commands="..controller.sellWalkAttempts..
@@ -2640,14 +2650,14 @@ local function sellRouteDiagnosticReport()
             end
         end
     end
-    lines[#lines+1]="NOTE: after Sell, toggle Base/Shops and verify distance to original Plot Chest before resuming Collect. Sale/money and Plot ownership NOT verified."
+    lines[#lines+1]="NOTE: Timed mode: ONE Take All -> Shops Sell -> Base verification -> wait specified minutes. Sale/credit and Plot ownership NOT verified."
     return table.concat(lines,"\n")
 end
 
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.21 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.22 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
@@ -2750,12 +2760,22 @@ end
 
 local function refreshStatus()
     if not controller.running then return end
+    local timerInfo = controller.cyclePhase
+    if controller.cycleEnabled and controller.cyclePhase=="WAITING" then
+        local remaining=math.max(0,math.ceil(controller.cycleNextAt-os.clock()))
+        timerInfo=("NEXT %02d:%02d"):format(math.floor(remaining/60),remaining%60)
+    end
+    farmCycleButton.Text = "AUTO FARM: " .. (controller.cycleEnabled
+        and (controller.cyclePhase=="PAUSED" and "PAUSED" or "ON / "..timerInfo)
+        or "OFF")
+    farmCycleButton.BackgroundColor3 = controller.cycleEnabled
+        and palette.accent or palette.button
     mineButton.Text = "AUTO MINE (CLICK): " .. (controller.mine and "ON" or "OFF")
     collectButton.Text = "AUTO COLLECT: " .. (controller.collect and "ON" or "OFF")
     mineButton.BackgroundColor3 = controller.mine and palette.accent or palette.button
     collectButton.BackgroundColor3 = controller.collect and palette.accent or palette.button
-    autoPlotLabel.Text = "PLOT AUTO: " .. tostring(controller.selectedPlot or "SEARCHING") ..
-        "  |  WALK AUTO: " .. (controller.walkToChest and "ON" or "OFF")
+    autoPlotLabel.Text = "PLOT: " .. tostring(controller.selectedPlot or "SEARCHING") ..
+        ("  |  EVERY %d MIN  |  %s"):format(controller.cycleMinutes,timerInfo)
     manualWatchButton.Text = "WATCH TAKE ALL: " .. (controller.watchManual and "ON" or "OFF")
     local sellIndicator = controller.sellPhase == "RETURNED_BASE" and "RETURNED"
         or not controller.sell and "OFF"
@@ -2770,13 +2790,11 @@ local function refreshStatus()
     upgradeButton.Text = "AUTO UPGRADE STATS: " .. (controller.upgrade and "DIAG ONLY" or "OFF")
     equipButton.BackgroundColor3 = controller.equip and palette.accent or palette.button
     upgradeButton.BackgroundColor3 = controller.upgrade and palette.accent or palette.button
-    statusLabel.Text = ("Rock %d | Chest %d | TakeAll %d | Collect calls %d/%d\nSell: %s | Equip: %s | Upgrade: %s\nCollect: %s"):format(
-        #controller.detectors, #controller.prompts, #controller.takeAllButtons,
-        controller.collectActions, controller.takeAllActions,
-        tostring(controller.sellStage):sub(1, 37),
-        tostring(controller.equipStage):sub(1, 22),
-        tostring(controller.upgradeStage):sub(1, 22),
-        tostring(controller.collectionStage):sub(1, 67))
+    statusLabel.Text = ("Cycle #%d | %s | Take All %d | Sell clicks %d\nCollect: %s\nSell/Base: %s"):format(
+        controller.cycleRun,tostring(controller.cyclePhase),
+        controller.takeAllActions,controller.sellCallsOK,
+        tostring(controller.collectionStage):sub(1,75),
+        tostring(controller.sellStage):sub(1,75))
 end
 
 connect(mineButton.Activated, function()
@@ -3019,7 +3037,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.21 started | Shops sell and verified return Base | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.22 started | scheduled Collect-Sell-Base loop | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
