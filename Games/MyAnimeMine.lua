@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.22 (timed Collect > Sell > Base farming cycle)
+-- My Roblox Hub | My Anime Mine v0.23 (safe native Stats Auto Upgrade)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -118,6 +118,12 @@ local controller = {
     upgradeActions = 0,
     upgradeNoChange = 0,
     upgradeIndex = 1,
+    upgradeLastConfirmedUI = "NOT_TESTED",
+    upgradeLastTarget = "none",
+    upgradeLastStat = "none",
+    upgradeLastEvent = "none",
+    upgradeSafeCandidates = 0,
+    upgradeBlockedReason = "none",
     upgradeStage = "OFF",
     upgradePending = nil,
     holderAttempts = 0,
@@ -279,8 +285,8 @@ local gui = make("ScreenGui", playerGui, {
 })
 controller.gui = gui
 local panel = make("Frame", gui, {
-    Name = "Main", Size = UDim2.fromOffset(510, 614),
-    Position = UDim2.new(0.5, -255, 0.5, -307),
+    Name = "Main", Size = UDim2.fromOffset(510, 712),
+    Position = UDim2.new(0.5, -255, 0.5, -356),
     BackgroundColor3 = palette.background, BorderSizePixel = 0,
 })
 make("UICorner", panel, { CornerRadius = UDim.new(0, 12) })
@@ -356,7 +362,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.22 | Collect once, sell ores, return to Base, then wait for next timed collection.",
+    Text = "V0.23 | Timed farm + safe Stats upgrades (normal game currency only).",
 })
 local farmCycleButton = button("FarmCycle", "AUTO FARM CYCLE: OFF", 16, 103, 478, 43)
 farmCycleButton.TextSize = 14
@@ -379,10 +385,12 @@ make("UICorner", intervalInput, { CornerRadius = UDim.new(0, 7) })
 local minutePlusButton = button("MinutePlus", "+ 1", 427, 178, 67, 38)
 local mineButton = button("AutoMine", "AUTO MINE (CLICK): OFF", 16, 230, 230, 40)
 local equipButton = button("AutoEquip", "AUTO EQUIP BEST: OFF", 264, 230, 230, 40)
-local copyButton = button("CopyLog", "COPY LOG", 16, 282, 230, 40)
-local sellDiagnosticsButton = button("SellDiagnostics", "COPY SELL ROUTE", 264, 282, 230, 40)
+local upgradeButton = button("AutoUpgrade", "AUTO UPGRADE STATS: OFF", 16, 280, 478, 40)
+local copyButton = button("CopyLog", "COPY LOG", 16, 331, 230, 39)
+local sellDiagnosticsButton = button("SellDiagnostics", "COPY SELL ROUTE", 264, 331, 230, 39)
+local actionDiagnosticsButton = button("ActionDiagnostics", "COPY UPGRADE DIAGNOSTICS", 16, 379, 478, 39)
 local autoPlotLabel = make("TextLabel", panel, {
-    Name = "AutoPlotStatus", Position = UDim2.fromOffset(16, 334),
+    Name = "AutoPlotStatus", Position = UDim2.fromOffset(16, 429),
     Size = UDim2.fromOffset(478, 41), BackgroundColor3 = palette.panel,
     BorderSizePixel = 0, Font = Enum.Font.GothamSemibold, TextSize = 12,
     TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = palette.subtle,
@@ -390,22 +398,22 @@ local autoPlotLabel = make("TextLabel", panel, {
 })
 make("UICorner", autoPlotLabel, { CornerRadius = UDim.new(0, 7) })
 local statusLabel = make("TextLabel", panel, {
-    Name = "Status", Position = UDim2.fromOffset(17, 385),
-    Size = UDim2.fromOffset(478, 78),
+    Name = "Status", Position = UDim2.fromOffset(17, 477),
+    Size = UDim2.fromOffset(478, 75),
     BackgroundTransparency = 1, Font = Enum.Font.Code, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.accent, Text = "Discovering...",
 })
 make("TextLabel", panel, {
-    Name = "LogTitle", Position = UDim2.fromOffset(16, 476),
+    Name = "LogTitle", Position = UDim2.fromOffset(16, 563),
     Size = UDim2.fromOffset(478, 20),
     BackgroundTransparency = 1, Font = Enum.Font.GothamBold, TextSize = 13,
     TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = palette.text,
     Text = "ACTIVITY / LOG",
 })
 local logFrame = make("Frame", panel, {
-    Name = "LogPanel", Position = UDim2.fromOffset(16, 500),
-    Size = UDim2.fromOffset(478, 102), BackgroundColor3 = palette.panel,
+    Name = "LogPanel", Position = UDim2.fromOffset(16, 587),
+    Size = UDim2.fromOffset(478, 111), BackgroundColor3 = palette.panel,
     BorderSizePixel = 0,
 })
 make("UICorner", logFrame, { CornerRadius = UDim.new(0, 6) })
@@ -417,9 +425,7 @@ controller.logLabel = make("TextLabel", logFrame, {
     TextXAlignment = Enum.TextXAlignment.Left,
     TextYAlignment = Enum.TextYAlignment.Top, Text = "Ready",
 })
-
--- Legacy test/diagnostic actions stay in the controller for compatibility,
--- but are not part of the streamlined visible UI.
+-- Keep only backwards-compatible diagnostic/test controls hidden.
 local legacyPanel = make("Frame", panel, {
     Name = "LegacyHiddenControls", Visible = false,
     BackgroundTransparency = 1, Size = UDim2.fromOffset(1,1),
@@ -428,13 +434,9 @@ local collectButton = button("AutoCollect", "AUTO COLLECT: OFF", 0, 0, 1, 1)
 local sellButton = button("AutoSell", "AUTO SELL ORES: OFF", 0, 0, 1, 1)
 local scanButton = button("Scan", "SCAN GAME", 0, 0, 1, 1)
 local detailButton = button("Diagnostics", "COPY TARGET DIAGNOSTICS", 0, 0, 1, 1)
-local upgradeButton = button("AutoUpgrade", "AUTO UPGRADE STATS: OFF", 0, 0, 1, 1)
 local manualWatchButton = button("ManualWatch", "WATCH MANUAL TAKE ALL: OFF", 0, 0, 1, 1)
-local actionDiagnosticsButton = button("ActionDiagnostics", "COPY EQUIP / UPGRADE TARGETS", 0, 0, 1, 1)
-for _,legacy in ipairs({collectButton, sellButton, scanButton, detailButton,
-    upgradeButton, manualWatchButton, actionDiagnosticsButton}) do
-    legacy.Parent = legacyPanel
-end
+for _,legacy in ipairs({collectButton,sellButton,scanButton,detailButton,
+    manualWatchButton}) do legacy.Parent=legacyPanel end
 
 local dragging, dragOrigin, panelOrigin
 connect(header.InputBegan, function(input)
@@ -1512,6 +1514,126 @@ local function tryHeadlessEquip()
     return false, "NO_ACTIVE_EQUIP_BEST_LISTENER"
 end
 
+-- Upgrade ONLY preloaded native crew Stats controls. They may be hidden,
+-- like the confirmed Equip Best callback, but must have an actual listener.
+-- Never open an Inventory, click a Holder, buy a Game Pass, or invent a remote.
+local function safeHeadlessStatsUpgrades()
+    local candidates,frames={},{}
+    local frameCount=0
+    for _,button in ipairs(playerGui:GetDescendants()) do
+        if gameGuiButton(button) and isUpgradeAction(button) then
+            local frame=nil
+            local cursor=button.Parent
+            while cursor and cursor~=playerGui do
+                if cursor.Name=="StatsFrame" or cursor.Name=="UnitUpgradeFrame"
+                    or cursor.Name=="CharacterUpgradeFrame" then
+                    frame=cursor
+                    break
+                end
+                cursor=cursor.Parent
+            end
+            if frame and (gameGuiAncestorNamed(button,"UnitGui")
+                or gameGuiAncestorNamed(button,"MineGui")
+                or gameGuiAncestorNamed(button,"CrewGui")) then
+                if not frames[frame] then
+                    frames[frame]=true
+                    frameCount=frameCount+1
+                end
+                local stat=statContext(button)
+                if stat=="Damage" or stat=="Speed" or stat=="Mining Speed" then
+                    local connections=takeAllConnections(button)
+                    local event=nil
+                    if type(connections.MouseButton1Click)=="number"
+                        and connections.MouseButton1Click>0 then
+                        event="MouseButton1Click"
+                    elseif type(connections.Activated)=="number"
+                        and connections.Activated>0 then
+                        event="Activated"
+                    end
+                    if event then candidates[#candidates+1]={
+                        button=button,stat=stat,event=event,frame=frame,
+                        path=describe(button),
+                    } end
+                end
+            end
+        end
+    end
+    if frameCount>1 then return {}, "MULTIPLE_CREW_STATS_PANELS",frameCount end
+    if #candidates==0 then
+        return {},"NO_LOADED_STATS_BUTTON_WITH_LISTENER",frameCount
+    end
+    -- Never guess between two potential purchases for the same stat.
+    local unique,byStat={},{}
+    for _,entry in ipairs(candidates) do
+        byStat[entry.stat]=(byStat[entry.stat] or 0)+1
+        unique[entry.stat]=entry
+    end
+    for _,count in pairs(byStat) do
+        if count~=1 then return {},"AMBIGUOUS_STAT_UPGRADE_BUTTON",frameCount end
+    end
+    local ordered={}
+    for _,stat in ipairs({"Damage","Speed","Mining Speed"}) do
+        if unique[stat] then ordered[#ordered+1]=unique[stat] end
+    end
+    return ordered,"READY",frameCount
+end
+
+local function headlessUpgradeStep(now)
+    if not controller.upgrade then return end
+    if controller.sell or controller.takeAllPending
+        or (controller.cycleEnabled and controller.cyclePhase~="WAITING") then
+        controller.upgradeStage="WAITING_FOR_SAFE_BASE_IDLE"
+        return
+    end
+    if type(firesignal)~="function" or type(getconnections)~="function" then
+        controller.upgradeStage="NO_SAFE_GUI_LISTENERS"
+        return
+    end
+    if not controller.selectedPlot then
+        controller.upgradeStage="WAITING_FOR_SELECTED_PLOT"
+        return
+    end
+    local chest,distance=selectedChest()
+    if not chest or type(distance)~="number" or distance>75 then
+        controller.upgradeStage="WAITING_FOR_BASE_NEAR_SELECTED_PLOT"
+        return
+    end
+    if controller.upgradePending then return end
+    local choices,status,frames=safeHeadlessStatsUpgrades()
+    controller.upgradeSafeCandidates=#choices
+    if status~="READY" then
+        controller.upgradeStage=status.." (frames="..tostring(frames)..")"
+        controller.headlessUpgradeStatus=controller.upgradeStage
+        return
+    end
+    local chosen=choices[(controller.upgradeIndex-1)%#choices+1]
+    controller.upgradeIndex=controller.upgradeIndex+1
+    -- The purchase is made through the game-native GUI listener. Never
+    -- dispatch twice while confirmation of the prior click is outstanding.
+    controller.upgradeAttempts=controller.upgradeAttempts+1
+    controller.upgradeLastTarget=chosen.path
+    controller.upgradeLastStat=chosen.stat
+    controller.upgradeLastEvent=chosen.event
+    local before=upgradeRowSnapshot(chosen.button)
+    local ok,err=pcall(firesignal,chosen.button[chosen.event])
+    if not ok then
+        controller.upgradeStage="GUI_SIGNAL_ERROR: "..tostring(err)
+        controller.headlessUpgradeStatus=controller.upgradeStage
+        controller.upgrade=false
+        writeLog("AUTO UPGRADE paused: "..controller.upgradeStage)
+        return
+    end
+    controller.upgradeActions=controller.upgradeActions+1
+    controller.upgradePending={
+        button=chosen.button,stat=chosen.stat,event=chosen.event,
+        before=before,started=now,
+    }
+    controller.upgradeStage="STATS_SIGNAL_SENT "..chosen.stat.."; VERIFYING"
+    controller.headlessUpgradeStatus=controller.upgradeStage
+    writeLog("AUTO UPGRADE: "..chosen.stat.." game GUI listener sent ("..
+        chosen.event.."); result NOT verified | "..chosen.path)
+end
+
 -- Auto Sell is confined to the game's ChestFrame and never touches
 -- inventory cards, pets, character sales, or global shop purchases.
 -- It only attempts a preloaded native Chest Auto Sell control, whether
@@ -2364,24 +2486,26 @@ local function resolveUpgradeFeedback(now)
     local current = upgradeRowSnapshot(pending.button)
     if current ~= pending.before then
         controller.upgradeNoChange = 0
-        controller.upgradeStage = "Stats UI changed (upgrade not verified)"
+        controller.upgradeLastConfirmedUI="STATS_ROW_CHANGED_UNVERIFIED"
+        controller.upgradeStage = "Stats row changed; purchase STILL UNVERIFIED"
     else
         controller.upgradeNoChange = controller.upgradeNoChange + 1
-        controller.upgradeStage = "Stats UI unchanged " .. controller.upgradeNoChange .. "/3"
+        controller.upgradeLastConfirmedUI="STATS_ROW_UNCHANGED"
+        controller.upgradeStage = "Stats UI unchanged; no repeated purchase"
     end
     writeLog("Upgrade feedback: " .. controller.upgradeStage ..
         " | " .. pending.stat .. " | event=" .. pending.event)
-    if controller.upgradeNoChange >= 3 then
+    if controller.upgradeNoChange >= 1 then
         controller.upgrade = false
-        controller.upgradeStage = "PAUSED: no Stats UI change after 3 attempts"
-        writeLog("AUTO UPGRADE paused; use COPY EQUIP / UPGRADE TARGETS.")
+        controller.upgradeStage = "PAUSED: no Stats UI change; no repeated purchase"
+        writeLog("AUTO UPGRADE paused; press COPY UPGRADE DIAGNOSTICS.")
     end
 end
 
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.22 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.23 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -2429,6 +2553,24 @@ local function actionDiagnosticReport()
     addButtons("Stats", controller.statsCandidates)
     addButtons("Upgrade", controller.upgradeCandidates)
     addButtons("GameUpgradesMenu (read-only, not auto-purchased)", controller.guiUpgradeMenu)
+    local upgradeSafe,upgradeSafeStatus,upgradeFrames=safeHeadlessStatsUpgrades()
+    lines[#lines+1] = "NATIVE HEADLESS STATS UPGRADE status="..upgradeSafeStatus..
+        " | frames="..tostring(upgradeFrames)..
+        " | safeButtons="..#upgradeSafe..
+        " | selectedPlot="..tostring(controller.selectedPlot)..
+        " | pending="..tostring(controller.upgradePending~=nil)
+    lines[#lines+1] = "Upgrade last action="..tostring(controller.upgradeLastTarget)..
+        " | stat="..tostring(controller.upgradeLastStat)..
+        " | event="..tostring(controller.upgradeLastEvent)..
+        " | UI feedback="..tostring(controller.upgradeLastConfirmedUI)..
+        " | attempted="..controller.upgradeAttempts..
+        " | sent="..controller.upgradeActions
+    for i,entry in ipairs(upgradeSafe) do
+        lines[#lines+1] = "NativeStat["..i.."] "..entry.stat..
+            " | "..entry.path.." | event="..entry.event..
+            " | visible="..tostring(isVisible(entry.button))..
+            " | premiumExcluded=true"
+    end
     local sellButtons, sellLabels = scanNativeAutoSell()
     local tele = shopsTeleportLauncher()
     local shopsWarp, shopsCount = shopsWarpDestination()
@@ -2535,13 +2677,15 @@ local function actionDiagnosticReport()
             textOf(button):sub(1, 45), nearbyButtonContext(button):sub(1, 75))
     end
     lines[#lines + 1] =
+        "NOTE: Upgrade only loaded crew Stats callback buttons, without Roblox premium/currency purchases from unknown panels. Native GUI signal/UI changes are NOT confirmation of a level increase."
+    lines[#lines + 1] =
         "NOTE: Select All must dispatch before Sell; sale requires ore-only button or exact GingerbreadKeeper SellFrame/SellButton. No generic Sell All."
     return table.concat(lines, "\n")
 end
 
 local function sellRouteDiagnosticReport()
     local lines={
-        "MY ANIME MINE V0.22 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.23 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
         "PlaceId="..tostring(game.PlaceId)..
             " | autoSell="..tostring(controller.sell)..
             " | autoCollect="..tostring(controller.collect)..
@@ -2657,7 +2801,7 @@ end
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.22 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.23 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
@@ -2787,14 +2931,17 @@ local function refreshStatus()
     sellButton.BackgroundColor3 = controller.sell and palette.accent or palette.button
     manualWatchButton.BackgroundColor3 = controller.watchManual and palette.accent or palette.button
     equipButton.Text = "AUTO EQUIP BEST: " .. (controller.equip and "ON" or "OFF")
-    upgradeButton.Text = "AUTO UPGRADE STATS: " .. (controller.upgrade and "DIAG ONLY" or "OFF")
+    local upgradeLabel = controller.upgradeStage:find("PAUSED",1,true) and "PAUSED"
+        or controller.upgrade and "ON" or "OFF"
+    upgradeButton.Text = "AUTO UPGRADE STATS: " .. upgradeLabel
     equipButton.BackgroundColor3 = controller.equip and palette.accent or palette.button
     upgradeButton.BackgroundColor3 = controller.upgrade and palette.accent or palette.button
-    statusLabel.Text = ("Cycle #%d | %s | Take All %d | Sell clicks %d\nCollect: %s\nSell/Base: %s"):format(
+    statusLabel.Text = ("Cycle #%d | %s | Take All %d | Sell clicks %d\nCollect: %s\nSell/Base: %s\nUpgrade: %s"):format(
         controller.cycleRun,tostring(controller.cyclePhase),
         controller.takeAllActions,controller.sellCallsOK,
-        tostring(controller.collectionStage):sub(1,75),
-        tostring(controller.sellStage):sub(1,75))
+        tostring(controller.collectionStage):sub(1,69),
+        tostring(controller.sellStage):sub(1,69),
+        tostring(controller.upgradeStage):sub(1,69))
 end
 
 connect(mineButton.Activated, function()
@@ -2825,8 +2972,8 @@ connect(equipButton.Activated, function()
     refreshStatus()
 end)
 connect(upgradeButton.Activated, function()
-    if type(firesignal) ~= "function" or type(fireclickdetector) ~= "function" then
-        writeLog("Auto Upgrade requires firesignal and fireclickdetector")
+    if type(firesignal) ~= "function" or type(getconnections) ~= "function" then
+        writeLog("Auto Upgrade needs firesignal and getconnections for native Stats buttons")
         return
     end
     controller.upgrade = not controller.upgrade
@@ -2838,6 +2985,11 @@ connect(upgradeButton.Activated, function()
         controller.lastHolderProbeInRange = "none"
         controller.upgradeAttempts = 0
         controller.upgradeNoChange = 0
+        controller.upgradeLastConfirmedUI="NOT_TESTED"
+        controller.upgradeLastTarget="none"
+        controller.upgradeLastStat="none"
+        controller.upgradeLastEvent="none"
+        controller.upgradeSafeCandidates=0
         controller.upgradePending = nil
         controller.upgradeIndex = 1
         controller.holderIndex = 1
@@ -2851,8 +3003,8 @@ connect(upgradeButton.Activated, function()
         controller.upgradePending = nil
         controller.upgradeStage = "OFF"
     end
-    writeLog("AUTO UPGRADE STATS " .. (controller.upgrade and "ON" or "OFF") ..
-        " | HEADLESS ONLY: remote command requires verified protocol; no UI opens")
+    writeLog("AUTO UPGRADE STATS "..(controller.upgrade and "ON" or "OFF")..
+        " | native crew Stats listeners only; game currency may be spent; no windows or unknown remotes")
     refreshStatus()
 end)
 connect(actionDiagnosticsButton.Activated, function()
@@ -3037,7 +3189,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.22 started | scheduled Collect-Sell-Base loop | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.23 started | timed Farm and safe Stats Upgrade | toggles OFF | PlaceId 79389059854988")
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
@@ -3307,20 +3459,22 @@ task.spawn(function()
             end
         end
 
-        -- Live captures did not identify the server's upgrade Remote/method
-        -- or arguments. Do NOT click a Holder, Stats button or BuyButton,
-        -- as each may open a window or spend the wrong currency.
+        -- Use only real loaded crew Stats buttons with active native
+        -- callbacks. Unknown RemoteEvents and premium/gamepass controls
+        -- remain read-only. During Farm, upgrade only while idle at Base.
+        if controller.upgradePending then resolveUpgradeFeedback(now) end
         if controller.upgrade and not controller.watchManual
-            and now - lastUpgradeTick >= 8 then
-            lastUpgradeTick = now
-            local remotes = headlessRemotes()
-            controller.headlessUpgradeStatus =
-                "HEADLESS_PROTOCOL_UNKNOWN (" .. #remotes .. " remote candidates)"
-            controller.upgradeStage = controller.headlessUpgradeStatus
-            if controller.lastHeadlessUpgradeMessage ~= controller.upgradeStage then
-                controller.lastHeadlessUpgradeMessage = controller.upgradeStage
-                writeLog("HEADLESS UPGRADE: " .. controller.upgradeStage ..
-                    " | no game UI opened; no unverified remote invoked")
+            and now-lastUpgradeTick>=8 then
+            lastUpgradeTick=now
+            headlessUpgradeStep(now)
+            if controller.headlessUpgradeStatus~=controller.lastHeadlessUpgradeMessage then
+                controller.lastHeadlessUpgradeMessage=controller.headlessUpgradeStatus
+                if controller.upgradeStage:find("NO_LOADED",1,true)
+                    or controller.upgradeStage:find("MULTIPLE_",1,true)
+                    or controller.upgradeStage:find("AMBIGUOUS_",1,true) then
+                    writeLog("AUTO UPGRADE: "..controller.upgradeStage..
+                        " | use COPY UPGRADE DIAGNOSTICS; no purchase dispatched")
+                end
             end
         end
         if controller.watchManual then monitorManualButton() end

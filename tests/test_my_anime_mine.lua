@@ -173,7 +173,7 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, baseReturnDestination=baseReturnDestination, returnBaseStep=returnBaseStep, returnBaseDistance=returnBaseDistance, finishVerifiedBaseReturn=finishVerifiedBaseReturn, sellStopWalk=sellStopWalk, recentTakeAllForHandoff=recentTakeAllForHandoff, canCollectDuringSell=canCollectDuringSell, gameChestFrame=gameChestFrame, teleportLauncherCandidates=teleportLauncherCandidates, validatedSellStandSession=validatedSellStandSession, isExactSellStandButton=isExactSellStandButton, sellSelectAllButton=sellSelectAllButton, knownOreSellFrame=knownOreSellFrame, armSellRoute=armSellRoute, updateCycleMinutes=updateCycleMinutes, beginCollectionCycle=beginCollectionCycle, updateFarmCycle=updateFarmCycle, setFarmCycleEnabled=setFarmCycleEnabled}"
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, safeHeadlessStatsUpgrades=safeHeadlessStatsUpgrades, headlessUpgradeStep=headlessUpgradeStep, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, baseReturnDestination=baseReturnDestination, returnBaseStep=returnBaseStep, returnBaseDistance=returnBaseDistance, finishVerifiedBaseReturn=finishVerifiedBaseReturn, sellStopWalk=sellStopWalk, recentTakeAllForHandoff=recentTakeAllForHandoff, canCollectDuringSell=canCollectDuringSell, gameChestFrame=gameChestFrame, teleportLauncherCandidates=teleportLauncherCandidates, validatedSellStandSession=validatedSellStandSession, isExactSellStandButton=isExactSellStandButton, sellSelectAllButton=sellSelectAllButton, knownOreSellFrame=knownOreSellFrame, armSellRoute=armSellRoute, updateCycleMinutes=updateCycleMinutes, beginCollectionCycle=beginCollectionCycle, updateFarmCycle=updateFarmCycle, setFarmCycleEnabled=setFarmCycleEnabled}"
     local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
     return assert(env.MyAnimeMineHubController), helpers
 end
@@ -521,6 +521,103 @@ assert(first.upgradeWalkTarget == nil, "upgrade navigation not stopped")
 root.Position = vector(0,0,0)
 detector.MaxActivationDistance = 32
 
+-- V0.23: loaded but hidden StatsFrame has real Damage/Speed GUI
+-- listeners. Upgrade via those only, without opening the UnitGui or
+-- invoking unknown server remotes or Robux purchases.
+env.upgradeTest={speedLabel=instance("TextLabel"),before=0}
+env.upgradeTest.speedLabel.Name="SpeedName"
+env.upgradeTest.speedLabel.Text="Speed Level 1"
+env.upgradeTest.speedLabel.Parent=speedRow
+upgradeDamage.MouseButton1Click:Connect(function()
+    damageLabel.Text="Damage Level 2"
+end)
+upgradeSpeed.MouseButton1Click:Connect(function()
+    env.upgradeTest.speedLabel.Text="Speed Level 2"
+end)
+premium.MouseButton1Click:Connect(function()
+    error("Robux upgrade clicked")
+end)
+paidButton.MouseButton1Click:Connect(function()
+    error("paid Mining Speed upgrade clicked")
+end)
+statsPanel.Visible=false
+env.upgradeTest.options,env.upgradeTest.status,env.upgradeTest.frames=
+    helpers.safeHeadlessStatsUpgrades()
+assert(env.upgradeTest.status=="READY" and env.upgradeTest.frames==1
+    and #env.upgradeTest.options==2
+    and env.upgradeTest.options[1].stat=="Damage"
+    and env.upgradeTest.options[2].stat=="Speed",
+    "hidden safe native Stats actions must exclude premium Mining Speed and shop")
+assert(not statsPanel.Visible,"native Stats UI must stay hidden")
+env.upgradeTest.before=damageClicks
+findButton("AutoUpgrade").Activated:Fire()
+assert(first.upgrade and first.upgradeStage=="Finding selected-plot miner Stats",
+    "native Auto Upgrade must be user-controlled and default off")
+helpers.headlessUpgradeStep(40)
+assert(first.upgradePending and first.upgradeActions==1
+    and first.upgradeLastStat=="Damage"
+    and damageClicks==env.upgradeTest.before+1
+    and not statsPanel.Visible,
+    "Damage upgrade must dispatch native listener once without showing UI")
+helpers.resolveUpgradeFeedback(43)
+assert(first.upgrade and not first.upgradePending
+    and first.upgradeLastConfirmedUI=="STATS_ROW_CHANGED_UNVERIFIED",
+    "changed Stats row should let the next eligible stat progress")
+helpers.headlessUpgradeStep(50)
+assert(first.upgradePending and first.upgradeActions==2
+    and first.upgradeLastStat=="Speed"
+    and env.upgradeTest.speedLabel.Text=="Speed Level 2",
+    "second upgrade should rotate to Speed and use real click listener")
+helpers.resolveUpgradeFeedback(53)
+assert(first.upgrade and first.upgradeNoChange==0,
+    "changed Speed row must clear missing-feedback counter")
+findButton("ActionDiagnostics").Activated:Fire()
+assert(clipboard:find("NATIVE HEADLESS STATS UPGRADE status=READY",1,true)
+    and clipboard:find("NativeStat[1] Damage",1,true)
+    and clipboard:find("NativeStat[2] Speed",1,true)
+    and clipboard:find("UI feedback=STATS_ROW_CHANGED_UNVERIFIED",1,true),
+    "copy upgrade diagnostics must list verified native Stats listeners")
+helpers.headlessUpgradeStep(60)
+assert(first.upgradePending and first.upgradeActions==3,
+    "third click may be attempted only after prior feedback settled")
+helpers.resolveUpgradeFeedback(63)
+assert(not first.upgrade and first.upgradeStage:find("PAUSED",1,true)
+    and first.upgradeNoChange==1,
+    "unchanged Stats row must stop any additional upgrades rather than spam purchases")
+env.upgradeTest.before=first.upgradeActions
+env.upgradeTest.extraFrame=instance("Frame")
+env.upgradeTest.extraFrame.Name="StatsFrame"
+env.upgradeTest.extraFrame.Parent=statsGui
+env.upgradeTest.extraRow=instance("Frame")
+env.upgradeTest.extraRow.Name="DamageRow"
+env.upgradeTest.extraRow.Parent=env.upgradeTest.extraFrame
+env.upgradeTest.extraButton=instance("TextButton")
+env.upgradeTest.extraButton.Name="UpgradeButton"
+env.upgradeTest.extraButton.Text="Upgrade"
+env.upgradeTest.extraButton.Parent=env.upgradeTest.extraRow
+env.upgradeTest.extraButton.MouseButton1Click:Connect(function()
+    error("ambiguous crew Stats should not purchase")
+end)
+env.upgradeTest.options,env.upgradeTest.status=
+    helpers.safeHeadlessStatsUpgrades()
+assert(#env.upgradeTest.options==0
+    and env.upgradeTest.status=="MULTIPLE_CREW_STATS_PANELS",
+    "multiple loaded Stats panels must not be guessed")
+env.upgradeTest.extraFrame.Parent=nil
+first.cycleEnabled=true
+first.cyclePhase="SELLING"
+findButton("AutoUpgrade").Activated:Fire()
+helpers.headlessUpgradeStep(70)
+assert(first.upgradeStage=="WAITING_FOR_SAFE_BASE_IDLE"
+    and first.upgradeActions==env.upgradeTest.before,
+    "Auto Upgrade must not purchase while cycle is selling at Shops")
+findButton("AutoUpgrade").Activated:Fire()
+first.cycleEnabled=false
+first.cyclePhase="OFF"
+statsPanel.Visible=true
+damageLabel.Text="Damage"
+env.upgradeTest.speedLabel.Parent=nil
+
 -- User-confirmed route: click Teleport > Shops, walk to Sell Items,
 -- then an explicit ore-only Sell action. Do not use the paid Chest Auto Sell.
 local teleport = instance("TextButton")
@@ -649,7 +746,7 @@ assert(clipboard:find("SHOP SELL ROUTE",1,true)
        and clipboard:find("Ore-only Sell candidates=",1,true),
        "sale route must expose warp/vendor/sell diagnostics")
 findButton("SellDiagnostics").Activated:Fire()
-assert(clipboard:find("V0.22 SHOP SELL ROUTE",1,true)
+assert(clipboard:find("V0.23 SHOP SELL ROUTE",1,true)
        and clipboard:find("Shops destination candidates=",1,true)
        and clipboard:find("Explicit ore-only Sell controls=",1,true)
        and clipboard:find("Select All clicks=1/1",1,true)
@@ -1081,7 +1178,8 @@ env.timerTest.main = assert(playerGui:FindFirstChild("MyAnimeMineHub"):FindFirst
 env.timerTest.legacy = assert(env.timerTest.main:FindFirstChild("LegacyHiddenControls"))
 env.timerTest.input = assert(env.timerTest.main:FindFirstChild("IntervalMinutes"))
 assert(not env.timerTest.legacy.Visible
-       and findButton("AutoUpgrade").Parent==env.timerTest.legacy
+       and findButton("AutoUpgrade").Parent==env.timerTest.main
+       and findButton("ActionDiagnostics").Parent==env.timerTest.main
        and findButton("ManualWatch").Parent==env.timerTest.legacy
        and findButton("AutoCollect").Parent==env.timerTest.legacy,
        "unused Upgrade/Manual/old Collect buttons must be hidden from main UI")
@@ -1345,4 +1443,4 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.22 timed Collect-Sell-Base cycles, interval UI and hidden legacy tools; existing seller regressions")
+print("PASS My Anime Mine V0.23 native Stats GUI Auto Upgrade, no premium, no Shop overlap, timed farm and seller regressions")
