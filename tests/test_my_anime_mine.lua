@@ -29,7 +29,7 @@ local function instance(className)
         if kind == "GuiObject" then
             return props.ClassName == "Frame" or props.ClassName == "TextButton"
                 or props.ClassName == "ImageButton" or props.ClassName == "TextLabel"
-                or props.ClassName == "ImageLabel"
+                or props.ClassName == "ImageLabel" or props.ClassName == "TextBox"
         end
         return false
     end
@@ -77,7 +77,7 @@ local function instance(className)
     setmetatable(obj, {
         __index = function(_, key)
             if methods[key] then return methods[key] end
-            if key == "Activated" or key == "MouseButton1Click" or key == "InputBegan" or key == "InputChanged" or key == "InputEnded" then
+            if key == "Activated" or key == "FocusLost" or key == "MouseButton1Click" or key == "InputBegan" or key == "InputChanged" or key == "InputEnded" then
                 props.events[key] = props.events[key] or signal()
                 return props.events[key]
             end
@@ -173,7 +173,7 @@ env._G = env
 env.getgenv = function() return env end
 
 local function run()
-    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, baseReturnDestination=baseReturnDestination, returnBaseStep=returnBaseStep, returnBaseDistance=returnBaseDistance, finishVerifiedBaseReturn=finishVerifiedBaseReturn, sellStopWalk=sellStopWalk, recentTakeAllForHandoff=recentTakeAllForHandoff, canCollectDuringSell=canCollectDuringSell, gameChestFrame=gameChestFrame, teleportLauncherCandidates=teleportLauncherCandidates, validatedSellStandSession=validatedSellStandSession, isExactSellStandButton=isExactSellStandButton, sellSelectAllButton=sellSelectAllButton, knownOreSellFrame=knownOreSellFrame}"
+    local testSource = source .. "\nreturn {chestSnapshot=chestSnapshot, chestItemCount=chestItemCount, chooseTakeAllEvent=chooseTakeAllEvent, settleTakeAll=settleTakeAll, observeReopenedChest=observeReopenedChest, monitorManualButton=monitorManualButton, settleManualTakeAll=settleManualTakeAll, scanActionButtons=scanActionButtons, isUpgradeAction=isUpgradeAction, statContext=statContext, actionDiagnosticReport=actionDiagnosticReport, dispatchGameButton=dispatchGameButton, resolveUpgradeFeedback=resolveUpgradeFeedback, nextHolderDetector=nextHolderDetector, holderTargets=holderTargets, approachUpgradeHolder=approachUpgradeHolder, stopUpgradeWalking=stopUpgradeWalking, hiddenEquipBestCandidates=hiddenEquipBestCandidates, headlessRemotes=headlessRemotes, tryHeadlessEquip=tryHeadlessEquip, scanNativeAutoSell=scanNativeAutoSell, nativeAutoSellState=nativeAutoSellState, setNativeAutoSell=setNativeAutoSell, tryNativeAutoSell=tryNativeAutoSell, shopsTeleportLauncher=shopsTeleportLauncher, shopsWarpDestination=shopsWarpDestination, sellVendorTargets=sellVendorTargets, oreSellButton=oreSellButton, shopSellStep=shopSellStep, baseReturnDestination=baseReturnDestination, returnBaseStep=returnBaseStep, returnBaseDistance=returnBaseDistance, finishVerifiedBaseReturn=finishVerifiedBaseReturn, sellStopWalk=sellStopWalk, recentTakeAllForHandoff=recentTakeAllForHandoff, canCollectDuringSell=canCollectDuringSell, gameChestFrame=gameChestFrame, teleportLauncherCandidates=teleportLauncherCandidates, validatedSellStandSession=validatedSellStandSession, isExactSellStandButton=isExactSellStandButton, sellSelectAllButton=sellSelectAllButton, knownOreSellFrame=knownOreSellFrame, armSellRoute=armSellRoute, updateCycleMinutes=updateCycleMinutes, beginCollectionCycle=beginCollectionCycle, updateFarmCycle=updateFarmCycle, setFarmCycleEnabled=setFarmCycleEnabled}"
     local helpers = assert(load(testSource, "@Games/MyAnimeMine.lua", "t", env))()
     return assert(env.MyAnimeMineHubController), helpers
 end
@@ -649,7 +649,7 @@ assert(clipboard:find("SHOP SELL ROUTE",1,true)
        and clipboard:find("Ore-only Sell candidates=",1,true),
        "sale route must expose warp/vendor/sell diagnostics")
 findButton("SellDiagnostics").Activated:Fire()
-assert(clipboard:find("V0.21 SHOP SELL ROUTE",1,true)
+assert(clipboard:find("V0.22 SHOP SELL ROUTE",1,true)
        and clipboard:find("Shops destination candidates=",1,true)
        and clipboard:find("Explicit ore-only Sell controls=",1,true)
        and clipboard:find("Select All clicks=1/1",1,true)
@@ -1074,6 +1074,98 @@ first.sellPhase="OFF"
 root.Position=vector(0,0,0)
 sellScreen.Visible=false
 
+-- V0.22 timed farming: the simplified public UI exposes one Farm Cycle
+-- toggle plus editable minutes. Legacy test-only controls are hidden.
+env.timerTest = {}
+env.timerTest.main = assert(playerGui:FindFirstChild("MyAnimeMineHub"):FindFirstChild("Main"))
+env.timerTest.legacy = assert(env.timerTest.main:FindFirstChild("LegacyHiddenControls"))
+env.timerTest.input = assert(env.timerTest.main:FindFirstChild("IntervalMinutes"))
+assert(not env.timerTest.legacy.Visible
+       and findButton("AutoUpgrade").Parent==env.timerTest.legacy
+       and findButton("ManualWatch").Parent==env.timerTest.legacy
+       and findButton("AutoCollect").Parent==env.timerTest.legacy,
+       "unused Upgrade/Manual/old Collect buttons must be hidden from main UI")
+assert(findButton("FarmCycle").Parent==env.timerTest.main
+       and findButton("MinuteMinus").Parent==env.timerTest.main
+       and findButton("MinutePlus").Parent==env.timerTest.main,
+       "timed Farm and minute controls must be directly accessible")
+assert(not first.cycleEnabled and first.cycleMinutes==5 and first.cyclePhase=="OFF",
+       "timed Farm must begin OFF with a five-minute default")
+env.timerTest.input.Text="2"
+env.timerTest.input.FocusLost:Fire(false)
+assert(first.cycleMinutes==2, "manual interval textbox must accept minutes")
+findButton("MinutePlus").Activated:Fire()
+assert(first.cycleMinutes==3 and env.timerTest.input.Text=="3",
+       "minute plus must increment interval")
+findButton("MinuteMinus").Activated:Fire()
+assert(first.cycleMinutes==2 and env.timerTest.input.Text=="2",
+       "minute minus must decrement interval")
+env.timerTest.input.Text="oops"
+env.timerTest.input.FocusLost:Fire(false)
+assert(first.cycleMinutes==2 and env.timerTest.input.Text=="2",
+       "invalid minutes must not change scheduled farming")
+first.takeAllPending=nil
+first.collect=false
+first.sell=false
+first.sellPhase="OFF"
+first.selectedPlot="MinePlot7"
+activeChest.Visible=false
+findButton("FarmCycle").Activated:Fire()
+assert(first.cycleEnabled and first.cyclePhase=="COLLECTING"
+       and first.collect and first.walkToChest and first.cycleRun==1
+       and helpers.canCollectDuringSell(),
+       "enabling timed farm must start exactly one collection now")
+first.takeAllActions=first.cycleCollectionBaseline+1
+first.takeAllLastDispatchAt=120
+first.takeAllLastDispatchPlot="MinePlot7"
+first.takeAllOutcome="CHEST_CLOSED_AFTER_TAKE_ALL (matches manual UI; inventory unknown)"
+first.takeAllPending={sentAt=120}
+helpers.updateFarmCycle(121)
+assert(first.cyclePhase=="COLLECTING" and not first.sell,
+       "pending Take All cannot trigger Shops sale")
+first.takeAllPending=nil
+helpers.updateFarmCycle(122)
+assert(first.cyclePhase=="SELLING" and first.sell
+       and first.sellPhase=="CHEST_HANDOFF"
+       and first.sellHandoffTakeAllObserved
+       and not helpers.canCollectDuringSell()
+       and first.cycleNextAt==240,
+       "one settled Take All must arm Shops Sell once and schedule next collection 2min later")
+helpers.updateFarmCycle(124)
+assert(first.cyclePhase=="SELLING" and first.sellAttempts==0,
+       "timed cycle may not accidentally restart another Sell")
+helpers.finishVerifiedBaseReturn(40,130)
+assert(first.cyclePhase=="WAITING" and not first.sell
+       and first.sellReturnVerified and not helpers.canCollectDuringSell(),
+       "verified return must enter WAITING instead of immediately opening Chest again")
+helpers.updateFarmCycle(239)
+assert(first.cyclePhase=="WAITING" and first.cycleRun==1,
+       "scheduled Collect cannot begin before minute deadline")
+env.timerTest.input.Text="3"
+env.timerTest.input.FocusLost:Fire(false)
+assert(first.cycleNextAt==300 and first.cycleMinutes==3,
+       "changing minutes during WAITING must reschedule from last Take All")
+helpers.updateFarmCycle(299)
+assert(first.cyclePhase=="WAITING", "rescheduled interval must not fire early")
+helpers.updateFarmCycle(300)
+assert(first.cyclePhase=="COLLECTING" and first.cycleRun==2
+       and helpers.canCollectDuringSell(),
+       "after due time, a NEW Take All collection attempt must start")
+first.cyclePhase="SELLING"
+first.sell=true
+first.sellPhase="PAUSED"
+first.sellStage="Base return unverified"
+helpers.updateFarmCycle(305)
+assert(first.cyclePhase=="PAUSED" and first.cycleEnabled
+       and not helpers.canCollectDuringSell(),
+       "failed shop/Base route must pause timed farm and prevent unsafe Collect")
+findButton("FarmCycle").Activated:Fire()
+assert(not first.cycleEnabled and first.cyclePhase=="OFF"
+       and not first.collect and not first.sell and helpers.canCollectDuringSell(),
+       "switching timed farm OFF must stop all scheduled Collect/Sell routes")
+env.timerTest.input.Text="5"
+env.timerTest.input.FocusLost:Fire(false)
+
 findButton("ActionDiagnostics").Activated:Fire()
 assert(clipboard:find("Holder[1]", 1, true)
        and clipboard:find("maxRange=32.0", 1, true),
@@ -1232,4 +1324,4 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.21 Shops sale, Base/Shops return and verified MinePlot release; recent Take All + safe seller regression")
+print("PASS My Anime Mine V0.22 timed Collect-Sell-Base cycles, interval UI and hidden legacy tools; existing seller regressions")
