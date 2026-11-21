@@ -362,7 +362,7 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.24 | Auto Upgrade: open a placed miner > Stats if panel is not loaded.",
+    Text = "V0.24 | AUTO UPGRADE STATS applies to miners.\nCave research: open Upgrades, select a cave, then select a skill.",
 })
 local farmCycleButton = button("FarmCycle", "AUTO FARM CYCLE: OFF", 16, 103, 478, 43)
 farmCycleButton.TextSize = 14
@@ -2629,6 +2629,7 @@ local function actionDiagnosticReport()
     addButtons("Stats", controller.statsCandidates)
     addButtons("Upgrade", controller.upgradeCandidates)
     addButtons("GameUpgradesMenu (read-only, not auto-purchased)", controller.guiUpgradeMenu)
+    lines[#lines+1] = "Cave research (manual): Upgrades > cave > skill. Check the selected skill for Requirements Complete and its price. Max means fully researched."
     local upgradeSafe,upgradeSafeStatus,upgradeFrames=safeHeadlessStatsUpgrades()
     lines[#lines+1]=upgradeUiDiscoveryReport()
     lines[#lines+1] = "NATIVE HEADLESS STATS UPGRADE status="..upgradeSafeStatus..
