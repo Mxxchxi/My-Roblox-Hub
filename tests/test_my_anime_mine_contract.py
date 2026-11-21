@@ -42,6 +42,7 @@ class MyAnimeMineContracts(unittest.TestCase):
         self.assertIn('controller.cyclePhase="COLLECTING"', SOURCE)
         self.assertIn('controller.cyclePhase~="COLLECTING"', SOURCE)
         self.assertIn("updateFarmCycle(now)", SOURCE)
+        self.assertIn("Take All feedback/Chest close exceeded 25s", SOURCE)
         self.assertIn("LegacyHiddenControls", SOURCE)
         self.assertIn("secondsUntilNext=", SOURCE)
         self.assertIn("local function shopSellStep(now)", SOURCE)
