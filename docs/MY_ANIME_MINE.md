@@ -1,4 +1,4 @@
-# My Anime Mine (v0.21)
+# My Anime Mine (v0.23)
 
 - Roblox game: https://www.roblox.com/games/79389059854988/My-Anime-Mine
 - PlaceId: `79389059854988`
@@ -51,6 +51,15 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 - If the native Base/Shops button is hidden, the SellFrame remains open, there are multiple Base destinations, or the character does not approach the original MinePlot within the bounded wait, the sell route pauses and **Auto Collect stays paused**. Use `COPY SELL ROUTE` for the observed original Plot, Base button target, return click count, current distance, and verification status.
 - **Important limitation:** selectedPlot was originally chosen by proximity; the game has not exposed a verified ownership field in current logs. Nearness to that Plot is a safety check, **not proof that the Plot belongs to the user**. Likewise, sending a GUI Sell click is **not proof of cash credit or successful ore sale**.
 
+## V0.23: Safe native Stats Auto Upgrade
+
+- **Visible interface:** the compact main UI now shows **AUTO UPGRADE STATS: OFF** as a direct opt-in toggle, and **COPY UPGRADE DIAGNOSTICS** next to the existing timed Farm, Auto Mine, Equip Best, Copy Log and Copy Sell Route controls. Upgrade is OFF by default; the user must enable it separately from Auto Farm.
+- **What it does:** without opening additional game windows, inspects **already loaded crew/unit Stats GUI frames** and uses a native game `MouseButton1Click` or `Activated` listener attached to a clearly labeled **Damage**, **Speed**, or **Mining Speed** upgrade row. Only controls inside a unique `UnitGui` / `MineGui` / `CrewGui` `StatsFrame` (or explicit unit/character upgrade frame) qualify. Multiple ambiguous Stats panels, duplicate controls, inactive listeners and unrecognized stat rows result in no purchase.
+- **No premium or unknown network calls:** game-pass/Robux/paid labels, shop/research menu actions and global Upgrades menus are excluded by the existing context and premium check. No `FireServer`/`InvokeServer`, guessed remote arguments, Holder click or automatic GUI popup is added. Authorized in-game **normal currency** may be spent by the game-native Stats click, so enable the toggle only when desired.
+- **Feedback and safety:** one Stats click is sent at a time (at most once per ~8-second worker interval); it waits for a change in the corresponding native Stats row before trying another stat. A changed row is *only UI evidence*, **not confirmation of a level increase or currency deduction**. If the row remains unchanged after feedback settles, upgrades PAUSE after that first unverified call rather than repeatedly spending. An error also pauses.
+- **Compatibility with Auto Farm:** upgrading is allowed only when the character is within 75 studs of the currently selected MinePlot's Chest and, if the timed cycle is on, in **WAITING** at Base. It is paused during collection, Shops selling, Base return, and pending Take All. This avoids competing with the existing working Collect → Sell → Return sequence.
+- **Live limitation:** prior game logs showed `HEADLESS_PROTOCOL_UNKNOWN` and did not reveal the real loaded Stats button structure. If `COPY UPGRADE DIAGNOSTICS` reports `NO_LOADED_STATS_BUTTON_WITH_LISTENER` or `MULTIPLE_CREW_STATS_PANELS`, **no real upgrade was made**. Provide that report after enabling Auto Upgrade for exact game mapping. Static/Lua simulation is not proof of a real Roblox upgrade.
+
 ## V0.22: Timed automatic collection, sale and return
 
 - **Clean main UI:** the visible hub now has **AUTO FARM CYCLE**, an editable **collection interval in minutes** (1–180; default 5), adjacent **−1 / +1** buttons, optional **Auto Mine / Auto Equip Best**, **COPY LOG**, and **COPY SELL ROUTE**. The old manual Take All watcher, diagnostic-only Auto Upgrade, separate Auto Collect/Sell switches, manual scan and duplicate target diagnostics are hidden from the main view for clarity. Their backend test hooks remain to preserve historical regression tests; they are not user-facing.
@@ -60,6 +69,8 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Mxxchxi/My-Roblox-Hub
 - **Limitations:** the clicked Take All / Select All / Sell buttons and return proximity are checked as client UI and position evidence. There is still **no authoritative confirmation that ore reached inventory, that Sell credited money, or that the nearest Plot is owned by the user**. The game's GUI may change and live Potassium testing is needed to verify the entire repeating loop.
 
 ## Features and limitations
+
+Current visible controls in V0.23: Auto Farm timer, Auto Mine, Equip Best, **Auto Upgrade Stats**, Copy Log, Copy Sell Route, and **Copy Upgrade Diagnostics**. The old Manual Watch and manual Scan remain hidden.
 
 - **AUTO SELL ORES — normal Shops route:** uses the user-confirmed path **Teleport → Shops → walk to Sell Items stand → sell ores**. It does not use the 149-Robux Auto Sell Game Pass or the native Chest Auto Sell toggle. The hub tries the existing `MineGui/TeleportButton` listener (or a loaded Shops warp button), detects an explicit `Shops` destination, then waits for actual character movement before finding a sell stand by its own names/ProximityPrompt. It never invents Shops coordinates or teleports by setting CFrame.
 - **Natural navigation:** walks with `Humanoid:MoveTo` toward a grounded Sell Items prompt or stall after Shops warp. Navigation has a 185-stud target limit, a 14-second no-progress timeout, and uses only an exposed ProximityPrompt or ClickDetector when in activation range.
@@ -111,6 +122,10 @@ For reporting a failure: enter the actual game, select SCAN GAME, select COPY LO
 ## Regression checklist
 
 - [ ] UI loads when entering My Anime Mine.
+- [ ] AUTO UPGRADE STATS and COPY UPGRADE DIAGNOSTICS are visible and OFF is the initial state.
+- [ ] The headless upgrade worker calls only a loaded Stats row with exactly one verified native callback; Robux and duplicate panels never trigger clicks.
+- [ ] UI row changes are reported as unverified evidence; an unchanged row pauses instead of endlessly repeating purchases.
+- [ ] When Auto Farm is SELLING/COLLECTING/PAUSED, no Upgrade is dispatched; only while waiting near the selected Plot can it run.
 - [ ] Main UI shows AUTO FARM CYCLE, minutes textbox and -1/+1 buttons, Mine/Equip and Log/Sell Route; test-only/diagnostic-only buttons are hidden.
 - [ ] Interval accepts a valid 1-180 minute value, clamps out-of-range values and rejects non-numbers; edits while WAITING reschedule from last Take All.
 - [ ] Turning cycle ON starts one Chest collection immediately; pending or unclosed Chest cannot initiate Shops sale.
