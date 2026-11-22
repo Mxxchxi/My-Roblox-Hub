@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R52
+-- Roll A Stickman Combined Auto V1.2 R53
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -23,11 +23,11 @@ function boot.show(pg, message)
         boot.label.Parent = boot.gui
         boot.gui.Parent = pg
     end
-    boot.label.Text = "ROLL A STICKMAN R52\n" .. message
+    boot.label.Text = "ROLL A STICKMAN R53\n" .. message
 end
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R52 starting; waiting for game to load")
+print("[RAS] R53 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 assert(game.PlaceId == 115068315659966, "This script requires Roll A Stickman PlaceId 115068315659966")
 local Players = game:GetService("Players")
@@ -347,7 +347,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R52  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R53  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -672,7 +672,11 @@ for _, key in ipairs(settingKeys) do
     flags[key] = savedFlags and savedFlags[key] == true or false
 end
 if not savedFlags or savedFlags.antiAfk == nil then flags.antiAfk = true end
-if savedFlags and savedFlags.cards == nil then flags.cards = savedFlags.moon == true end
+-- Moon polling is OFF on startup, including settings restored from older runs.
+-- Potion/card automation needs confirmed Moon data, so pause both together.
+-- The user can explicitly re-enable them using their existing switches.
+flags.moon = false
+flags.cards = false
 local function clampPosition(x, y)
     local camera = workspace.CurrentCamera
     local viewport = camera and camera.ViewportSize or Vector2.new(1920, 1080)
@@ -928,7 +932,7 @@ end)
 -- remotes, or user-entered TextBox contents are included in this report.
 function neonUI.captureGameUI()
     local root = pg:FindFirstChild("RollAStickman")
-    local lines = {"GAME UI REPORT | R52 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    local lines = {"GAME UI REPORT | R53 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
         "Open Guild > Boss before copying; paths are relative to RollAStickman."}
     if not root then
@@ -3005,7 +3009,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R52 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R53 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3381,10 +3385,11 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R52 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R53 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 boot.ready = true
+log("Moon auto-check OFF; Moon-based Potion and Card automation paused")
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
 if settingsStorage ~= "file" then
     log("Settings are session-only: readfile/writefile support is needed to restore after restarting Roblox")
