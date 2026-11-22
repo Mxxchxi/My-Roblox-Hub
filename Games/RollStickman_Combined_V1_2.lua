@@ -1,14 +1,35 @@
--- Roll A Stickman Combined Auto V1.2 R51
+-- Roll A Stickman Combined Auto V1.2 R52
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
 -- Waiting for game/player/UI readiness is handled below; no remote loader needed.
 
+local boot = {phase = "Waiting for game"}
+function boot.show(pg, message)
+    boot.phase = message
+    if not boot.gui then
+        local previous = pg:FindFirstChild("RollStickman_BootStatus")
+        if previous then previous:Destroy() end
+        boot.gui = Instance.new("ScreenGui")
+        boot.gui.Name = "RollStickman_BootStatus"
+        boot.gui.ResetOnSpawn = false
+        boot.gui.DisplayOrder = 1002
+        boot.label = Instance.new("TextLabel")
+        boot.label.Size = UDim2.fromOffset(550, 80)
+        boot.label.Position = UDim2.fromOffset(12, 240)
+        boot.label.BackgroundColor3 = Color3.fromRGB(24, 40, 65)
+        boot.label.TextColor3 = Color3.new(1, 1, 1)
+        boot.label.TextWrapped = true
+        boot.label.Parent = boot.gui
+        boot.gui.Parent = pg
+    end
+    boot.label.Text = "ROLL A STICKMAN R52\n" .. message
+end
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R51 starting; waiting for game to load")
+print("[RAS] R52 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
-if game.PlaceId ~= 115068315659966 then return end
+assert(game.PlaceId == 115068315659966, "This script requires Roll A Stickman PlaceId 115068315659966")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
@@ -21,7 +42,9 @@ end
 assert(player, "LocalPlayer not ready after 120s; run again after joining")
 local pg = player:WaitForChild("PlayerGui", 120)
 assert(pg, "PlayerGui not ready after 120s")
+boot.show(pg, "Waiting for RollAStickman game UI (up to 120 seconds)")
 assert(pg:WaitForChild("RollAStickman", 120), "RollAStickman UI not ready after 120s")
+boot.show(pg, "Reading saved settings")
 
 local SETTINGS_FILE = "RollStickman_Combined_V1_2_settings.json"
 local SETTINGS_KEY = "RollStickman_Combined_V1_2_settings"
@@ -255,8 +278,10 @@ if previous then
 end
 if previous then previous:Destroy() end
 
+boot.show(pg, "Building automation UI")
 local gui = Instance.new("ScreenGui")
 gui.Name = NAME
+gui:SetAttribute("StartupReady", false)
 gui.ResetOnSpawn = false
 gui.DisplayOrder = 240
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -322,7 +347,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R51  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R52  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -631,6 +656,7 @@ logBox.TextXAlignment = Enum.TextXAlignment.Left
 logBox.TextYAlignment = Enum.TextYAlignment.Top
 logBox.Parent = scroll
 gui.Parent = pg
+boot.show(pg, "Applying settings and starting automation")
 local alive = true
 local minimized = false
 local savedFlags, settingsSource, savedPosition, savedTab, savedPotion, savedCards = readSettings()
@@ -902,7 +928,7 @@ end)
 -- remotes, or user-entered TextBox contents are included in this report.
 function neonUI.captureGameUI()
     local root = pg:FindFirstChild("RollAStickman")
-    local lines = {"GAME UI REPORT | R51 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    local lines = {"GAME UI REPORT | R52 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
         "Open Guild > Boss before copying; paths are relative to RollAStickman."}
     if not root then
@@ -2979,7 +3005,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R51 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R52 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3355,9 +3381,10 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R51 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R52 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
+boot.ready = true
 log("Auto Execute ready: register this complete file in your executor; startup waits for the game UI")
 if settingsStorage ~= "file" then
     log("Settings are session-only: readfile/writefile support is needed to restore after restarting Roblox")
@@ -3597,9 +3624,15 @@ end)
 end, function(err)
     return tostring(err)
 end)
+if startupOk and not boot.ready then
+    startupOk, startupError = false, "Startup stopped before UI was ready; phase=" .. boot.phase
+end
+if boot.gui then boot.gui:Destroy() end
 if startupOk then
     local player = game:GetService("Players").LocalPlayer
     local pg = player and player:FindFirstChild("PlayerGui")
+    local mainUI = pg and pg:FindFirstChild("RollStickman_Combined_V1_2")
+    if mainUI then mainUI:SetAttribute("StartupReady", true) end
     local old = pg and pg:FindFirstChild("RollStickman_StartupError")
     if old then old:Destroy() end
 end
