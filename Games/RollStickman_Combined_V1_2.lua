@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R63
+-- Roll A Stickman Combined Auto V1.2 R64
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -23,11 +23,11 @@ function boot.show(pg, message)
         boot.label.Parent = boot.gui
         boot.gui.Parent = pg
     end
-    boot.label.Text = "ROLL A STICKMAN R63\n" .. message
+    boot.label.Text = "ROLL A STICKMAN R64\n" .. message
 end
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R63 starting; waiting for game to load")
+print("[RAS] R64 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 assert(game.PlaceId == 115068315659966, "This script requires Roll A Stickman PlaceId 115068315659966")
 local Players = game:GetService("Players")
@@ -48,7 +48,7 @@ boot.show(pg, "Reading saved settings")
 
 local SETTINGS_FILE = "RollStickman_Combined_V1_2_settings.json"
 local SETTINGS_KEY = "RollStickman_Combined_V1_2_settings"
-local settingKeys = {"level", "raid", "arena", "dungeon", "expedition", "guildBoss", "turkeyTrot", "feastDraft", "antiAfk"}
+local settingKeys = {"level", "raid", "arena", "dungeon", "expedition", "guildBoss", "greatGobbler", "turkeyTrot", "feastDraft", "antiAfk"}
 local appConfig = {}
 local function settingsEnv()
     if type(getgenv) == "function" then
@@ -167,7 +167,7 @@ local previousFlags = {}
 if previous then
     local previousPanel = previous:FindFirstChild("Panel")
     local names = {level = "LevelToggle", raid = "RaidToggle", arena = "ArenaToggle",
-        dungeon = "DungeonToggle", expedition = "ExpeditionToggle", guildBoss = "GuildBossToggle", turkeyTrot = "TurkeyTrotToggle", feastDraft = "FeastDraftToggle",
+        dungeon = "DungeonToggle", expedition = "ExpeditionToggle", guildBoss = "GuildBossToggle", greatGobbler = "GreatGobblerToggle", turkeyTrot = "TurkeyTrotToggle", feastDraft = "FeastDraftToggle",
         antiAfk = "AntiAfkToggle"}
     for key, name in pairs(names) do
         local storedFlag = previous:GetAttribute("Flag_" .. key)
@@ -249,7 +249,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R63  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R64  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -317,6 +317,7 @@ local toggles = {
     expedition = pageItem("Fight", button("ExpeditionToggle", "EXPEDITIONS: OFF", 12, 242, 336, 36)),
     guildBoss = pageItem("Fight", button("GuildBossToggle", "GUILD BOSS: OFF", 12, 284, 336, 36)),
     turkeyTrot = pageItem("Fight", button("TurkeyTrotToggle", "FARM MODE: ENDLESS", 12, 326, 336, 36)),
+    greatGobbler = pageItem("Fight", button("GreatGobblerToggle", "GREAT GOBBLER: OFF", 12, 368, 336, 36)),
     feastDraft = pageItem("Feast Draft", button("FeastDraftToggle", "FEAST DRAFT: OFF", 12, 116, 336, 36)),
     antiAfk = pageItem("Settings", button("AntiAfkToggle", "ANTI AFK: ON", 12, 116, 336, 36)),
 }
@@ -334,6 +335,7 @@ pageLabel("Feast Draft", "DraftRules", "Rank 1 wins. Use arrows to reorder. Rari
 pageLabel("Feast Draft", "RarityHeading", "1. RARITY PRIORITY", 240, 22)
 pageLabel("Feast Draft", "StatHeading", "2. STAT PRIORITY", 498, 22)
 neonUI.draftHint = pageLabel("Feast Draft", "DraftHint", "Default: rarity first, then ATK / SPD / HP / SHIELD / THORNS. Equal scores use the chosen tiebreak position.", 814, 64)
+neonUI.gobblerHint = pageLabel("Fight", "GobblerHint", "GREAT GOBBLER · Event > Showdown. Reads cooldown before FIGHT; Raid has priority.", 750, 60)
 pageLabel("Fight", "DraftShortcutHint", "FEAST DRAFT settings and automation are on the Feast Draft page.", 410, 40)
 pageLabel("Status", "StatusHeading", "STATUS  /  LIVE GAME VALUES", 90, 20)
 local statusScroll = Instance.new("ScrollingFrame")
@@ -451,8 +453,8 @@ if savedPosition then
     if ok then panel.Position = UDim2.fromOffset(x, y) end
 end
 settingsPosition = {x = panel.Position.X.Offset, y = panel.Position.Y.Offset}
-local versions = {level = 0, raid = 0, arena = 0, dungeon = 0, expedition = 0, guildBoss = 0, turkeyTrot = 0, feastDraft = 0, antiAfk = 0}
-local titles = {level = "LEVEL UP", raid = "RAID", arena = "ARENA", dungeon = "DUNGEON", guildBoss = "GUILD BOSS", turkeyTrot = "FARM MODE", feastDraft = "FEAST DRAFT",
+local versions = {level = 0, raid = 0, arena = 0, dungeon = 0, expedition = 0, guildBoss = 0, greatGobbler = 0, turkeyTrot = 0, feastDraft = 0, antiAfk = 0}
+local titles = {level = "LEVEL UP", raid = "RAID", arena = "ARENA", dungeon = "DUNGEON", guildBoss = "GUILD BOSS", greatGobbler = "GREAT GOBBLER", turkeyTrot = "FARM MODE", feastDraft = "FEAST DRAFT",
     expedition = "EXPEDITIONS", antiAfk = "ANTI AFK"}
 local function paintToggle(key)
     if key == "turkeyTrot" then
@@ -657,6 +659,7 @@ for key, obj in pairs(toggles) do
         flags[key] = not flags[key]
         versions[key] = versions[key] + 1
         if key == "guildBoss" and neonUI.guild then neonUI.guild.nextCheck = 0 end
+        if key == "greatGobbler" and neonUI.gobbler then neonUI.gobbler.nextCheck = 0 end
         if key == "feastDraft" and neonUI.draft then
             neonUI.draft.nextCheck = 0
             neonUI.draft.engaged, neonUI.draft.blocked = false, false
@@ -702,7 +705,7 @@ end)
 -- remotes, or user-entered TextBox contents are included in this report.
 function neonUI.captureGameUI()
     local root = pg:FindFirstChild("RollAStickman")
-    local lines = {"GAME UI REPORT | R63 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    local lines = {"GAME UI REPORT | R64 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
         "Open Guild > Boss before copying; paths are relative to RollAStickman."}
     if not root then
@@ -740,6 +743,9 @@ copyButton.Activated:Connect(function()
     local value = table.concat(logs, "\n")
     local reportOK, report = pcall(neonUI.captureGameUI)
     value = value .. "\n\n" .. (reportOK and report or ("GAME UI REPORT ERROR: " .. tostring(report)))
+    if neonUI.gobbler and neonUI.gobbler.report then
+        value = value .. "\n\n" .. neonUI.gobbler.report
+    end
     if neonUI.draft and neonUI.draft.report then
         value = value .. "\n\n" .. neonUI.draft.report
     end
@@ -1910,6 +1916,127 @@ function neonUI.trot.tick(version)
     end
 end
 
+-- Great Gobbler/Showdown paths verified in the supplied R63 UI report.
+neonUI.gobbler = {nextCheck = 0}
+function neonUI.gobbler.page()
+    local root = child(page(), {"Piece", "Body", "ShowdownScreen"})
+    local name = child(root, {"Body", "Scroll", "Hero", "Name"})
+    return visible(name) and textOf(name) == "GREAT GOBBLER" and root or nil
+end
+function neonUI.gobbler.clock(value)
+    local min, sec = tostring(value or ""):match("^(%d+):(%d%d)$")
+    if min and tonumber(sec) < 60 then return tonumber(min) * 60 + tonumber(sec) end
+end
+function neonUI.gobbler.wait(version, seconds, predicate)
+    local deadline = os.clock() + seconds
+    repeat
+        if not valid("greatGobbler", version) or neonUI.raidActive() then return false end
+        if predicate() then return true end
+        task.wait(0.25)
+    until os.clock() >= deadline
+    return valid("greatGobbler", version) and not neonUI.raidActive() and predicate()
+end
+function neonUI.gobbler.pause(reason)
+    local boss = neonUI.gobbler
+    boss.nextCheck = math.huge
+    local ok, report = pcall(neonUI.captureGameUI)
+    if ok then boss.report = "GREAT GOBBLER | " .. reason .. "\n" .. report end
+    neonUI.gobblerHint.Text = "GREAT GOBBLER · " .. reason .. "; COPY LOG, toggle OFF/ON to retry"
+    note("Great Gobbler paused: " .. reason .. "; COPY LOG")
+end
+function neonUI.gobbler.back(version)
+    local boss = neonUI.gobbler
+    if not valid("greatGobbler", version) or neonUI.raidActive() then return end
+    local root = boss.page()
+    if root then
+        if not fire("gobbler.close", child(root, {"Bar", "Close"}), "X", 2)
+            or not boss.wait(version, 4, function() return not boss.page() end) then return end
+    end
+    if valid("greatGobbler", version) and not neonUI.raidActive() and not modalOpen() then
+        fire("gobbler.back", neonUI.farm.tab(), nil, 2)
+    end
+end
+function neonUI.gobbler.inBattle()
+    local title = battleTitle()
+    return title:find("GREAT GOBBLER", 1, true) ~= nil
+        or title:find("GOBBLE SHOWDOWN", 1, true) ~= nil
+end
+function neonUI.gobbler.tick(version)
+    local boss = neonUI.gobbler
+    if not valid("greatGobbler", version) or neonUI.raidActive() then return end
+    boss.nextCheck = os.clock() + 300
+    if not boss.page() then
+        if not fire("gobbler.event", get({"Frame", "Hud", "Utilevent"}), nil, 3) then return end
+        if not boss.wait(version, 5, function()
+            return boss.page() or uiButton(page(), {SHOWDOWN=true, ["GOBBLE SHOWDOWN"]=true})
+        end) then
+            if valid("greatGobbler", version) then
+                boss.pause("Event Showdown button not found")
+                boss.back(version)
+            end
+            return
+        end
+        if not boss.page() then
+            local tab = uiButton(page(), {SHOWDOWN=true, ["GOBBLE SHOWDOWN"]=true})
+            if not valid("greatGobbler", version) then return end
+            if not fire("gobbler.showdown", tab, nil, 3)
+                or not boss.wait(version, 5, function() return boss.page() ~= nil end) then
+                if valid("greatGobbler", version) then
+                    boss.pause("Showdown entry not confirmed")
+                    boss.back(version)
+                end
+                return
+            end
+        end
+    end
+    if not valid("greatGobbler", version) then return end
+    local root = child(boss.page(), {"Body", "Scroll"})
+    local fight = child(root, {"Buttons", "Fight"})
+    local sub = child(fight, {"Face", "Sub"})
+    local caption = visible(sub) and textOf(sub) or ""
+    local nextText = child(root, {"Hero", "Goal", "R3", "Amount"})
+    local nextValue = visible(nextText) and textOf(nextText):match("^NEXT (.+)$") or ""
+    local a, b = boss.clock(caption), boss.clock(nextValue)
+    local cooldown = a and b and math.max(a,b) or a or b
+    if cooldown and cooldown > 0 then
+        boss.nextCheck = os.clock() + cooldown + 2
+        neonUI.gobblerHint.Text = "GREAT GOBBLER · Waiting " .. cooldown .. "s before next check"
+        log("Great Gobbler cooldown | button=" .. caption .. " | NEXT=" .. tostring(nextValue)
+            .. " | next check in " .. (cooldown + 2) .. "s")
+        boss.back(version)
+        return
+    end
+    if not ready(fight) or buttonText(fight) ~= "FIGHT" then
+        boss.pause("FIGHT not available"); boss.back(version); return
+    end
+    if caption ~= "" and caption ~= "READY" and caption ~= "NOW" and a ~= 0 then
+        boss.pause("Unrecognized FIGHT status"); boss.back(version); return
+    end
+    if not valid("greatGobbler", version) then return end
+    if not fire("gobbler.fight", fight, "FIGHT", 10) then return end
+    note("Great Gobbler FIGHT dispatched; waiting for confirmed battle title")
+    if not boss.wait(version, 12, boss.inBattle) then
+        if valid("greatGobbler", version) then boss.pause("Battle start unconfirmed") end
+        return
+    end
+    note("Great Gobbler battle observed")
+    local started, stable, deadline = os.clock(), nil, os.clock() + 150
+    repeat
+        task.wait(0.5)
+        if not valid("greatGobbler", version) then return end
+        if modalOpen() then boss.pause("Result modal needs identification"); return end
+        local returned = not boss.inBattle() and (boss.page() or (dungeonUI.idleBattle() and not visible(page())))
+        if returned and os.clock() - started >= 5 then stable = stable or os.clock() else stable = nil end
+        if stable and os.clock() - stable >= 3 then
+            note("Great Gobbler returned; result not verified; next check in 5 minutes")
+            boss.nextCheck = os.clock() + 300
+            boss.back(version)
+            return
+        end
+    until os.clock() >= deadline
+    boss.pause("Battle return timeout")
+end
+
 local statusNextPowerScan = 0
 local function scanTeamPower()
     -- Accept an explicit team/total-power field, never a random card's POWER.
@@ -1991,7 +2118,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R63 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R64 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 boot.ready = true
@@ -2021,6 +2148,11 @@ task.spawn(function()
             if flags.feastDraft and (neonUI.draft.engaged or neonUI.draft.page() or neonUI.draft.modal()) then
                 if not busy and (now >= neonUI.draft.nextCheck or neonUI.draft.result()) then run("feastDraft", neonUI.draft.tick) end
                 return
+            end
+            if not busy and flags.greatGobbler and not dungeonStarted and not inDungeon()
+                and not modalOpen() and now >= neonUI.gobbler.nextCheck
+                and (neonUI.gobbler.page() or (dungeonUI.idleBattle() and not visible(page()))) then
+                run("greatGobbler", neonUI.gobbler.tick)
             end
             if not busy and flags.feastDraft and not dungeonStarted and not inDungeon()
                 and not modalOpen() and now >= neonUI.draft.nextCheck and dungeonUI.idleBattle() then
