@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R57
+-- Roll A Stickman Combined Auto V1.2 R58
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -23,11 +23,11 @@ function boot.show(pg, message)
         boot.label.Parent = boot.gui
         boot.gui.Parent = pg
     end
-    boot.label.Text = "ROLL A STICKMAN R57\n" .. message
+    boot.label.Text = "ROLL A STICKMAN R58\n" .. message
 end
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R57 starting; waiting for game to load")
+print("[RAS] R58 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 assert(game.PlaceId == 115068315659966, "This script requires Roll A Stickman PlaceId 115068315659966")
 local Players = game:GetService("Players")
@@ -351,7 +351,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R57  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R58  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -962,7 +962,7 @@ end)
 -- remotes, or user-entered TextBox contents are included in this report.
 function neonUI.captureGameUI()
     local root = pg:FindFirstChild("RollAStickman")
-    local lines = {"GAME UI REPORT | R57 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    local lines = {"GAME UI REPORT | R58 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
         "Open Guild > Boss before copying; paths are relative to RollAStickman."}
     if not root then
@@ -1172,7 +1172,7 @@ function neonUI.draft.choices()
     end)
     local header = child(root, {"Head", "Name"})
     local value = visible(header) and textOf(header) or ""
-    local stage = tonumber(value:match("^WAVE (%d+)$"))
+    local stage = tonumber(value:match("^WAVE (%d+)$") or value:match("^WAVE (%d+)%s"))
     local signature = value
     for _, obj in ipairs(choices) do signature = signature .. "|" .. obj.Name end
     return choices, stage, signature
@@ -1213,6 +1213,22 @@ function neonUI.draft.tick(version)
         draft.pause("Card selection unconfirmed"); return
     end
     if modalOpen() then return end
+    local draftPick = get({"Frame", "Calls", "Draft", "Pick"})
+    if draft.engaged and battleTitle():find("FEAST DRAFT", 1, true)
+        and ready(draftPick) and buttonText(draftPick) == "PICK" then
+        if not valid("feastDraft", version) then return end
+        if fire("draft.pick", draftPick, "PICK", 3) then
+            draft.lastProgress = os.clock()
+            local deadline = os.clock() + 4
+            repeat
+                task.wait(0.25)
+                if not valid("feastDraft", version) then return end
+                if draft.modal() then return end
+            until os.clock() >= deadline
+            draft.pause("PICK did not open choices")
+        end
+        return
+    end
     local root = draft.page()
     if not root then
         if draft.engaged then
@@ -3301,7 +3317,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R57 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R58 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3677,7 +3693,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R57 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R58 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 boot.ready = true
