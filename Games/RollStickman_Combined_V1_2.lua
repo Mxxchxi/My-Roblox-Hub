@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R55
+-- Roll A Stickman Combined Auto V1.2 R56
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -23,11 +23,11 @@ function boot.show(pg, message)
         boot.label.Parent = boot.gui
         boot.gui.Parent = pg
     end
-    boot.label.Text = "ROLL A STICKMAN R55\n" .. message
+    boot.label.Text = "ROLL A STICKMAN R56\n" .. message
 end
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R55 starting; waiting for game to load")
+print("[RAS] R56 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 assert(game.PlaceId == 115068315659966, "This script requires Roll A Stickman PlaceId 115068315659966")
 local Players = game:GetService("Players")
@@ -349,7 +349,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R55  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R56  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -952,7 +952,7 @@ end)
 -- remotes, or user-entered TextBox contents are included in this report.
 function neonUI.captureGameUI()
     local root = pg:FindFirstChild("RollAStickman")
-    local lines = {"GAME UI REPORT | R55 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    local lines = {"GAME UI REPORT | R56 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
         "Open Guild > Boss before copying; paths are relative to RollAStickman."}
     if not root then
@@ -1467,6 +1467,39 @@ local function waitUntil(version, seconds, predicate)
     until os.clock() >= deadline
     return predicate()
 end
+neonUI.expeditionSchedule = {lastBadge = 0}
+function neonUI.expeditionSchedule.seconds(value)
+    value = tostring(value or ""):upper():gsub("^%s+", ""):gsub("%s+$", "")
+    local h, m, sec = value:match("^(%d+):(%d%d):(%d%d)$")
+    if h then return tonumber(h) * 3600 + tonumber(m) * 60 + tonumber(sec), 2 end
+    m, sec = value:match("^(%d+):(%d%d)$")
+    if m then return tonumber(m) * 60 + tonumber(sec), 2 end
+    local total, count, smallest = 0, 0, 3600
+    for amount, unit in value:gmatch("(%d+)%s*([HMS])") do
+        local scale = unit == "H" and 3600 or (unit == "M" and 60 or 1)
+        total = total + tonumber(amount) * scale
+        smallest = math.min(smallest, scale)
+        count = count + 1
+    end
+    local remainder = value:gsub("%d+%s*[HMS]", ""):gsub("%s", "")
+    if count > 0 and remainder == "" then return total, smallest == 1 and 2 or smallest end
+end
+function neonUI.expeditionSchedule.nextCheck(ids)
+    local earliest
+    for _, id in ipairs(ids) do
+        local row = expRow(id)
+        if expReady(expControl(row, "Recall", "RECALL"), "RECALL") then
+            local clock = expClock(row)
+            local seconds, margin = neonUI.expeditionSchedule.seconds(visible(clock) and textOf(clock) or "")
+            if seconds then
+                local due = os.clock() + seconds + margin
+                earliest = earliest and math.min(earliest, due) or due
+            end
+        end
+    end
+    return earliest or math.huge
+end
+
 local function expeditionTick(version)
     if not valid("expedition", version) then return end
     if modalTitle() ~= "EXPEDITIONS" then
@@ -1543,10 +1576,17 @@ local function expeditionTick(version)
     else
         log("Expeditions checked | rows=" .. observed .. " | running=" .. active)
     end
+    -- Read fresh clocks after all claims/dispatches; never reuse pre-dispatch time.
+    nextExpedition = neonUI.expeditionSchedule.nextCheck(ids)
+    neonUI.expeditionSchedule.lastBadge = expeditionBadgeCount()
+    if nextExpedition < math.huge then
+        log("Expeditions waiting for cooldown | next check in " .. math.ceil(nextExpedition - os.clock()) .. "s")
+    else
+        log("Expeditions timer unreadable or no running rows; waiting for a new ready badge")
+    end
     if valid("expedition", version) then
         fire("exp.close", child(modalPanel(), {"Close"}), "X", 3)
     end
-    nextExpedition = os.clock() + 60
 end
 
 -- Guild paths verified by R49 GAME UI REPORT from 2026-11-19.
@@ -3111,7 +3151,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R55 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R56 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3487,7 +3527,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R55 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R56 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 boot.ready = true
@@ -3713,7 +3753,8 @@ task.spawn(function()
                 run("pet", function(version) petUI.tick(version, manual) end)
             end
             if not busy and flags.expedition and not blockingDungeonResult
-                and now >= nextExpedition then
+                and (now >= nextExpedition or (nextExpedition == math.huge
+                    and expeditionBadgeCount() > neonUI.expeditionSchedule.lastBadge)) then
                 if modalTitle() == "EXPEDITIONS" or not modalOpen() then
                     run("expedition", expeditionTick)
                 else
