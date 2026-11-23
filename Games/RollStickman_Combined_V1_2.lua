@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R58
+-- Roll A Stickman Combined Auto V1.2 R59
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -23,11 +23,11 @@ function boot.show(pg, message)
         boot.label.Parent = boot.gui
         boot.gui.Parent = pg
     end
-    boot.label.Text = "ROLL A STICKMAN R58\n" .. message
+    boot.label.Text = "ROLL A STICKMAN R59\n" .. message
 end
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R58 starting; waiting for game to load")
+print("[RAS] R59 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 assert(game.PlaceId == 115068315659966, "This script requires Roll A Stickman PlaceId 115068315659966")
 local Players = game:GetService("Players")
@@ -102,6 +102,22 @@ local function settingsEnv()
     if type(shared) == "table" then return shared end
     return _G
 end
+local draftConfig = {
+    rarities = {"MYTHIC", "LEGENDARY", "EPIC", "RARE", "UNCOMMON", "COMMON"},
+    stats = {"ATK", "SPD", "HP", "SHIELD", "THORNS"},
+}
+function draftConfig.order(value, fallback)
+    local order, seen = {}, {}
+    for _, list in ipairs({type(value) == "table" and value or {}, fallback}) do
+        for _, name in ipairs(list) do
+            if type(name) == "string" and #name <= 32 and name:match("^[%a ]+$") then
+                name = name:upper()
+                if not seen[name] and #order < 24 then order[#order + 1] = name; seen[name] = true end
+            end
+        end
+    end
+    return order
+end
 local function cleanSettings(value)
     if type(value) ~= "table" then return nil end
     if value.placeId and value.placeId ~= game.PlaceId then return nil end
@@ -116,7 +132,7 @@ local function cleanSettings(value)
     local position = type(p) == "table" and type(p.x) == "number"
         and type(p.y) == "number" and {x = p.x, y = p.y} or nil
     local tab = value.activeTab
-    if tab ~= "Team" and tab ~= "Fight" and tab ~= "Potion" and tab ~= "Pet" and tab ~= "Open Card" and tab ~= "Status" and tab ~= "Moon" and tab ~= "Settings" then
+    if tab ~= "Team" and tab ~= "Fight" and tab ~= "Potion" and tab ~= "Pet" and tab ~= "Open Card" and tab ~= "Status" and tab ~= "Moon" and tab ~= "Settings" and tab ~= "Feast Draft" then
         tab = "Fight"
     end
     local source = type(value.potion) == "table" and value.potion or {}
@@ -142,6 +158,8 @@ local function cleanSettings(value)
     potion.moonInspectMinutes = minutes(source.moonInspectMinutes, 5)
     potion.moonHudOnly = false
     potion.draftChoice = (source.draftChoice == 2 or source.draftChoice == 3) and source.draftChoice or 1
+    potion.draftRarityOrder = draftConfig.order(source.draftRarityOrder, draftConfig.rarities)
+    potion.draftStatOrder = draftConfig.order(source.draftStatOrder, draftConfig.stats)
     potion.farmMode = (source.farmMode == "turkeyTrot" or source.farmMode == "endless") and source.farmMode or nil
     potion.webhookUrl = validWebhook(source.webhookUrl)
     potion.webhookEnabled = source.webhookEnabled == true and potion.webhookUrl ~= ""
@@ -207,6 +225,8 @@ local function writeSettings(current)
     saved.potion.moonInspectMinutes = potionConfig.moonInspectMinutes
     saved.potion.moonHudOnly = potionConfig.moonHudOnly
     saved.potion.draftChoice = potionConfig.draftChoice or 1
+    saved.potion.draftRarityOrder = draftConfig.order(potionConfig.draftRarityOrder, draftConfig.rarities)
+    saved.potion.draftStatOrder = draftConfig.order(potionConfig.draftStatOrder, draftConfig.stats)
     saved.potion.farmMode = potionConfig.farmMode
     saved.potion.webhookUrl = validWebhook(potionConfig.webhookUrl)
     saved.potion.webhookEnabled = potionConfig.webhookEnabled
@@ -351,13 +371,13 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R58  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R59  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
 local minimizeUI = button("Minimize", "-", 589, 14, 28, 28)
 local closeUI = button("Close", "X", 626, 14, 28, 28)
-local tabPages = {Team = {}, Fight = {}, Potion = {}, Pet = {}, ["Open Card"] = {}, Status = {}, Moon = {}, Settings = {}}
+local tabPages = {Team = {}, Fight = {}, Potion = {}, Pet = {}, ["Open Card"] = {}, Status = {}, Moon = {}, Settings = {}, ["Feast Draft"] = {}}
 local tabButtons = {}
 local activeTab = "Status"
 neonUI.nav = Instance.new("ScrollingFrame")
@@ -367,13 +387,13 @@ neonUI.nav.Size = UDim2.fromOffset(145, 333)
 neonUI.nav.BackgroundColor3 = theme.surface
 neonUI.nav.BorderSizePixel = 0
 neonUI.nav.ScrollBarThickness = 3
-neonUI.nav.CanvasSize = UDim2.fromOffset(0, 344)
+neonUI.nav.CanvasSize = UDim2.fromOffset(0, 385)
 neonUI.nav.Parent = panel
 neonUI.navRound = Instance.new("UICorner")
 neonUI.navRound.CornerRadius = UDim.new(0, 9)
 neonUI.navRound.Parent = neonUI.nav
-neonUI.icons = {Status = "◉", Team = "♟", Fight = "⚔", Potion = "✦", Pet = "◆", ["Open Card"] = "▣", Moon = "☾", Settings = "⚙"}
-for i, tab in ipairs({"Status", "Team", "Fight", "Potion", "Pet", "Open Card", "Moon", "Settings"}) do
+neonUI.icons = {Status = "◉", Team = "♟", Fight = "⚔", Potion = "✦", Pet = "◆", ["Open Card"] = "▣", Moon = "☾", Settings = "⚙", ["Feast Draft"] = "▤"}
+for i, tab in ipairs({"Status", "Team", "Fight", "Feast Draft", "Potion", "Pet", "Open Card", "Moon", "Settings"}) do
     local container = Instance.new("ScrollingFrame")
     container.Name = "Page" .. tab
     container.Position = UDim2.fromOffset(169, 62)
@@ -436,7 +456,7 @@ local toggles = {
     expedition = pageItem("Fight", button("ExpeditionToggle", "EXPEDITIONS: OFF", 12, 242, 336, 36)),
     guildBoss = pageItem("Fight", button("GuildBossToggle", "GUILD BOSS: OFF", 12, 284, 336, 36)),
     turkeyTrot = pageItem("Fight", button("TurkeyTrotToggle", "FARM MODE: ENDLESS", 12, 326, 336, 36)),
-    feastDraft = pageItem("Fight", button("FeastDraftToggle", "FEAST DRAFT: OFF", 12, 368, 336, 36)),
+    feastDraft = pageItem("Feast Draft", button("FeastDraftToggle", "FEAST DRAFT: OFF", 12, 116, 336, 36)),
     moon = pageItem("Potion", button("MoonToggle", "USE POTION: OFF", 12, 116, 336, 30)),
     cards = pageItem("Open Card", button("CardToggle", "AUTO OPEN CARD: OFF", 12, 116, 336, 30)),
     pet = pageItem("Pet", button("PetToggle", "AUTO PET: OFF", 12, 116, 336, 30)),
@@ -450,8 +470,13 @@ local dungeonSchedule = pageLabel("Fight", "DungeonSchedule", "Dungeon check: re
 pageLabel("Fight", "ArenaHint", "ARENA · Continuous while available\nEmpty quota: check in 1 hour.", 558, 44)
 neonUI.guildHint = pageLabel("Fight", "GuildBossHint", "GUILD BOSS · Checks when idle, then every 5 minutes.\nRaid has priority. COPY LOG includes battle snapshots.", 610, 60)
 neonUI.trotHint = pageLabel("Fight", "TurkeyTrotHint", "FARM MODE · Click to select Turkey Trot / Endless. Activities return to the selected mode; no fallback.", 678, 44)
-neonUI.draftChoice = pageItem("Fight", button("DraftChoice", "DRAFT CARD: LEFT", 12, 410, 336, 32))
-neonUI.draftHint = pageLabel("Fight", "DraftHint", "FEAST DRAFT · Choose one card by position; waits between stages. Unknown screens: COPY LOG.", 730, 60)
+neonUI.draftChoice = pageItem("Feast Draft", button("DraftChoice", "TIEBREAK: LEFT", 12, 770, 336, 32))
+pageLabel("Feast Draft", "DraftHeading", "FEAST DRAFT / CARD PRIORITIES", 90, 20)
+pageLabel("Feast Draft", "DraftRules", "Rank 1 wins. Use arrows to reorder. Rarity first, then stat priority, then larger value. Unknown rarity ranks last; SET bonuses are not scored.", 164, 66)
+pageLabel("Feast Draft", "RarityHeading", "1. RARITY PRIORITY", 240, 22)
+pageLabel("Feast Draft", "StatHeading", "2. STAT PRIORITY", 498, 22)
+neonUI.draftHint = pageLabel("Feast Draft", "DraftHint", "Default: rarity first, then ATK / SPD / HP / SHIELD / THORNS. Equal scores use the chosen tiebreak position.", 814, 64)
+pageLabel("Fight", "DraftShortcutHint", "FEAST DRAFT settings and automation are on the Feast Draft page.", 410, 40)
 pageLabel("Potion", "PotionHeading", "POTION  /  CONDITIONS", 90, 20)
 local potionUI = {checks = {}, scanRequested = false, entries = {}, iconMap = {}, iconConflicts = {}, probeAt = 0}
 potionUI.dropdown = pageItem("Potion", button("PotionWhen", "Use Potion When: Aurora   v", 12, 152, 276, 30))
@@ -671,6 +696,8 @@ local minimized = false
 local savedFlags, settingsSource, savedPosition, savedTab, savedPotion, savedCards = readSettings()
 if savedPotion then potionConfig = savedPotion end
 potionConfig.petCatalog = potionConfig.petCatalog or {}
+potionConfig.draftRarityOrder = draftConfig.order(potionConfig.draftRarityOrder, draftConfig.rarities)
+potionConfig.draftStatOrder = draftConfig.order(potionConfig.draftStatOrder, draftConfig.stats)
 petUI.catalog = potionConfig.petCatalog
 if savedCards then cardSelection = savedCards end
 if not savedFlags and next(previousFlags) then
@@ -962,7 +989,7 @@ end)
 -- remotes, or user-entered TextBox contents are included in this report.
 function neonUI.captureGameUI()
     local root = pg:FindFirstChild("RollAStickman")
-    local lines = {"GAME UI REPORT | R58 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    local lines = {"GAME UI REPORT | R59 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
         "Open Guild > Boss before copying; paths are relative to RollAStickman."}
     if not root then
@@ -1177,6 +1204,55 @@ function neonUI.draft.choices()
     for _, obj in ipairs(choices) do signature = signature .. "|" .. obj.Name end
     return choices, stage, signature
 end
+function neonUI.draft.cardInfo(obj)
+    local rarity = child(obj, {"SizeWord"})
+    local info = {rarity = visible(rarity) and textOf(rarity) or "UNKNOWN", stats = {},
+        name = textOf(child(obj, {"Name"})), set = textOf(child(obj, {"Set"}))}
+    local buffs = child(obj, {"Buff"})
+    for _, item in ipairs(buffs and buffs:GetDescendants() or {}) do
+        if visible(item) and item.Name == "Amount" then
+            local text = textOf(item)
+            local amount, stat = text:match("^([%+%-]?%d+%.?%d*)%%?%s+([A-Z ]+)$")
+            amount = tonumber(amount)
+            if amount and stat then
+                stat = stat:gsub("%s+$", "")
+                info.stats[stat] = (info.stats[stat] or 0) + amount
+            end
+        end
+    end
+    return info
+end
+function neonUI.draft.choose(choices)
+    local draft = neonUI.draft
+    local rank = {}
+    for i, name in ipairs(potionConfig.draftRarityOrder) do rank[name] = i end
+    local infos = {}
+    for i, obj in ipairs(choices) do
+        infos[i] = draft.cardInfo(obj)
+        infos[i].rank = rank[infos[i].rarity] or math.huge
+    end
+    local function better(a, b)
+        if a.rank ~= b.rank then return a.rank < b.rank end
+        for _, stat in ipairs(potionConfig.draftStatOrder) do
+            local av, bv = a.stats[stat], b.stats[stat]
+            if (av ~= nil) ~= (bv ~= nil) then return av ~= nil end
+            if av and av ~= bv then return av > bv end
+        end
+        return false
+    end
+    local best = math.clamp(potionConfig.draftChoice or 1, 1, #choices)
+    for i = 1, #choices do if better(infos[i], infos[best]) then best = i end end
+    for i, info in ipairs(infos) do
+        local buffs = {}
+        for _, stat in ipairs(potionConfig.draftStatOrder) do
+            if info.stats[stat] then buffs[#buffs + 1] = stat .. "=" .. info.stats[stat] end
+        end
+        log("Draft option " .. i .. " | " .. info.rarity .. " | " .. info.name
+            .. " | " .. table.concat(buffs, ", ") .. (i == best and " | SELECTED" or ""))
+    end
+    return best
+end
+
 function neonUI.draft.tick(version)
     local draft = neonUI.draft
     if not valid("feastDraft", version) or draft.blocked then return end
@@ -1188,7 +1264,7 @@ function neonUI.draft.tick(version)
             draft.pause("Unknown Feast Draft screen"); return
         end
         if draft.pending == signature then return end
-        local index = potionConfig.draftChoice or 1
+        local index = draft.choose(choices)
         local selected = choices[index]
         draft.pending = signature
         if not valid("feastDraft", version) then return end
@@ -1274,8 +1350,42 @@ function neonUI.draft.tick(version)
     end
 end
 function neonUI.draft.paintChoice()
-    neonUI.draftChoice.Text = "DRAFT CARD: " .. ({"LEFT", "MIDDLE", "RIGHT"})[potionConfig.draftChoice or 1]
+    neonUI.draftChoice.Text = "TIEBREAK: " .. ({"LEFT", "MIDDLE", "RIGHT"})[potionConfig.draftChoice or 1]
 end
+function neonUI.draft.paintRanks()
+    for _, group in ipairs(neonUI.draft.rankRows) do
+        local order = potionConfig[group.field]
+        for i, row in ipairs(group.rows) do row.Text = i .. ". " .. order[i] end
+    end
+end
+function neonUI.draft.buildRanks()
+    neonUI.draft.rankRows = {}
+    for _, spec in ipairs({{field = "draftRarityOrder", y = 268}, {field = "draftStatOrder", y = 528}}) do
+        local group = {field = spec.field, rows = {}}
+        table.insert(neonUI.draft.rankRows, group)
+        for i = 1, #potionConfig[spec.field] do
+            local index = i
+            local y = spec.y + (i - 1) * 36
+            group.rows[i] = pageItem("Feast Draft", button(spec.field .. i, "", 12, y, 236, 30))
+            for _, direction in ipairs({-1, 1}) do
+                local delta = direction
+                local arrow = pageItem("Feast Draft", button(spec.field .. i .. direction,
+                    direction == -1 and "↑" or "↓", direction == -1 and 254 or 302, y, 44, 30))
+                arrow.Activated:Connect(function()
+                    local order = potionConfig[group.field]
+                    local target = index + delta
+                    if target < 1 or target > #order then return end
+                    order[index], order[target] = order[target], order[index]
+                    neonUI.draft.paintRanks()
+                    settingsStorage = writeSettings(flags)
+                end)
+            end
+        end
+    end
+    neonUI.draft.paintRanks()
+end
+neonUI.draft.buildRanks()
+
 neonUI.draft.paintChoice()
 neonUI.draftChoice.Activated:Connect(function()
     potionConfig.draftChoice = (potionConfig.draftChoice or 1) % 3 + 1
@@ -3317,7 +3427,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R58 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R59 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3693,7 +3803,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R58 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R59 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 boot.ready = true
