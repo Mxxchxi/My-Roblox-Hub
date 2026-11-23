@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R65
+-- Roll A Stickman Combined Auto V1.2 R66
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -23,11 +23,11 @@ function boot.show(pg, message)
         boot.label.Parent = boot.gui
         boot.gui.Parent = pg
     end
-    boot.label.Text = "ROLL A STICKMAN R65\n" .. message
+    boot.label.Text = "ROLL A STICKMAN R66\n" .. message
 end
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R65 starting; waiting for game to load")
+print("[RAS] R66 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 assert(game.PlaceId == 115068315659966, "This script requires Roll A Stickman PlaceId 115068315659966")
 local Players = game:GetService("Players")
@@ -249,7 +249,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R65  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R66  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -705,7 +705,7 @@ end)
 -- remotes, or user-entered TextBox contents are included in this report.
 function neonUI.captureGameUI()
     local root = pg:FindFirstChild("RollAStickman")
-    local lines = {"GAME UI REPORT | R65 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    local lines = {"GAME UI REPORT | R66 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
         "Open Guild > Boss before copying; paths are relative to RollAStickman."}
     if not root then
@@ -1130,15 +1130,23 @@ function neonUI.draft.tick(version)
             local sub = child(start, {"Face", "Sub"})
             local quota = visible(sub) and textOf(sub) or ""
             local left = tonumber(quota:match("^(%d+)%s*/%s*%d+%s+LEFT$"))
-            if not left then draft.pause("START RUN quota unreadable"); return end
-            if left == 0 then
-                draft.engaged = false
-                draft.nextCheck = os.clock() + 300
-                neonUI.draftHint.Text = "FEAST DRAFT · No runs left; check again in 5 minutes"
+            local facts = child(root, {"Hero", "Facts", "R1", "Amount"})
+            local factText = visible(facts) and textOf(facts) or ""
+            local factLeft = tonumber(factText:match("^(%d+)%s*/%s*%d+"))
+            local nextClock = quota:match("^NEXT%s+(.+)$")
+            -- NEXT is an explicit cooldown; never treat an active button as a free run.
+            if factLeft == 0 or nextClock or left == 0 then
+                local seconds, margin = neonUI.expeditionSchedule.seconds(nextClock
+                    or factText:match("^%d+%s*/%s*%d+%s+(.+)$") or "")
+                local delay = seconds and (seconds + margin) or 300
+                draft.engaged, draft.blocked = false, false
+                draft.nextCheck = os.clock() + delay
+                neonUI.draftHint.Text = "FEAST DRAFT · No runs left; next check in " .. math.ceil(delay) .. "s"
                 note("Feast Draft quota empty; returning to selected farm mode")
                 if valid("feastDraft", version) then fire("draft.back", neonUI.farm.tab(), nil, 2) end
                 return
             end
+            if not left then draft.pause("START RUN quota unreadable"); return end
             go, action, actionKey = start, "START RUN", "draft.start"
             log("Feast Draft starting new run | " .. quota)
         end
@@ -1924,6 +1932,14 @@ function neonUI.gobbler.page()
     local name = child(root, {"Body", "Scroll", "Hero", "Name"})
     return visible(name) and textOf(name) == "GREAT GOBBLER" and root or nil
 end
+function neonUI.gobbler.showdownTab()
+    -- Event opens a HUD menu, not a Page screen.
+    local menu = get({"Frame", "Hud", "FeastMenu"})
+    local tab = child(menu, {"Menu", "Rows", "barn"})
+    if ready(tab) and buttonText(tab) == "SHOWDOWN" then return tab end
+    return uiButton(menu, {SHOWDOWN=true, ["GOBBLE SHOWDOWN"]=true})
+        or uiButton(page(), {SHOWDOWN=true, ["GOBBLE SHOWDOWN"]=true})
+end
 function neonUI.gobbler.clock(value)
     local min, sec = tostring(value or ""):match("^(%d+):(%d%d)$")
     if min and tonumber(sec) < 60 then return tonumber(min) * 60 + tonumber(sec) end
@@ -1969,7 +1985,7 @@ function neonUI.gobbler.tick(version)
     if not boss.page() then
         if not fire("gobbler.event", get({"Frame", "Hud", "Utilevent"}), nil, 3) then return end
         if not boss.wait(version, 5, function()
-            return boss.page() or uiButton(page(), {SHOWDOWN=true, ["GOBBLE SHOWDOWN"]=true})
+            return boss.page() or boss.showdownTab()
         end) then
             if valid("greatGobbler", version) then
                 boss.pause("Event Showdown button not found")
@@ -1978,7 +1994,7 @@ function neonUI.gobbler.tick(version)
             return
         end
         if not boss.page() then
-            local tab = uiButton(page(), {SHOWDOWN=true, ["GOBBLE SHOWDOWN"]=true})
+            local tab = boss.showdownTab()
             if not valid("greatGobbler", version) then return end
             if not fire("gobbler.showdown", tab, nil, 3)
                 or not boss.wait(version, 5, function() return boss.page() ~= nil end) then
@@ -2119,7 +2135,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R65 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R66 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 boot.ready = true
