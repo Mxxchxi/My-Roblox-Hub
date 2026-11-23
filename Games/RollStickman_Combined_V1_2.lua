@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R60
+-- Roll A Stickman Combined Auto V1.2 R61
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -23,11 +23,11 @@ function boot.show(pg, message)
         boot.label.Parent = boot.gui
         boot.gui.Parent = pg
     end
-    boot.label.Text = "ROLL A STICKMAN R60\n" .. message
+    boot.label.Text = "ROLL A STICKMAN R61\n" .. message
 end
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R60 starting; waiting for game to load")
+print("[RAS] R61 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 assert(game.PlaceId == 115068315659966, "This script requires Roll A Stickman PlaceId 115068315659966")
 local Players = game:GetService("Players")
@@ -249,7 +249,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R60  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R61  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -701,7 +701,7 @@ end)
 -- remotes, or user-entered TextBox contents are included in this report.
 function neonUI.captureGameUI()
     local root = pg:FindFirstChild("RollAStickman")
-    local lines = {"GAME UI REPORT | R60 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    local lines = {"GAME UI REPORT | R61 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
         "Open Guild > Boss before copying; paths are relative to RollAStickman."}
     if not root then
@@ -1041,16 +1041,39 @@ function neonUI.draft.tick(version)
     end
     draft.engaged = true
     local go = child(root, {"Buttons", "Go"})
-    if ready(go) and buttonText(go) == "CONTINUE" then
+    local action, actionKey = "CONTINUE", "draft.continue"
+    if not (ready(go) and buttonText(go) == "CONTINUE") then
+        local start = child(root, {"Start", "Button"})
+        if ready(start) and buttonText(start) == "START RUN" then
+            local sub = child(start, {"Face", "Sub"})
+            local quota = visible(sub) and textOf(sub) or ""
+            local left = tonumber(quota:match("^(%d+)%s*/%s*%d+%s+LEFT$"))
+            if not left then draft.pause("START RUN quota unreadable"); return end
+            if left == 0 then
+                draft.engaged = false
+                draft.nextCheck = os.clock() + 300
+                neonUI.draftHint.Text = "FEAST DRAFT · No runs left; check again in 5 minutes"
+                note("Feast Draft quota empty; returning to selected farm mode")
+                if valid("feastDraft", version) then fire("draft.back", neonUI.farm.tab(), nil, 2) end
+                return
+            end
+            go, action, actionKey = start, "START RUN", "draft.start"
+            log("Feast Draft starting new run | " .. quota)
+        end
+    end
+    if ready(go) and buttonText(go) == action then
         local deadline = os.clock() + 6
-        if not fire("draft.continue", go, "CONTINUE", 2) then return end
+        if not valid("feastDraft", version) then return end
+        if not fire(actionKey, go, action, 2) then return end
         draft.lastProgress = os.clock()
         repeat
             task.wait(0.25)
             if not valid("feastDraft", version) then return end
             if draft.modal() or not draft.page() then return end
+            local continue = child(draft.page(), {"Buttons", "Go"})
+            if action == "START RUN" and ready(continue) and buttonText(continue) == "CONTINUE" then return end
         until os.clock() >= deadline
-        draft.pause("CONTINUE not confirmed")
+        draft.pause(action .. " not confirmed")
     else
         draft.pause("Start/result action not yet identified")
     end
@@ -1882,7 +1905,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R60 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R61 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 boot.ready = true
