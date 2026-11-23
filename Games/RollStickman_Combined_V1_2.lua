@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R54
+-- Roll A Stickman Combined Auto V1.2 R55
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -23,11 +23,11 @@ function boot.show(pg, message)
         boot.label.Parent = boot.gui
         boot.gui.Parent = pg
     end
-    boot.label.Text = "ROLL A STICKMAN R54\n" .. message
+    boot.label.Text = "ROLL A STICKMAN R55\n" .. message
 end
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R54 starting; waiting for game to load")
+print("[RAS] R55 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 assert(game.PlaceId == 115068315659966, "This script requires Roll A Stickman PlaceId 115068315659966")
 local Players = game:GetService("Players")
@@ -141,6 +141,7 @@ local function cleanSettings(value)
     end
     potion.moonInspectMinutes = minutes(source.moonInspectMinutes, 5)
     potion.moonHudOnly = false
+    potion.farmMode = (source.farmMode == "turkeyTrot" or source.farmMode == "endless") and source.farmMode or nil
     potion.webhookUrl = validWebhook(source.webhookUrl)
     potion.webhookEnabled = source.webhookEnabled == true and potion.webhookUrl ~= ""
     for name, amount in pairs(type(source.multipliers) == "table" and source.multipliers or {}) do
@@ -204,6 +205,7 @@ local function writeSettings(current)
     saved.potion.petPlayEnabled = potionConfig.petPlayEnabled
     saved.potion.moonInspectMinutes = potionConfig.moonInspectMinutes
     saved.potion.moonHudOnly = potionConfig.moonHudOnly
+    saved.potion.farmMode = potionConfig.farmMode
     saved.potion.webhookUrl = validWebhook(potionConfig.webhookUrl)
     saved.potion.webhookEnabled = potionConfig.webhookEnabled
     for _, field in ipairs({"moons", "cardMoons", "petLuckMoons"}) do
@@ -271,7 +273,7 @@ if previous then
         local storedFlag = previous:GetAttribute("Flag_" .. key)
         if type(storedFlag) == "boolean" then previousFlags[key] = storedFlag end
         local obj = previousPanel and previousPanel:FindFirstChild(name)
-        if obj and obj:IsA("TextButton") then
+        if obj and obj:IsA("TextButton") and key ~= "turkeyTrot" then
             previousFlags[key] = obj.Text:upper():match(":%s*ON$") ~= nil
         end
     end
@@ -347,7 +349,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R54  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R55  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -431,7 +433,7 @@ local toggles = {
     dungeon = pageItem("Fight", button("DungeonToggle", "DUNGEON: OFF", 12, 200, 336, 36)),
     expedition = pageItem("Fight", button("ExpeditionToggle", "EXPEDITIONS: OFF", 12, 242, 336, 36)),
     guildBoss = pageItem("Fight", button("GuildBossToggle", "GUILD BOSS: OFF", 12, 284, 336, 36)),
-    turkeyTrot = pageItem("Fight", button("TurkeyTrotToggle", "TURKEY TROT: OFF", 12, 326, 336, 36)),
+    turkeyTrot = pageItem("Fight", button("TurkeyTrotToggle", "FARM MODE: ENDLESS", 12, 326, 336, 36)),
     moon = pageItem("Potion", button("MoonToggle", "USE POTION: OFF", 12, 116, 336, 30)),
     cards = pageItem("Open Card", button("CardToggle", "AUTO OPEN CARD: OFF", 12, 116, 336, 30)),
     pet = pageItem("Pet", button("PetToggle", "AUTO PET: OFF", 12, 116, 336, 30)),
@@ -444,7 +446,7 @@ pageLabel("Fight", "DungeonMode", "DUNGEON · ALL TYPES\nNo tickets: check again
 local dungeonSchedule = pageLabel("Fight", "DungeonSchedule", "Dungeon check: ready", 424, 38)
 pageLabel("Fight", "ArenaHint", "ARENA · Continuous while available\nEmpty quota: check in 1 hour.", 474, 44)
 neonUI.guildHint = pageLabel("Fight", "GuildBossHint", "GUILD BOSS · Checks when idle, then every 5 minutes.\nRaid has priority. COPY LOG includes battle snapshots.", 526, 60)
-neonUI.trotHint = pageLabel("Fight", "TurkeyTrotHint", "TURKEY TROT · Idle farming; Raid and scheduled tasks take priority.", 594, 44)
+neonUI.trotHint = pageLabel("Fight", "TurkeyTrotHint", "FARM MODE · Click to select Turkey Trot / Endless. Activities return to the selected mode; no fallback.", 594, 44)
 pageLabel("Potion", "PotionHeading", "POTION  /  CONDITIONS", 90, 20)
 local potionUI = {checks = {}, scanRequested = false, entries = {}, iconMap = {}, iconConflicts = {}, probeAt = 0}
 potionUI.dropdown = pageItem("Potion", button("PotionWhen", "Use Potion When: Aurora   v", 12, 152, 276, 30))
@@ -674,6 +676,7 @@ for _, key in ipairs(settingKeys) do
     flags[key] = savedFlags and savedFlags[key] == true or false
 end
 if not savedFlags or savedFlags.antiAfk == nil then flags.antiAfk = true end
+potionConfig.farmMode = potionConfig.farmMode or (flags.turkeyTrot and "turkeyTrot" or "endless")
 -- Moon polling is OFF on startup, including settings restored from older runs.
 -- Potion/card automation needs confirmed Moon data, so pause both together.
 -- The user can explicitly re-enable them using their existing switches.
@@ -691,9 +694,13 @@ if savedPosition then
 end
 settingsPosition = {x = panel.Position.X.Offset, y = panel.Position.Y.Offset}
 local versions = {level = 0, raid = 0, arena = 0, dungeon = 0, expedition = 0, guildBoss = 0, turkeyTrot = 0, moon = 0, cards = 0, pet = 0, antiAfk = 0}
-local titles = {level = "LEVEL UP", raid = "RAID", arena = "ARENA", dungeon = "DUNGEON", guildBoss = "GUILD BOSS", turkeyTrot = "TURKEY TROT",
+local titles = {level = "LEVEL UP", raid = "RAID", arena = "ARENA", dungeon = "DUNGEON", guildBoss = "GUILD BOSS", turkeyTrot = "FARM MODE",
     expedition = "EXPEDITIONS", moon = "USE POTION", cards = "AUTO OPEN CARD", pet = "AUTO PET", antiAfk = "ANTI AFK"}
 local function paintToggle(key)
+    if key == "turkeyTrot" then
+        toggles[key].Text = "FARM MODE: " .. (potionConfig.farmMode == "turkeyTrot" and "TURKEY TROT" or "ENDLESS")
+            .. (flags[key] and "" or " (PAUSED)")
+    end
     gui:SetAttribute("Flag_" .. key, flags[key] == true)
     toggles[key].BackgroundColor3 = flags[key]
         and theme.accent or theme.off
@@ -889,6 +896,16 @@ local function run(key, operation)
 end
 for key, obj in pairs(toggles) do
     obj.Activated:Connect(function()
+        if key == "turkeyTrot" then
+            potionConfig.farmMode = potionConfig.farmMode == "turkeyTrot" and "endless" or "turkeyTrot"
+            flags[key] = true
+            versions[key] = versions[key] + 1
+            if neonUI.trot then neonUI.trot.nextCheck = 0; neonUI.trot.observed = false end
+            paintToggle(key)
+            settingsStorage = writeSettings(flags)
+            note("Farm mode selected: " .. (potionConfig.farmMode == "turkeyTrot" and "TURKEY TROT" or "ENDLESS"))
+            return
+        end
         flags[key] = not flags[key]
         versions[key] = versions[key] + 1
         if key == "cards" then versions.moon = versions.moon + 1 end
@@ -935,7 +952,7 @@ end)
 -- remotes, or user-entered TextBox contents are included in this report.
 function neonUI.captureGameUI()
     local root = pg:FindFirstChild("RollAStickman")
-    local lines = {"GAME UI REPORT | R54 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    local lines = {"GAME UI REPORT | R55 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
         "Open Guild > Boss before copying; paths are relative to RollAStickman."}
     if not root then
@@ -1087,6 +1104,27 @@ local function uiSummary(root)
     end
     return table.concat(found, " | ")
 end
+-- Every activity returns directly to the user's selected farm mode.
+neonUI.farm = {}
+function neonUI.farm.key()
+    return potionConfig.farmMode == "turkeyTrot" and "trot" or "endless"
+end
+function neonUI.farm.name()
+    return potionConfig.farmMode == "turkeyTrot" and "TURKEY TROT" or "ENDLESS"
+end
+function neonUI.farm.tab()
+    return get({"Frame", "Nav", "Row", neonUI.farm.key()})
+end
+function neonUI.farm.active()
+    local label = child(neonUI.farm.tab(), {"Label"})
+    local value = visible(label) and textOf(label) or ""
+    local navKind, navNumber = value:match("^(%u+) (%d+)$")
+    local battleKind, battleNumber = battleTitle():match("^(%u+) (%d+)")
+    return (navKind == "WAVE" or navKind == "BOSS")
+        and navKind == battleKind and navNumber == battleNumber
+        and visible(get({"Frame", "Battle"})) and not visible(page())
+end
+
 -- Status reads game UI only. Hidden values are explicitly shown as last seen.
 local statusCache = {}
 local function statusPlain(obj)
@@ -1224,7 +1262,7 @@ local function recoverDungeonModal(now)
 end
 
 local function returnToBattle()
-    local endless = get({"Frame", "Nav", "Row", "endless"})
+    local endless = neonUI.farm.tab()
     if fire("dungeon.back", endless, nil, 3) then
         log("Dungeon return to battle requested")
         return true
@@ -1555,9 +1593,9 @@ function neonUI.guild.wait(version, seconds, predicate)
 end
 function neonUI.guild.back(version)
     if not valid("guildBoss", version) or not neonUI.guild.isPage() then return end
-    if fire("guild.back", get({"Frame", "Nav", "Row", "endless"}), nil, 2) then
+    if fire("guild.back", neonUI.farm.tab(), nil, 2) then
         local returned = neonUI.guild.wait(version, 4, function()
-            return not neonUI.guild.isPage() and dungeonUI.idleBattle()
+            return not neonUI.guild.isPage() and neonUI.farm.active()
         end)
         if valid("guildBoss", version) then
             log(returned and "Guild Boss returned to battle"
@@ -1694,49 +1732,50 @@ function neonUI.trot.active()
 end
 function neonUI.trot.capture(reason)
     local ok, report = pcall(neonUI.captureGameUI)
-    if ok then neonUI.trot.report = "TURKEY TROT | " .. reason .. "\n" .. report end
+    if ok then neonUI.trot.report = "FARM MODE " .. neonUI.farm.name() .. " | " .. reason .. "\n" .. report end
 end
 function neonUI.trot.tick(version)
     local trot = neonUI.trot
     if not valid("turkeyTrot", version) then return end
     trot.nextCheck = os.clock() + 5
-    if not trot.active() and not dungeonUI.idleBattle() then return end
-    if not trot.active() then
+    if not neonUI.farm.active() and not dungeonUI.idleBattle() then return end
+    if not neonUI.farm.active() then
         trot.observed = false
-        local tab = get({"Frame", "Nav", "Row", "trot"})
+        local tab = neonUI.farm.tab()
         local label = child(tab, {"Label"})
         local value = visible(label) and textOf(label) or ""
-        if not ready(tab) or (value ~= "TURKEY TROT" and not value:match("^WAVE %d+$")) then
+        local expected = neonUI.farm.name()
+        if not ready(tab) or (value ~= expected and not value:match("^WAVE %d+$")
+            and not value:match("^BOSS %d+$")) then
             trot.nextCheck = os.clock() + 60
-            neonUI.trotHint.Text = "TURKEY TROT · Event tab unavailable; retry in 1 minute"
-            note("Turkey Trot tab unavailable; event availability unconfirmed")
+            neonUI.trotHint.Text = expected .. " · Selected tab unavailable; no mode fallback"
+            note(expected .. " tab unavailable; keeping selected farm mode")
             return
         end
-        if not fire("trot.tab", tab, nil, 5) then return end
+        if not fire("farm.tab", tab, nil, 5) then return end
         local deadline = os.clock() + 6
         repeat
             task.wait(0.25)
             if not valid("turkeyTrot", version) then return end
-        until trot.active() or modalOpen() or os.clock() >= deadline
-        if not trot.active() then
+        until neonUI.farm.active() or modalOpen() or os.clock() >= deadline
+        if not neonUI.farm.active() then
             trot.nextCheck = math.huge
-            trot.capture("ENTRY_UNCONFIRMED")
-            neonUI.trotHint.Text = "TURKEY TROT · Entry unconfirmed; COPY LOG, then toggle OFF/ON to retry"
-            note("Turkey Trot entry unconfirmed; retries paused; COPY LOG")
+            trot.capture("SELECTED_FARM_ENTRY_UNCONFIRMED")
+            neonUI.trotHint.Text = expected .. " · Entry unconfirmed; COPY LOG. No mode fallback."
+            note(expected .. " entry unconfirmed; retries paused; COPY LOG")
             return
         end
     end
     if not valid("turkeyTrot", version) then return end
     if not trot.observed then
         trot.observed = true
-        note("Turkey Trot active | " .. battleTitle())
+        note("Selected farm active: " .. neonUI.farm.name() .. " | " .. battleTitle())
     end
-    neonUI.trotHint.Text = "TURKEY TROT · " .. battleTitle()
-    -- Enable the game's own battle AUTO only when its visible state is OFF.
+    neonUI.trotHint.Text = neonUI.farm.name() .. " · " .. battleTitle()
     local auto = get({"Frame", "Battle", "Dock", "Auto"})
     local autoState = child(auto, {"Face", "Sub"})
     if visible(autoState) and textOf(autoState) == "OFF" then
-        fire("trot.auto", auto, "AUTO", 5)
+        fire("farm.auto", auto, "AUTO", 5)
     end
 end
 
@@ -1863,7 +1902,7 @@ local function openCardPacks()
         fire("moon.cards.menu", entry, buttonText(entry), 2)
     else
         -- Pet preparation leaves the PETS page active; reveal the battle dock first.
-        if not fire("cards.back.battle", get({"Frame", "Nav", "Row", "endless"}), nil, 1) then
+        if not fire("cards.back.battle", neonUI.farm.tab(), nil, 1) then
             cardUI.diagnose("CARD_BATTLE_NAV_UNAVAILABLE")
             return false
         end
@@ -2196,7 +2235,7 @@ local function moonTick(version)
     end
     potionUI.closeCycleWindow()
     if alive and not modalOpen() then
-        fire("cycle.back.battle", get({"Frame", "Nav", "Row", "endless"}), nil, 1)
+        fire("cycle.back.battle", neonUI.farm.tab(), nil, 1)
     end
     local retry = active() and (potionUI.cycle.potionPending
         or (cardMatch and flags.cards and not potionUI.cycle.cardsFinished
@@ -2399,7 +2438,7 @@ function petUI.inspectEquipped(version)
     local stats = petUI.equippedStats()
     if stats then
         log("PET EQUIPPED | " .. stats.text)
-        if backToBattle then fire("pet.inspect.back", get({"Frame", "Nav", "Row", "endless"}), nil, 3) end
+        if backToBattle then fire("pet.inspect.back", neonUI.farm.tab(), nil, 3) end
     end
 end
 function petUI.luckActive()
@@ -2730,7 +2769,7 @@ function petUI.tick(version, manual)
         end
     end
     if check() and back and not modalOpen() then
-        fire("pet.auto.back", get({"Frame", "Nav", "Row", "endless"}), nil, 3)
+        fire("pet.auto.back", neonUI.farm.tab(), nil, 3)
     end
 end
 petUI.scan.Activated:Connect(function()
@@ -3072,7 +3111,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R54 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R55 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3448,7 +3487,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R54 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R55 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 boot.ready = true
@@ -3530,9 +3569,9 @@ task.spawn(function()
                     local function returnToBattle()
                         local untilTime = os.clock() + 4
                         repeat
-                            fire("arena.back", get({"Frame","Nav","Row","endless"}), nil, 1)
+                            fire("arena.back", neonUI.farm.tab(), nil, 1)
                             task.wait(0.25)
-                            if waveBattle() and not arenaPage() then
+                            if neonUI.farm.active() and not arenaPage() then
                                 note("Arena returned to battle")
                                 return
                             end
@@ -3664,7 +3703,7 @@ task.spawn(function()
                     if not ok then petUI.nextCheck = os.clock() + 30 end
                     potionUI.closeCycleWindow()
                     if check() and not modalOpen() then
-                        fire("pet.idle.back", get({"Frame", "Nav", "Row", "endless"}), nil, 1)
+                        fire("pet.idle.back", neonUI.farm.tab(), nil, 1)
                     end
                 end)
             end
@@ -3683,7 +3722,7 @@ task.spawn(function()
             end
             if not busy and flags.turkeyTrot and not dungeonStarted and not inDungeon()
                 and not modalOpen() and not visible(page()) and now >= neonUI.trot.nextCheck
-                and (dungeonUI.idleBattle() or neonUI.trot.active()) then
+                and (dungeonUI.idleBattle() or neonUI.farm.active()) then
                 run("turkeyTrot", neonUI.trot.tick)
             end
         end)
