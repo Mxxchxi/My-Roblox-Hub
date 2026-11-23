@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R62
+-- Roll A Stickman Combined Auto V1.2 R63
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -23,11 +23,11 @@ function boot.show(pg, message)
         boot.label.Parent = boot.gui
         boot.gui.Parent = pg
     end
-    boot.label.Text = "ROLL A STICKMAN R62\n" .. message
+    boot.label.Text = "ROLL A STICKMAN R63\n" .. message
 end
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R62 starting; waiting for game to load")
+print("[RAS] R63 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 assert(game.PlaceId == 115068315659966, "This script requires Roll A Stickman PlaceId 115068315659966")
 local Players = game:GetService("Players")
@@ -249,7 +249,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R62  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R63  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -702,7 +702,7 @@ end)
 -- remotes, or user-entered TextBox contents are included in this report.
 function neonUI.captureGameUI()
     local root = pg:FindFirstChild("RollAStickman")
-    local lines = {"GAME UI REPORT | R62 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    local lines = {"GAME UI REPORT | R63 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
         "Open Guild > Boss before copying; paths are relative to RollAStickman."}
     if not root then
@@ -965,9 +965,53 @@ function neonUI.draft.choose(choices)
     return best
 end
 
+function neonUI.draft.result()
+    if not neonUI.draft.modal() then return nil end
+    local root = child(modalPanel(), {"Content", "Inner", "Scroll"})
+    local sub, head = child(root, {"Sub"}), child(root, {"Head"})
+    if visible(sub) and textOf(sub) == "ALL CLEARED"
+        and visible(head) and textOf(head) == "WAVE 50" then return root end
+end
+function neonUI.draft.finish(version)
+    local draft = neonUI.draft
+    if not valid("feastDraft", version) or neonUI.raidActive() then return end
+    local result = draft.result()
+    if not result then return end
+    draft.engaged, draft.blocked = true, false
+    if not draft.resultLogged then
+        draft.resultLogged = true
+        local reward = textOf(child(result, {"Pay", "R1", "Amount"}))
+        log("Feast Draft ALL CLEARED confirmed | 50/50 | displayed reward=" .. reward)
+        local ok, report = pcall(neonUI.captureGameUI)
+        if ok then draft.report = "FEAST DRAFT | ALL_CLEARED_CONFIRMED\n" .. report end
+    end
+    draft.nextCheck = os.clock() + 5
+    if not fire("draft.result.close", child(modalPanel(), {"Close"}), "X", 2) then return end
+    local deadline = os.clock() + 4
+    repeat
+        task.wait(0.25)
+        if not valid("feastDraft", version) then return end
+        if not draft.modal() then break end
+    until os.clock() >= deadline
+    if draft.modal() then
+        neonUI.draftHint.Text = "FEAST DRAFT · All cleared; retrying result close"
+        return
+    end
+    draft.engaged, draft.blocked, draft.resumeAfterRaid = false, false, false
+    draft.pending, draft.lastProgress = nil, nil
+    draft.nextCheck = os.clock() + 300
+    neonUI.draftHint.Text = "FEAST DRAFT · ALL CLEARED 50/50. Next check in 5 minutes."
+    if valid("feastDraft", version) then
+        fire("draft.finished.back", neonUI.farm.tab(), nil, 2)
+    end
+    note("Feast Draft completed; result closed; returning to selected farm mode")
+end
+
 function neonUI.draft.tick(version)
     local draft = neonUI.draft
-    if not valid("feastDraft", version) or draft.blocked then return end
+    if not valid("feastDraft", version) or neonUI.raidActive() then return end
+    if draft.result() then draft.finish(version); return end
+    if draft.blocked then return end
     draft.nextCheck = os.clock() + 1
     if neonUI.raidActive() then return end
     -- A Draft choice modal may remain visible over Raid/normal farming.
@@ -1097,6 +1141,7 @@ function neonUI.draft.tick(version)
         local deadline = os.clock() + 6
         if not valid("feastDraft", version) then return end
         if not fire(actionKey, go, action, 2) then return end
+        if action == "START RUN" then draft.resultLogged = false end
         draft.lastProgress = os.clock()
         repeat
             task.wait(0.25)
@@ -1946,7 +1991,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R62 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R63 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 boot.ready = true
@@ -1974,7 +2019,7 @@ task.spawn(function()
                 raidTick()
             end
             if flags.feastDraft and (neonUI.draft.engaged or neonUI.draft.page() or neonUI.draft.modal()) then
-                if not busy and now >= neonUI.draft.nextCheck then run("feastDraft", neonUI.draft.tick) end
+                if not busy and (now >= neonUI.draft.nextCheck or neonUI.draft.result()) then run("feastDraft", neonUI.draft.tick) end
                 return
             end
             if not busy and flags.feastDraft and not dungeonStarted and not inDungeon()
