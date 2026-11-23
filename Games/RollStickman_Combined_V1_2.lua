@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R64
+-- Roll A Stickman Combined Auto V1.2 R65
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -23,11 +23,11 @@ function boot.show(pg, message)
         boot.label.Parent = boot.gui
         boot.gui.Parent = pg
     end
-    boot.label.Text = "ROLL A STICKMAN R64\n" .. message
+    boot.label.Text = "ROLL A STICKMAN R65\n" .. message
 end
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R64 starting; waiting for game to load")
+print("[RAS] R65 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 assert(game.PlaceId == 115068315659966, "This script requires Roll A Stickman PlaceId 115068315659966")
 local Players = game:GetService("Players")
@@ -249,7 +249,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R64  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R65  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -705,7 +705,7 @@ end)
 -- remotes, or user-entered TextBox contents are included in this report.
 function neonUI.captureGameUI()
     local root = pg:FindFirstChild("RollAStickman")
-    local lines = {"GAME UI REPORT | R64 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    local lines = {"GAME UI REPORT | R65 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
         "Open Guild > Boss before copying; paths are relative to RollAStickman."}
     if not root then
@@ -1562,7 +1562,7 @@ local function waitUntil(version, seconds, predicate)
         if predicate() then return true end
         task.wait(0.5)
     until os.clock() >= deadline
-    return predicate()
+    return valid("expedition", version) and predicate()
 end
 neonUI.expeditionSchedule = {lastBadge = 0}
 function neonUI.expeditionSchedule.seconds(value)
@@ -1585,8 +1585,9 @@ function neonUI.expeditionSchedule.nextCheck(ids)
     local earliest
     for _, id in ipairs(ids) do
         local row = expRow(id)
-        if expReady(expControl(row, "Recall", "RECALL"), "RECALL") then
-            local clock = expClock(row)
+        -- A visible timer remains authoritative when RECALL is disabled.
+        local clock = expClock(row)
+        if visible(clock) then
             local seconds, margin = neonUI.expeditionSchedule.seconds(visible(clock) and textOf(clock) or "")
             if seconds then
                 local due = os.clock() + seconds + margin
@@ -1631,7 +1632,7 @@ local function expeditionTick(version)
         local recall = expControl(row, "Recall", "RECALL")
         local clock = expClock(row)
         if claim or again or recall or uiButton(row, {["SEND"] = true}) then observed = observed + 1 end
-        if expReady(recall, "RECALL") and visible(clock) then
+        if visible(clock) and neonUI.expeditionSchedule.seconds(textOf(clock)) ~= nil then
             active = active + 1
             sendLocked[id] = nil
         elseif expReady(claim, "CLAIM") then
@@ -1643,6 +1644,7 @@ local function expeditionTick(version)
                 end)
             end
         end
+        if not valid("expedition", version) then return end
         again = expControl(expRow(id), "Again", "SEND AGAIN")
             or expControl(expRow(id), "Send", "SEND")
         local sendLabel = again and buttonText(again)
@@ -1654,8 +1656,7 @@ local function expeditionTick(version)
                 local confirmed = waitUntil(version, 10, function()
                     local r = expRow(id)
                     local c = expClock(r)
-                    return expReady(expControl(r, "Recall", "RECALL"), "RECALL")
-                        and visible(c) and textOf(c) ~= ""
+                    return visible(c) and neonUI.expeditionSchedule.seconds(textOf(c)) ~= nil
                 end)
                 if confirmed then
                     local clock = expClock(expRow(id))
@@ -2118,7 +2119,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R64 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R65 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 boot.ready = true
@@ -2141,6 +2142,10 @@ task.spawn(function()
             observeDungeon(now)
             if now < (neonUI.raidPriorityUntil or 0) or neonUI.raidActive() then return end
             if not busy then neonUI.dismissDaily(now) end
+            local expeditionBadge = expeditionBadgeCount()
+            local expeditionBadgeRose = expeditionBadge > neonUI.expeditionSchedule.lastBadge
+            neonUI.expeditionSchedule.lastBadge = expeditionBadge
+            if nextExpedition == math.huge and expeditionBadgeRose then nextExpedition = now end
             local blockingDungeonResult = recoverDungeonModal(now)
             if not busy and flags.raid and not modalOpen() and now >= nextRaid then
                 raidTick()
@@ -2148,6 +2153,14 @@ task.spawn(function()
             if flags.feastDraft and (neonUI.draft.engaged or neonUI.draft.page() or neonUI.draft.modal()) then
                 if not busy and (now >= neonUI.draft.nextCheck or neonUI.draft.result()) then run("feastDraft", neonUI.draft.tick) end
                 return
+            end
+            if not busy and flags.expedition and not blockingDungeonResult
+                and (now >= nextExpedition or (nextExpedition == math.huge and expeditionBadgeRose)) then
+                if modalTitle() == "EXPEDITIONS" or not modalOpen() then
+                    run("expedition", expeditionTick)
+                else
+                    nextExpedition = now + 8
+                end
             end
             if not busy and flags.greatGobbler and not dungeonStarted and not inDungeon()
                 and not modalOpen() and now >= neonUI.gobbler.nextCheck
@@ -2320,15 +2333,6 @@ task.spawn(function()
             end
             if not busy and flags.level and not modalOpen() and now >= nextLevel then
                 run("level", levelTick)
-            end
-            if not busy and flags.expedition and not blockingDungeonResult
-                and (now >= nextExpedition or (nextExpedition == math.huge
-                    and expeditionBadgeCount() > neonUI.expeditionSchedule.lastBadge)) then
-                if modalTitle() == "EXPEDITIONS" or not modalOpen() then
-                    run("expedition", expeditionTick)
-                else
-                    nextExpedition = now + 8
-                end
             end
             if not busy and flags.turkeyTrot and not dungeonStarted and not inDungeon()
                 and not modalOpen() and not visible(page()) and now >= neonUI.trot.nextCheck
