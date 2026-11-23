@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R56
+-- Roll A Stickman Combined Auto V1.2 R57
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -23,11 +23,11 @@ function boot.show(pg, message)
         boot.label.Parent = boot.gui
         boot.gui.Parent = pg
     end
-    boot.label.Text = "ROLL A STICKMAN R56\n" .. message
+    boot.label.Text = "ROLL A STICKMAN R57\n" .. message
 end
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R56 starting; waiting for game to load")
+print("[RAS] R57 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 assert(game.PlaceId == 115068315659966, "This script requires Roll A Stickman PlaceId 115068315659966")
 local Players = game:GetService("Players")
@@ -48,7 +48,7 @@ boot.show(pg, "Reading saved settings")
 
 local SETTINGS_FILE = "RollStickman_Combined_V1_2_settings.json"
 local SETTINGS_KEY = "RollStickman_Combined_V1_2_settings"
-local settingKeys = {"level", "raid", "arena", "dungeon", "expedition", "guildBoss", "turkeyTrot", "moon", "cards", "pet", "antiAfk"}
+local settingKeys = {"level", "raid", "arena", "dungeon", "expedition", "guildBoss", "turkeyTrot", "feastDraft", "moon", "cards", "pet", "antiAfk"}
 local potionNames = {luck = "Luck Potion", haste = "Haste Potion", gild = "Gilded Potion"}
 -- These seven names are confirmed by the user's in-game MOONS screenshot.
 local potionConfig = {when = "Aurora", moons = {AURORA = true}, cardMoons = {AURORA = true}, petLuckMoons = {AURORA = true}, petPlayEveryMinutes = 5, petPlayEnabled = true, moonInspectMinutes = 5, moonHudOnly = false, webhookEnabled = false, webhookUrl = "", available = {"Normal", "Silver", "Harvest", "Blue", "Eclipse", "Starfall", "Aurora"}, multipliers = {NORMAL = 1, SILVER = 1.5, AURORA = 12}, selected = {luck = true, haste = true, gild = true}}
@@ -141,6 +141,7 @@ local function cleanSettings(value)
     end
     potion.moonInspectMinutes = minutes(source.moonInspectMinutes, 5)
     potion.moonHudOnly = false
+    potion.draftChoice = (source.draftChoice == 2 or source.draftChoice == 3) and source.draftChoice or 1
     potion.farmMode = (source.farmMode == "turkeyTrot" or source.farmMode == "endless") and source.farmMode or nil
     potion.webhookUrl = validWebhook(source.webhookUrl)
     potion.webhookEnabled = source.webhookEnabled == true and potion.webhookUrl ~= ""
@@ -205,6 +206,7 @@ local function writeSettings(current)
     saved.potion.petPlayEnabled = potionConfig.petPlayEnabled
     saved.potion.moonInspectMinutes = potionConfig.moonInspectMinutes
     saved.potion.moonHudOnly = potionConfig.moonHudOnly
+    saved.potion.draftChoice = potionConfig.draftChoice or 1
     saved.potion.farmMode = potionConfig.farmMode
     saved.potion.webhookUrl = validWebhook(potionConfig.webhookUrl)
     saved.potion.webhookEnabled = potionConfig.webhookEnabled
@@ -267,7 +269,7 @@ local previousFlags = {}
 if previous then
     local previousPanel = previous:FindFirstChild("Panel")
     local names = {level = "LevelToggle", raid = "RaidToggle", arena = "ArenaToggle",
-        dungeon = "DungeonToggle", expedition = "ExpeditionToggle", guildBoss = "GuildBossToggle", turkeyTrot = "TurkeyTrotToggle",
+        dungeon = "DungeonToggle", expedition = "ExpeditionToggle", guildBoss = "GuildBossToggle", turkeyTrot = "TurkeyTrotToggle", feastDraft = "FeastDraftToggle",
         moon = "MoonToggle", cards = "CardToggle", pet = "PetToggle", antiAfk = "AntiAfkToggle"}
     for key, name in pairs(names) do
         local storedFlag = previous:GetAttribute("Flag_" .. key)
@@ -349,7 +351,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R56  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R57  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -434,6 +436,7 @@ local toggles = {
     expedition = pageItem("Fight", button("ExpeditionToggle", "EXPEDITIONS: OFF", 12, 242, 336, 36)),
     guildBoss = pageItem("Fight", button("GuildBossToggle", "GUILD BOSS: OFF", 12, 284, 336, 36)),
     turkeyTrot = pageItem("Fight", button("TurkeyTrotToggle", "FARM MODE: ENDLESS", 12, 326, 336, 36)),
+    feastDraft = pageItem("Fight", button("FeastDraftToggle", "FEAST DRAFT: OFF", 12, 368, 336, 36)),
     moon = pageItem("Potion", button("MoonToggle", "USE POTION: OFF", 12, 116, 336, 30)),
     cards = pageItem("Open Card", button("CardToggle", "AUTO OPEN CARD: OFF", 12, 116, 336, 30)),
     pet = pageItem("Pet", button("PetToggle", "AUTO PET: OFF", 12, 116, 336, 30)),
@@ -442,11 +445,13 @@ local toggles = {
 pageLabel("Team", "TeamHeading", "TEAM  /  UPGRADES", 90, 20)
 pageLabel("Team", "TeamHint", "LEVEL UP uses LEVEL UP ALL when that game button is visible. Open the team upgrade page to use it.", 165, 70)
 pageLabel("Fight", "FightHeading", "FIGHT  /  AUTOMATION", 90, 20)
-pageLabel("Fight", "DungeonMode", "DUNGEON · ALL TYPES\nNo tickets: check again after 2 hours.", 374, 42)
-local dungeonSchedule = pageLabel("Fight", "DungeonSchedule", "Dungeon check: ready", 424, 38)
-pageLabel("Fight", "ArenaHint", "ARENA · Continuous while available\nEmpty quota: check in 1 hour.", 474, 44)
-neonUI.guildHint = pageLabel("Fight", "GuildBossHint", "GUILD BOSS · Checks when idle, then every 5 minutes.\nRaid has priority. COPY LOG includes battle snapshots.", 526, 60)
-neonUI.trotHint = pageLabel("Fight", "TurkeyTrotHint", "FARM MODE · Click to select Turkey Trot / Endless. Activities return to the selected mode; no fallback.", 594, 44)
+pageLabel("Fight", "DungeonMode", "DUNGEON · ALL TYPES\nNo tickets: check again after 2 hours.", 458, 42)
+local dungeonSchedule = pageLabel("Fight", "DungeonSchedule", "Dungeon check: ready", 508, 38)
+pageLabel("Fight", "ArenaHint", "ARENA · Continuous while available\nEmpty quota: check in 1 hour.", 558, 44)
+neonUI.guildHint = pageLabel("Fight", "GuildBossHint", "GUILD BOSS · Checks when idle, then every 5 minutes.\nRaid has priority. COPY LOG includes battle snapshots.", 610, 60)
+neonUI.trotHint = pageLabel("Fight", "TurkeyTrotHint", "FARM MODE · Click to select Turkey Trot / Endless. Activities return to the selected mode; no fallback.", 678, 44)
+neonUI.draftChoice = pageItem("Fight", button("DraftChoice", "DRAFT CARD: LEFT", 12, 410, 336, 32))
+neonUI.draftHint = pageLabel("Fight", "DraftHint", "FEAST DRAFT · Choose one card by position; waits between stages. Unknown screens: COPY LOG.", 730, 60)
 pageLabel("Potion", "PotionHeading", "POTION  /  CONDITIONS", 90, 20)
 local potionUI = {checks = {}, scanRequested = false, entries = {}, iconMap = {}, iconConflicts = {}, probeAt = 0}
 potionUI.dropdown = pageItem("Potion", button("PotionWhen", "Use Potion When: Aurora   v", 12, 152, 276, 30))
@@ -693,8 +698,8 @@ if savedPosition then
     if ok then panel.Position = UDim2.fromOffset(x, y) end
 end
 settingsPosition = {x = panel.Position.X.Offset, y = panel.Position.Y.Offset}
-local versions = {level = 0, raid = 0, arena = 0, dungeon = 0, expedition = 0, guildBoss = 0, turkeyTrot = 0, moon = 0, cards = 0, pet = 0, antiAfk = 0}
-local titles = {level = "LEVEL UP", raid = "RAID", arena = "ARENA", dungeon = "DUNGEON", guildBoss = "GUILD BOSS", turkeyTrot = "FARM MODE",
+local versions = {level = 0, raid = 0, arena = 0, dungeon = 0, expedition = 0, guildBoss = 0, turkeyTrot = 0, feastDraft = 0, moon = 0, cards = 0, pet = 0, antiAfk = 0}
+local titles = {level = "LEVEL UP", raid = "RAID", arena = "ARENA", dungeon = "DUNGEON", guildBoss = "GUILD BOSS", turkeyTrot = "FARM MODE", feastDraft = "FEAST DRAFT",
     expedition = "EXPEDITIONS", moon = "USE POTION", cards = "AUTO OPEN CARD", pet = "AUTO PET", antiAfk = "ANTI AFK"}
 local function paintToggle(key)
     if key == "turkeyTrot" then
@@ -912,6 +917,11 @@ for key, obj in pairs(toggles) do
         if key == "moon" or key == "cards" then potionUI.completedEvent = nil end
         if key == "pet" then petUI.nextCheck = 0; petUI.applied = nil end
         if key == "guildBoss" and neonUI.guild then neonUI.guild.nextCheck = 0 end
+        if key == "feastDraft" and neonUI.draft then
+            neonUI.draft.nextCheck = 0
+            neonUI.draft.engaged, neonUI.draft.blocked = false, false
+            neonUI.draft.pending = nil
+        end
         if key == "turkeyTrot" and neonUI.trot then neonUI.trot.nextCheck = 0; neonUI.trot.observed = false end
         local title = titles[key]
         obj.Text = title .. (flags[key] and ": ON" or ": OFF")
@@ -952,7 +962,7 @@ end)
 -- remotes, or user-entered TextBox contents are included in this report.
 function neonUI.captureGameUI()
     local root = pg:FindFirstChild("RollAStickman")
-    local lines = {"GAME UI REPORT | R56 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    local lines = {"GAME UI REPORT | R57 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
         "Open Guild > Boss before copying; paths are relative to RollAStickman."}
     if not root then
@@ -996,6 +1006,9 @@ copyButton.Activated:Connect(function()
     end
     local reportOK, report = pcall(neonUI.captureGameUI)
     value = value .. "\n\n" .. (reportOK and report or ("GAME UI REPORT ERROR: " .. tostring(report)))
+    if neonUI.draft and neonUI.draft.report then
+        value = value .. "\n\n" .. neonUI.draft.report
+    end
     if neonUI.trot and neonUI.trot.report then
         value = value .. "\n\n" .. neonUI.trot.report
     end
@@ -1124,6 +1137,135 @@ function neonUI.farm.active()
         and navKind == battleKind and navNumber == battleNumber
         and visible(get({"Frame", "Battle"})) and not visible(page())
 end
+
+-- Feast Draft page/CONTINUE and three Dish buttons verified in R56 UI report.
+neonUI.draft = {nextCheck = 0, engaged = false, blocked = false}
+function neonUI.draft.page()
+    local root = child(page(), {"Scroll"})
+    local title = child(root, {"Hero", "Plate", "Title"})
+    return visible(title) and textOf(title) == "FEAST DRAFT" and root or nil
+end
+function neonUI.draft.modal()
+    return modalTitle() == "FEAST DRAFT"
+end
+function neonUI.draft.pause(reason)
+    local draft = neonUI.draft
+    draft.engaged, draft.blocked, draft.nextCheck = true, true, math.huge
+    local ok, report = pcall(neonUI.captureGameUI)
+    if ok then draft.report = "FEAST DRAFT | " .. reason .. "\n" .. report end
+    neonUI.draftHint.Text = "FEAST DRAFT · " .. reason .. ". COPY LOG; switch OFF to release other tasks."
+    note("Feast Draft paused: " .. reason .. "; COPY LOG")
+end
+function neonUI.draft.choices()
+    if not neonUI.draft.modal() then return nil end
+    local root = child(modalPanel(), {"Content", "Inner", "Scroll"})
+    local dishes = child(root, {"Dishes"})
+    if not visible(dishes) then return nil end
+    local choices = {}
+    for _, obj in ipairs(dishes:GetChildren()) do
+        if ready(obj) and obj.Name:match("^Dish") then table.insert(choices, obj) end
+    end
+    if #choices ~= 3 then return nil end
+    table.sort(choices, function(a, b)
+        if a.AbsolutePosition.X == b.AbsolutePosition.X then return a.Name < b.Name end
+        return a.AbsolutePosition.X < b.AbsolutePosition.X
+    end)
+    local header = child(root, {"Head", "Name"})
+    local value = visible(header) and textOf(header) or ""
+    local stage = tonumber(value:match("^WAVE (%d+)$"))
+    local signature = value
+    for _, obj in ipairs(choices) do signature = signature .. "|" .. obj.Name end
+    return choices, stage, signature
+end
+function neonUI.draft.tick(version)
+    local draft = neonUI.draft
+    if not valid("feastDraft", version) or draft.blocked then return end
+    draft.nextCheck = os.clock() + 1
+    if draft.modal() then
+        draft.engaged = true
+        local choices, stage, signature = draft.choices()
+        if not choices or not stage or stage < 1 or stage > 50 then
+            draft.pause("Unknown Feast Draft screen"); return
+        end
+        if draft.pending == signature then return end
+        local index = potionConfig.draftChoice or 1
+        local selected = choices[index]
+        draft.pending = signature
+        if not valid("feastDraft", version) then return end
+        if not fire("draft.card." .. stage, selected, nil, 1) then
+            draft.pending = nil; return
+        end
+        local name = textOf(child(selected, {"Name"}))
+        note("Feast Draft card sent | stage=" .. stage .. "/50 | choice=" .. index
+            .. " | " .. name .. " | " .. buttonText(selected))
+        local deadline = os.clock() + 8
+        repeat
+            task.wait(0.25)
+            if not valid("feastDraft", version) then return end
+            local _, _, current = draft.choices()
+            if not draft.modal() or (current and current ~= signature) then
+                draft.pending = nil
+                draft.lastProgress = os.clock()
+                neonUI.draftHint.Text = "FEAST DRAFT · Choice screen advanced; stage " .. stage .. "/50"
+                return
+            end
+        until os.clock() >= deadline
+        draft.pause("Card selection unconfirmed"); return
+    end
+    if modalOpen() then return end
+    local root = draft.page()
+    if not root then
+        if draft.engaged then
+            if os.clock() - (draft.lastProgress or os.clock()) > 300 then
+                draft.pause("No stage progress for 5 minutes")
+            end
+            return
+        end
+        if not neonUI.draft.canStart() then return end
+        if not fire("draft.dungeon", get({"Frame", "Nav", "Row", "dungeon"}), nil, 3) then return end
+        task.wait(0.5)
+        if not valid("feastDraft", version) then return end
+        local screen = page()
+        local scroll = screen and screen:FindFirstChild("Scroll")
+        local pick = child(scroll, {"Pick", "draft"})
+        if not draft.page() then
+            if not fire("draft.tab", pick, "FEAST DRAFT", 3) then
+                draft.nextCheck = os.clock() + 60
+                note("Feast Draft selector unavailable")
+                fire("draft.back", neonUI.farm.tab(), nil, 2)
+                return
+            end
+            task.wait(0.5)
+        end
+        if not valid("feastDraft", version) then return end
+        root = draft.page()
+        if not root then draft.pause("Feast Draft page not confirmed"); return end
+    end
+    draft.engaged = true
+    local go = child(root, {"Buttons", "Go"})
+    if ready(go) and buttonText(go) == "CONTINUE" then
+        local deadline = os.clock() + 6
+        if not fire("draft.continue", go, "CONTINUE", 2) then return end
+        draft.lastProgress = os.clock()
+        repeat
+            task.wait(0.25)
+            if not valid("feastDraft", version) then return end
+            if draft.modal() or not draft.page() then return end
+        until os.clock() >= deadline
+        draft.pause("CONTINUE not confirmed")
+    else
+        draft.pause("Start/result action not yet identified")
+    end
+end
+function neonUI.draft.paintChoice()
+    neonUI.draftChoice.Text = "DRAFT CARD: " .. ({"LEFT", "MIDDLE", "RIGHT"})[potionConfig.draftChoice or 1]
+end
+neonUI.draft.paintChoice()
+neonUI.draftChoice.Activated:Connect(function()
+    potionConfig.draftChoice = (potionConfig.draftChoice or 1) % 3 + 1
+    neonUI.draft.paintChoice()
+    settingsStorage = writeSettings(flags)
+end)
 
 -- Status reads game UI only. Hidden values are explicitly shown as last seen.
 local statusCache = {}
@@ -1392,6 +1534,9 @@ local function runDungeon(version)
     end
 end
 
+function neonUI.draft.canStart()
+    return dungeonUI.idleBattle() and not dungeonStarted and not inDungeon()
+end
 local nextLevel, nextRaid, nextExpedition = 0, 0, 0
 local raidJoinLocked = false
 local function levelTick()
@@ -1417,6 +1562,11 @@ local function raidTick()
         end
         nextRaid = os.clock() + 8
         neonUI.nextArena = math.max(neonUI.nextArena or 0, os.clock() + 60)
+        if neonUI.draft then
+            neonUI.draft.engaged = false
+            neonUI.draft.pending = nil
+            neonUI.draft.nextCheck = os.clock() + 60
+        end
         note("RAID JOIN pressed")
     end
 end
@@ -3151,7 +3301,7 @@ neonUI.webhook.toggle.Activated:Connect(function()
 end)
 neonUI.webhook.test.Activated:Connect(function()
     if neonUI.saveWebhookUrl() then
-        neonUI.queueWebhook("Roll A Stickman R56 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
+        neonUI.queueWebhook("Roll A Stickman R57 | Webhook test | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"), true)
         neonUI.webhook.status.Text = "Webhook: test queued"
     end
 end)
@@ -3527,7 +3677,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R56 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R57 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 boot.ready = true
@@ -3566,6 +3716,14 @@ task.spawn(function()
             end
             if not busy and flags.raid and not modalOpen() and now >= nextRaid then
                 raidTick()
+            end
+            if flags.feastDraft and (neonUI.draft.engaged or neonUI.draft.page() or neonUI.draft.modal()) then
+                if not busy and now >= neonUI.draft.nextCheck then run("feastDraft", neonUI.draft.tick) end
+                return
+            end
+            if not busy and flags.feastDraft and not dungeonStarted and not inDungeon()
+                and not modalOpen() and now >= neonUI.draft.nextCheck and dungeonUI.idleBattle() then
+                run("feastDraft", neonUI.draft.tick)
             end
             if not busy and flags.guildBoss and neonUI.guild.result() then
                 -- Also recover a result left open by an older script or Raid.
