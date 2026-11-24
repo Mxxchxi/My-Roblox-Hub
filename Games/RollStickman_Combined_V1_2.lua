@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R67
+-- Roll A Stickman Combined Auto V1.2 R68
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -23,11 +23,11 @@ function boot.show(pg, message)
         boot.label.Parent = boot.gui
         boot.gui.Parent = pg
     end
-    boot.label.Text = "ROLL A STICKMAN R67\n" .. message
+    boot.label.Text = "ROLL A STICKMAN R68\n" .. message
 end
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R67 starting; waiting for game to load")
+print("[RAS] R68 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 assert(game.PlaceId == 115068315659966, "This script requires Roll A Stickman PlaceId 115068315659966")
 local Players = game:GetService("Players")
@@ -249,7 +249,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R67  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R68  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -660,7 +660,10 @@ for key, obj in pairs(toggles) do
         end
         flags[key] = not flags[key]
         versions[key] = versions[key] + 1
-        if neonUI.raidShop and neonUI.raidShop.items[key] then neonUI.raidShop.items[key].nextCheck = 0 end
+        if neonUI.raidShop and neonUI.raidShop.items[key] then
+            neonUI.raidShop.items[key].nextCheck = 0
+            for _, state in pairs(neonUI.raidShop.items[key].shops or {}) do state.blocked = false end
+        end
         if key == "guildBoss" and neonUI.guild then neonUI.guild.nextCheck = 0 end
         if key == "greatGobbler" and neonUI.gobbler then neonUI.gobbler.nextCheck = 0 end
         if key == "feastDraft" and neonUI.draft then
@@ -708,7 +711,7 @@ end)
 -- remotes, or user-entered TextBox contents are included in this report.
 function neonUI.captureGameUI()
     local root = pg:FindFirstChild("RollAStickman")
-    local lines = {"GAME UI REPORT | R67 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    local lines = {"GAME UI REPORT | R68 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
         "Open Guild > Boss before copying; paths are relative to RollAStickman."}
     if not root then
@@ -2074,7 +2077,13 @@ end
 function neonUI.raidShop.read(key)
     local item = neonUI.raidShop.items[key]
     local root = neonUI.raidShop.page()
-    local row = child(root, {item.offer})
+    local row
+    if root then
+        for _, candidate in ipairs(root:GetChildren()) do
+            local label = child(candidate, {"Name"})
+            if visible(label) and textOf(label) == item.name then row = candidate; break end
+        end
+    end
     local name, info = child(row, {"Name"}), child(row, {"Info"})
     local buy = child(row, {"Buy"})
     if not visible(name) or textOf(name) ~= item.name or not visible(info) then return end
@@ -2084,7 +2093,7 @@ function neonUI.raidShop.read(key)
     local price = ready(buy) and neonUI.raidShop.number(buttonText(buy))
     return tonumber(used), tonumber(cap), amount, price, buy
 end
-function neonUI.raidShop.tick(key, version)
+function neonUI.raidShop.buyCurrent(key, version)
     local shop, item = neonUI.raidShop, neonUI.raidShop.items[key]
     local function active()
         return valid(key, version) and not neonUI.raidActive()
@@ -2147,7 +2156,57 @@ function neonUI.raidShop.tick(key, version)
             break
         end
     end
-    if active() and not modalOpen() and shop.page() then fire("raidshop.back", neonUI.farm.tab(), nil, 2) end
+end
+function neonUI.raidShop.tick(key, version)
+    local shop, item = neonUI.raidShop, neonUI.raidShop.items[key]
+    local function active()
+        return valid(key, version) and not neonUI.raidActive()
+            and os.clock() >= (neonUI.raidPriorityUntil or 0)
+    end
+    item.nextCheck = os.clock() + 10
+    if not active() or modalOpen() then return end
+    if not shop.page() then
+        if not fire("raidshop.tab", get({"Frame", "Nav", "Row", "raid"}), nil, 3) then return end
+        local deadline = os.clock() + 5
+        repeat
+            task.wait(0.25)
+            if not active() or modalOpen() then return end
+        until shop.page() or os.clock() >= deadline
+    end
+    item.shops = item.shops or {}
+    for _, selector in ipairs({"titan", "captain"}) do
+        if not active() or modalOpen() then item.nextCheck = os.clock() + 10; return end
+        local tab = child(shop.page(), {"Pick", selector})
+        local expected = ready(tab) and buttonText(tab) or ""
+        if expected ~= "" then
+            local title = child(shop.page(), {"Hero", "Title"})
+            if not visible(title) or textOf(title) ~= expected then
+                if not fire("raidshop.pick." .. selector, tab, expected, 2) then return end
+                local deadline = os.clock() + 5
+                repeat
+                    task.wait(0.25)
+                    if not active() or modalOpen() then item.nextCheck = os.clock() + 10; return end
+                    title = child(shop.page(), {"Hero", "Title"})
+                until (visible(title) and textOf(title) == expected) or os.clock() >= deadline
+            end
+            if visible(title) and textOf(title) == expected then
+                local state = item.shops[selector] or {}
+                item.shops[selector] = state
+                if not state.blocked then
+                    item.pending = state.pending
+                    local ok, err = pcall(shop.buyCurrent, key, version)
+                    state.pending = item.pending
+                    state.blocked = item.nextCheck == math.huge
+                    if not ok then error(err) end
+                end
+            end
+        end
+    end
+    if not active() or modalOpen() then item.nextCheck = os.clock() + 10; return end
+    item.nextCheck = os.clock() + 300
+    if active() and not modalOpen() and shop.page() then
+        fire("raidshop.back", neonUI.farm.tab(), nil, 2)
+    end
 end
 
 local statusNextPowerScan = 0
@@ -2231,7 +2290,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R67 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R68 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 boot.ready = true
