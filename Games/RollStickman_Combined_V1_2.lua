@@ -1,4 +1,4 @@
--- Roll A Stickman Combined Auto V1.2 R66
+-- Roll A Stickman Combined Auto V1.2 R67
 -- UI-driven automation for PlaceId 115068315659966.
 -- Run once in Potassium. Requires executor firesignal for GuiButton.Activated.
 -- Auto Execute: add this complete file to your executor's Auto Execute list.
@@ -23,11 +23,11 @@ function boot.show(pg, message)
         boot.label.Parent = boot.gui
         boot.gui.Parent = pg
     end
-    boot.label.Text = "ROLL A STICKMAN R66\n" .. message
+    boot.label.Text = "ROLL A STICKMAN R67\n" .. message
 end
 local startupOk, startupError = xpcall(function()
 
-print("[RAS] R66 starting; waiting for game to load")
+print("[RAS] R67 starting; waiting for game to load")
 if not game:IsLoaded() then game.Loaded:Wait() end
 assert(game.PlaceId == 115068315659966, "This script requires Roll A Stickman PlaceId 115068315659966")
 local Players = game:GetService("Players")
@@ -48,7 +48,7 @@ boot.show(pg, "Reading saved settings")
 
 local SETTINGS_FILE = "RollStickman_Combined_V1_2_settings.json"
 local SETTINGS_KEY = "RollStickman_Combined_V1_2_settings"
-local settingKeys = {"level", "raid", "arena", "dungeon", "expedition", "guildBoss", "greatGobbler", "turkeyTrot", "feastDraft", "antiAfk"}
+local settingKeys = {"level", "raid", "arena", "dungeon", "expedition", "guildBoss", "greatGobbler", "raidEgg", "raidKey", "turkeyTrot", "feastDraft", "antiAfk"}
 local appConfig = {}
 local function settingsEnv()
     if type(getgenv) == "function" then
@@ -167,7 +167,7 @@ local previousFlags = {}
 if previous then
     local previousPanel = previous:FindFirstChild("Panel")
     local names = {level = "LevelToggle", raid = "RaidToggle", arena = "ArenaToggle",
-        dungeon = "DungeonToggle", expedition = "ExpeditionToggle", guildBoss = "GuildBossToggle", greatGobbler = "GreatGobblerToggle", turkeyTrot = "TurkeyTrotToggle", feastDraft = "FeastDraftToggle",
+        dungeon = "DungeonToggle", expedition = "ExpeditionToggle", guildBoss = "GuildBossToggle", greatGobbler = "GreatGobblerToggle", raidEgg = "RaidEggToggle", raidKey = "RaidKeyToggle", turkeyTrot = "TurkeyTrotToggle", feastDraft = "FeastDraftToggle",
         antiAfk = "AntiAfkToggle"}
     for key, name in pairs(names) do
         local storedFlag = previous:GetAttribute("Flag_" .. key)
@@ -249,7 +249,7 @@ local function button(name, value, x, y, w, h)
     obj.Parent = panel
     return obj
 end
-local title = label("Title", "ROLL A STICKMAN  |  R66  ·  NEON V2", 12, 32)
+local title = label("Title", "ROLL A STICKMAN  |  R67  ·  NEON V2", 12, 32)
 title.Size = UDim2.fromOffset(550, 32)
 title.TextSize = 17
 title.Active = true
@@ -319,6 +319,8 @@ local toggles = {
     turkeyTrot = pageItem("Fight", button("TurkeyTrotToggle", "FARM MODE: ENDLESS", 12, 326, 336, 36)),
     greatGobbler = pageItem("Fight", button("GreatGobblerToggle", "GREAT GOBBLER: OFF", 12, 368, 336, 36)),
     feastDraft = pageItem("Feast Draft", button("FeastDraftToggle", "FEAST DRAFT: OFF", 12, 116, 336, 36)),
+    raidEgg = pageItem("Fight", button("RaidEggToggle", "RAID BASIC EGG: OFF", 12, 822, 336, 36)),
+    raidKey = pageItem("Fight", button("RaidKeyToggle", "RAID BASE KEY: OFF", 12, 864, 336, 36)),
     antiAfk = pageItem("Settings", button("AntiAfkToggle", "ANTI AFK: ON", 12, 116, 336, 36)),
 }
 pageLabel("Team", "TeamHeading", "TEAM  /  UPGRADES", 90, 20)
@@ -453,8 +455,8 @@ if savedPosition then
     if ok then panel.Position = UDim2.fromOffset(x, y) end
 end
 settingsPosition = {x = panel.Position.X.Offset, y = panel.Position.Y.Offset}
-local versions = {level = 0, raid = 0, arena = 0, dungeon = 0, expedition = 0, guildBoss = 0, greatGobbler = 0, turkeyTrot = 0, feastDraft = 0, antiAfk = 0}
-local titles = {level = "LEVEL UP", raid = "RAID", arena = "ARENA", dungeon = "DUNGEON", guildBoss = "GUILD BOSS", greatGobbler = "GREAT GOBBLER", turkeyTrot = "FARM MODE", feastDraft = "FEAST DRAFT",
+local versions = {raidEgg = 0, raidKey = 0, level = 0, raid = 0, arena = 0, dungeon = 0, expedition = 0, guildBoss = 0, greatGobbler = 0, turkeyTrot = 0, feastDraft = 0, antiAfk = 0}
+local titles = {raidEgg = "RAID BASIC EGG", raidKey = "RAID BASE KEY", level = "LEVEL UP", raid = "RAID", arena = "ARENA", dungeon = "DUNGEON", guildBoss = "GUILD BOSS", greatGobbler = "GREAT GOBBLER", turkeyTrot = "FARM MODE", feastDraft = "FEAST DRAFT",
     expedition = "EXPEDITIONS", antiAfk = "ANTI AFK"}
 local function paintToggle(key)
     if key == "turkeyTrot" then
@@ -658,6 +660,7 @@ for key, obj in pairs(toggles) do
         end
         flags[key] = not flags[key]
         versions[key] = versions[key] + 1
+        if neonUI.raidShop and neonUI.raidShop.items[key] then neonUI.raidShop.items[key].nextCheck = 0 end
         if key == "guildBoss" and neonUI.guild then neonUI.guild.nextCheck = 0 end
         if key == "greatGobbler" and neonUI.gobbler then neonUI.gobbler.nextCheck = 0 end
         if key == "feastDraft" and neonUI.draft then
@@ -705,7 +708,7 @@ end)
 -- remotes, or user-entered TextBox contents are included in this report.
 function neonUI.captureGameUI()
     local root = pg:FindFirstChild("RollAStickman")
-    local lines = {"GAME UI REPORT | R66 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    local lines = {"GAME UI REPORT | R67 | " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
         "PlaceId=" .. tostring(game.PlaceId) .. " | busy=" .. tostring(busy),
         "Open Guild > Boss before copying; paths are relative to RollAStickman."}
     if not root then
@@ -2054,6 +2057,99 @@ function neonUI.gobbler.tick(version)
     boss.pause("Battle return timeout")
 end
 
+
+neonUI.raidShop = {items = {
+    raidEgg = {offer = "Offer13", name = "1 BASIC EGG", nextCheck = 0},
+    raidKey = {offer = "Offer10", name = "1 BASE KEY", nextCheck = 0},
+}}
+function neonUI.raidShop.number(value)
+    local digits = tostring(value or ""):match("^%s*([%d,]+)%s*$")
+    return digits and tonumber((digits:gsub(",", ""))) or nil
+end
+function neonUI.raidShop.page()
+    local root = child(page(), {"Scroll"})
+    local title = child(root, {"ShopHead", "Title"})
+    return visible(title) and textOf(title) == "RAID SHOP" and root or nil
+end
+function neonUI.raidShop.read(key)
+    local item = neonUI.raidShop.items[key]
+    local root = neonUI.raidShop.page()
+    local row = child(root, {item.offer})
+    local name, info = child(row, {"Name"}), child(row, {"Info"})
+    local buy = child(row, {"Buy"})
+    if not visible(name) or textOf(name) ~= item.name or not visible(info) then return end
+    local used, cap = textOf(info):match("^(%d+)/(%d+) TODAY$")
+    local balance = child(root, {"ShopHead", "Balance"})
+    local amount = visible(balance) and neonUI.raidShop.number(textOf(balance))
+    local price = ready(buy) and neonUI.raidShop.number(buttonText(buy))
+    return tonumber(used), tonumber(cap), amount, price, buy
+end
+function neonUI.raidShop.tick(key, version)
+    local shop, item = neonUI.raidShop, neonUI.raidShop.items[key]
+    local function active()
+        return valid(key, version) and not neonUI.raidActive()
+            and os.clock() >= (neonUI.raidPriorityUntil or 0)
+    end
+    if not active() or modalOpen() then return end
+    item.nextCheck = os.clock() + 300
+    if not shop.page() then
+        if not fire("raidshop.tab", get({"Frame", "Nav", "Row", "raid"}), nil, 3) then return end
+        local deadline = os.clock() + 5
+        repeat
+            task.wait(0.25)
+            if not active() then return end
+        until shop.page() or os.clock() >= deadline
+    end
+    if not shop.page() then note("Raid shop page unavailable; retry in 5 minutes"); return end
+    for _ = 1, 5 do
+        if not active() or modalOpen() then return end
+        local used, cap, balance, price, buy = shop.read(key)
+        if item.pending then
+            if used and used > item.pending then
+                log(item.name .. " purchase confirmed | " .. used .. "/" .. tostring(cap) .. " TODAY")
+                item.pending = nil
+            else
+                item.nextCheck = math.huge
+                note(item.name .. " purchase unconfirmed; stopped against duplicate. COPY LOG")
+                break
+            end
+        end
+        if not used or not cap or cap <= 0 then
+            note(item.name .. " quota unreadable; retry in 5 minutes"); break
+        end
+        if used >= cap then
+            item.nextCheck = os.clock() + 900
+            note(item.name .. " daily quota full | " .. used .. "/" .. cap); break
+        end
+        if not balance or not price or price <= 0 then
+            note(item.name .. " balance/price unavailable; retry in 5 minutes"); break
+        end
+        if balance < price then note(item.name .. " insufficient Raid balance | " .. balance .. "/" .. price); break end
+        if not active() or modalOpen() then return end
+        -- Keep the pre-click quota across Raid cancellation to reconcile before another purchase.
+        item.pending = used
+        if not fire("raidshop.buy." .. key, buy, buttonText(buy), 2) then item.pending = nil; break end
+        local deadline = os.clock() + 6
+        repeat
+            task.wait(0.25)
+            if not active() or modalOpen() then return end
+            local count = shop.read(key)
+            if count and count > used then break end
+        until os.clock() >= deadline
+        local count = shop.read(key)
+        if count and count > used then
+            item.pending = nil
+            log(item.name .. " purchase confirmed | " .. count .. "/" .. cap .. " TODAY")
+            task.wait(2)
+        else
+            item.nextCheck = math.huge
+            note(item.name .. " purchase unconfirmed; stopped against duplicate. COPY LOG")
+            break
+        end
+    end
+    if active() and not modalOpen() and shop.page() then fire("raidshop.back", neonUI.farm.tab(), nil, 2) end
+end
+
 local statusNextPowerScan = 0
 local function scanTeamPower()
     -- Accept an explicit team/total-power field, never a random card's POWER.
@@ -2135,7 +2231,7 @@ if #enabledNames > 0 then
 else
     status.Text = "Ready. All switches are OFF."
 end
-log("Combined V1.2 R66 Neon V2 ready | restored from " .. (settingsSource or "defaults")
+log("Combined V1.2 R67 Neon V2 ready | restored from " .. (settingsSource or "defaults")
     .. " | saving to " .. settingsStorage .. " | ON: "
     .. (#enabledNames > 0 and table.concat(enabledNames, ", ") or "none"))
 boot.ready = true
@@ -2176,6 +2272,13 @@ task.spawn(function()
                     run("expedition", expeditionTick)
                 else
                     nextExpedition = now + 8
+                end
+            end
+            for _, key in ipairs({"raidEgg", "raidKey"}) do
+                if not busy and flags[key] and now >= neonUI.raidShop.items[key].nextCheck
+                    and not dungeonStarted and not inDungeon() and not modalOpen()
+                    and (neonUI.raidShop.page() or (dungeonUI.idleBattle() and not visible(page()))) then
+                    run(key, function(version) neonUI.raidShop.tick(key, version) end)
                 end
             end
             if not busy and flags.greatGobbler and not dungeonStarted and not inDungeon()
