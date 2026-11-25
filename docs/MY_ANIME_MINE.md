@@ -1,4 +1,8 @@
-# My Anime Mine (v0.24)
+# My Anime Mine (v0.25)
+
+Settings are saved separately for each player in `MyAnimeMine_<UserId>_settings_v1.txt`. The hub restores the interval, window position and minimized state, and shows previously selected modes. Start the desired actions from the panel after reopening it.
+
+The settings line shows `FILE VERIFIED` after writing and reading back the same data, `LOADED FROM FILE` on a successful restart, or `SESSION ONLY` when only the current session holds the latest settings. Confirming the interval again retries a pending save.
 
 - Roblox game: https://www.roblox.com/games/79389059854988/My-Anime-Mine
 - PlaceId: `79389059854988`
