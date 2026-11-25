@@ -801,7 +801,7 @@ assert(clipboard:find("SHOP SELL ROUTE",1,true)
        and clipboard:find("Ore-only Sell candidates=",1,true),
        "sale route must expose warp/vendor/sell diagnostics")
 findButton("SellDiagnostics").Activated:Fire()
-assert(clipboard:find("V0.24 SHOP SELL ROUTE",1,true)
+assert(clipboard:find("V0.25 SHOP SELL ROUTE",1,true)
        and clipboard:find("Shops destination candidates=",1,true)
        and clipboard:find("Explicit ore-only Sell controls=",1,true)
        and clipboard:find("Select All clicks=1/1",1,true)
@@ -1498,7 +1498,7 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.24 alternate Stats panel discovery, no-panel diagnostics, premium exclusions and timed sell regressions")
+print("PASS My Anime Mine V0.25 alternate Stats panel discovery, no-panel diagnostics, premium exclusions and timed sell regressions")
 
 -- Exercise persistence through actual UI edits and full controller restarts.
 do
@@ -1526,9 +1526,25 @@ do
     assert(fresh.minimized and not panel.Visible and findButton("RestoreWindow").Visible)
     assert(panel.Position.X.Offset==51 and panel.Position.Y.Offset==-77)
     assert(not fresh.equip and panel:FindFirstChild("Description").Text:find("Equip",1,true))
-    env.writefile = function() error("storage unavailable") end
+    assert(panel:FindFirstChild("Description").Text:find("LOADED FROM FILE", 1, true))
+    local discard = true
+    env.writefile = function(path, data) if not discard then files[path] = data end end
+    fresh = run()
     findButton("RestoreWindow").Activated:Fire()
-    assert(not run().minimized, "failed disk write lost current-session settings")
+    panel = fresh.gui:FindFirstChild("Main")
+    assert(panel:FindFirstChild("Description").Text:find("SESSION ONLY", 1, true))
+    fresh = run()
+    assert(not fresh.minimized, "failed disk write lost current-session settings")
+    interval = fresh.gui:FindFirstChild("Main"):FindFirstChild("IntervalMinutes")
+    discard = false
+    interval.FocusLost:Fire()
+    assert(fresh.gui:FindFirstChild("Main"):FindFirstChild("Description").Text:find("FILE VERIFIED",1,true))
+    interval.Text = "31"
+    fresh = run()
+    assert(fresh.cycleMinutes == 31, "rerun discarded edited interval")
+    fresh:Stop()
+    env[key]=nil
+    assert(run().cycleMinutes == 31, "fresh session lost edited interval")
     env[key]=nil
     files[key .. ".txt"]="v1 0 0 51 -77 0000000"
     fresh=run()
