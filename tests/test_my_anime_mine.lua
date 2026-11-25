@@ -801,7 +801,7 @@ assert(clipboard:find("SHOP SELL ROUTE",1,true)
        and clipboard:find("Ore-only Sell candidates=",1,true),
        "sale route must expose warp/vendor/sell diagnostics")
 findButton("SellDiagnostics").Activated:Fire()
-assert(clipboard:find("V0.25 SHOP SELL ROUTE",1,true)
+assert(clipboard:find("V0.26 SHOP SELL ROUTE",1,true)
        and clipboard:find("Shops destination candidates=",1,true)
        and clipboard:find("Explicit ore-only Sell controls=",1,true)
        and clipboard:find("Select All clicks=1/1",1,true)
@@ -1498,7 +1498,7 @@ assert(second.selectedPlot == "MinePlot7" and not second.walkToChest,
 findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
-print("PASS My Anime Mine V0.25 alternate Stats panel discovery, no-panel diagnostics, premium exclusions and timed sell regressions")
+print("PASS My Anime Mine V0.26 alternate Stats panel discovery, no-panel diagnostics, premium exclusions and timed sell regressions")
 
 -- Exercise persistence through actual UI edits and full controller restarts.
 do
@@ -1527,6 +1527,21 @@ do
     assert(panel.Position.X.Offset==51 and panel.Position.Y.Offset==-77)
     assert(not fresh.equip and panel:FindFirstChild("Description").Text:find("Equip",1,true))
     assert(panel:FindFirstChild("Description").Text:find("LOADED FROM FILE", 1, true))
+    findButton("SavedModes").Activated:Fire()
+    assert(panel:FindFirstChild("ModeSettings").Visible)
+    assert(findButton("Saved_equip").Text == "Equip  ON")
+    assert(findButton("Saved_cycleEnabled").Text == "Farm  OFF")
+    findButton("Saved_cycleEnabled").Activated:Fire()
+    assert(not fresh.cycleEnabled and findButton("Saved_cycleEnabled").Text == "Farm  ON")
+    fresh:Stop()
+    env[key] = nil
+    fresh = run()
+    assert(not fresh.cycleEnabled and findButton("FarmCycle").Text == "AUTO FARM: SAVED ON / IDLE")
+    assert(findButton("Saved_cycleEnabled").Text == "Farm  ON" and findButton("Saved_equip").Text == "Equip  ON")
+    findButton("SavedModes").Activated:Fire()
+    findButton("Saved_cycleEnabled").Activated:Fire()
+    fresh = run()
+    assert(findButton("Saved_cycleEnabled").Text == "Farm  OFF" and findButton("Saved_equip").Text == "Equip  ON")
     local discard = true
     env.writefile = function(path, data) if not discard then files[path] = data end end
     fresh = run()
