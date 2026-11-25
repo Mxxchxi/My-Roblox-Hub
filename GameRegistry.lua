@@ -14,9 +14,9 @@ return {
         uiName = "EggDiagnostics",
     },
     [79389059854988] = {
-        name = "My Anime Mine (V0.25)",
+        name = "My Anime Mine (V0.26)",
         script = "Games/MyAnimeMine.lua",
-        minRevision = 25,
+        minRevision = 26,
         revisionPattern = "^%-%- My Roblox Hub | My Anime Mine v0%.(%d+)",
         uiName = "MyAnimeMineHub",
     },

@@ -1,6 +1,6 @@
-# My Anime Mine (v0.25)
+# My Anime Mine (v0.26)
 
-Settings are saved separately for each player in `MyAnimeMine_<UserId>_settings_v1.txt`. The hub restores the interval, window position and minimized state, and shows previously selected modes. Start the desired actions from the panel after reopening it.
+Settings are saved separately for each player in `MyAnimeMine_<UserId>_settings_v1.txt`. The hub restores the interval, window position and minimized state, and restores all seven ON/OFF choices in **SETTINGS**. Change any saved choice there. The action panel shows **SAVED ON / IDLE** when a selected visible mode is idle after restart. Start the desired actions from the panel after reopening it.
 
 The settings line shows `FILE VERIFIED` after writing and reading back the same data, `LOADED FROM FILE` on a successful restart, or `SESSION ONLY` when only the current session holds the latest settings. Confirming the interval again retries a pending save.
 
