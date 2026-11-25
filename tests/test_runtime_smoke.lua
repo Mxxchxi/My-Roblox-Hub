@@ -1,3 +1,4 @@
+dofile("tests/test_my_anime_mine.lua")
 -- Full-file startup/control-flow tests with an isolated Roblox service model.
 -- This does not render Roblox UI or validate live networking/game physics.
 local function read(path) local f=assert(io.open(path));local s=f:read('*a');f:close();return s end
