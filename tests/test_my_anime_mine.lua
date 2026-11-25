@@ -159,7 +159,7 @@ local env = setmetatable({
     UDim = {new = function(...) return {...} end},
     UDim2 = {
         fromOffset = function(...) return {...} end,
-        new = function(...) return {X = {Scale = 0, Offset = 0}, Y = {Scale = 0, Offset = 0}} end,
+        new = function(xs, xo, ys, yo) return {X = {Scale = xs, Offset = xo}, Y = {Scale = ys, Offset = yo}} end,
     },
     fireclickdetector = function() end,
     fireproximityprompt = function() end,
@@ -1499,3 +1499,41 @@ findButton("Close").Activated:Fire()
 assert(not second.running and not playerGui:FindFirstChild("MyAnimeMineHub"), "close did not stop")
 assert(env.MyAnimeMineHubController == nil, "controller leaked after close")
 print("PASS My Anime Mine V0.24 alternate Stats panel discovery, no-panel diagnostics, premium exclusions and timed sell regressions")
+
+-- Exercise persistence through actual UI edits and full controller restarts.
+do
+    local files = {}
+    player.UserId = 4321
+    env.readfile = function(path) return assert(files[path], "missing") end
+    env.writefile = function(path, value) files[path] = value end
+    run()
+    local panel = playerGui:FindFirstChild("MyAnimeMineHub"):FindFirstChild("Main")
+    local interval = panel:FindFirstChild("IntervalMinutes")
+    interval.Text = "17"
+    interval.FocusLost:Fire()
+    findButton("AutoEquip").Activated:Fire()
+    panel:FindFirstChild("DragHandle").InputBegan:Fire({UserInputType=env.Enum.UserInputType.MouseButton1,
+        Position=vector(0,0,0)})
+    panel.Position=env.UDim2.new(.5,51,.5,-77)
+    input.InputEnded:Fire({UserInputType=env.Enum.UserInputType.MouseButton1})
+    input.InputBegan:Fire(alt,false)
+    local key = "MyAnimeMine_4321_settings_v1"
+    assert(files[key .. ".txt"]==env[key] and files[key .. ".txt"], "preferences were not written")
+    env[key]=nil -- fresh client with disk access
+    local fresh=run()
+    panel=fresh.gui:FindFirstChild("Main")
+    assert(fresh.cycleMinutes==17 and panel:FindFirstChild("IntervalMinutes").Text=="17")
+    assert(fresh.minimized and not panel.Visible and findButton("RestoreWindow").Visible)
+    assert(panel.Position.X.Offset==51 and panel.Position.Y.Offset==-77)
+    assert(not fresh.equip and panel:FindFirstChild("Description").Text:find("Equip",1,true))
+    env.writefile = function() error("storage unavailable") end
+    findButton("RestoreWindow").Activated:Fire()
+    assert(not run().minimized, "failed disk write lost current-session settings")
+    env[key]=nil
+    files[key .. ".txt"]="v1 0 0 51 -77 0000000"
+    fresh=run()
+    assert(fresh.cycleMinutes==5 and not fresh.minimized, "invalid file overrode defaults")
+    player.UserId=4322
+    assert(run().cycleMinutes==5, "preferences crossed accounts")
+end
+print("PASS preference persistence and fallback")
