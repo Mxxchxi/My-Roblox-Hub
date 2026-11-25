@@ -218,6 +218,54 @@ local function writeLog(message)
     end
 end
 
+-- Only preferences cross runs. Active routes and pending actions belong to one session.
+local preferences = {x = -255, y = -356, modes = {}, restored = false}
+do
+    local key = "MyAnimeMine_" .. tostring(player.UserId or 0) .. "_settings_v1"
+    local path = key .. ".txt"
+    local modes = {"cycleEnabled", "mine", "collect", "sell", "equip", "upgrade", "watchManual"}
+    local raw = environment[key]
+    if type(raw) ~= "string" and type(readfile) == "function" then
+        local ok, data = pcall(readfile, path)
+        if ok then raw = data end
+    end
+    if type(raw) == "string" and #raw < 100 then
+        local minutes, minimized, x, y, bits = raw:match("^v1 (%d+) ([01]) (%-?%d+) (%-?%d+) ([01]+)$")
+        minutes, x, y = tonumber(minutes), tonumber(x), tonumber(y)
+        if minutes and minutes >= 1 and minutes <= 180 and x and y
+            and math.abs(x) <= 65536 and math.abs(y) <= 65536 and #bits == #modes then
+            controller.cycleMinutes = minutes
+            controller.minimized = minimized == "1"
+            preferences.x, preferences.y = x, y
+            for i, mode in ipairs(modes) do preferences.modes[mode] = bits:sub(i,i) == "1" end
+            preferences.restored = true
+        end
+    end
+
+    function preferences.save(mode)
+        if mode then preferences.modes[mode] = controller[mode] end
+        local bits = {}
+        for i, name in ipairs(modes) do bits[i] = preferences.modes[name] and "1" or "0" end
+        local data = ("v1 %d %d %d %d %s"):format(controller.cycleMinutes,
+            controller.minimized and 1 or 0, preferences.x, preferences.y, table.concat(bits))
+        if data == environment[key] then return end
+        environment[key] = data
+        if type(writefile) == "function" and type(readfile) == "function" then
+            local ok = pcall(writefile, path, data)
+            if not ok then writeLog("Settings saved for this session only (file write failed).") end
+        end
+    end
+
+    function preferences.lastModes()
+        local labels = {"Farm", "Mine", "Collect", "Sell", "Equip", "Upgrade", "Watch"}
+        local enabled = {}
+        for i, name in ipairs(modes) do
+            if preferences.modes[name] then enabled[#enabled+1] = labels[i] end
+        end
+        return #enabled > 0 and table.concat(enabled, ", ") or "none"
+    end
+end
+
 function controller:Stop()
     if not self.running then return end
     self.running = false
@@ -284,9 +332,17 @@ local gui = make("ScreenGui", playerGui, {
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 })
 controller.gui = gui
+-- Keep the header within reach when reopening on a smaller display.
+if gui.AbsoluteSize and gui.AbsoluteSize.X > 0 and gui.AbsoluteSize.Y > 0 then
+    local w, h = gui.AbsoluteSize.X, gui.AbsoluteSize.Y
+    preferences.x = math.max(-w/2, math.min(w/2-45, preferences.x))
+    preferences.y = math.max(-h/2, math.min(h/2-40, preferences.y))
+    preferences.x, preferences.y = math.floor(preferences.x), math.floor(preferences.y)
+end
 local panel = make("Frame", gui, {
     Name = "Main", Size = UDim2.fromOffset(510, 712),
-    Position = UDim2.new(0.5, -255, 0.5, -356),
+    Position = UDim2.new(0.5, preferences.x, 0.5, preferences.y),
+    Visible = not controller.minimized,
     BackgroundColor3 = palette.background, BorderSizePixel = 0,
 })
 make("UICorner", panel, { CornerRadius = UDim.new(0, 12) })
@@ -302,7 +358,7 @@ local restoreButton = make("TextButton", gui, {
     Font = Enum.Font.GothamBold,
     TextSize = 12,
     Text = "MY ANIME MINE  [+]",
-    Visible = false,
+    Visible = controller.minimized,
     AutoButtonColor = true,
 })
 make("UICorner", restoreButton, { CornerRadius = UDim.new(0, 8) })
@@ -312,6 +368,7 @@ local function setMinimized(minimized)
     controller.minimized = minimized
     panel.Visible = not minimized
     restoreButton.Visible = minimized
+    preferences.save()
 end
 
 connect(restoreButton.Activated, function()
@@ -362,7 +419,9 @@ make("TextLabel", panel, {
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = "V0.24 | Auto Upgrade: open a placed miner > Stats if panel is not loaded.",
+    Text = preferences.restored and ("V0.24 | Previously selected: " .. preferences.lastModes()
+        .. " | Start desired actions below.") or
+        "V0.24 | Auto Upgrade: open a placed miner > Stats if panel is not loaded.",
 })
 local farmCycleButton = button("FarmCycle", "AUTO FARM CYCLE: OFF", 16, 103, 478, 43)
 farmCycleButton.TextSize = 14
@@ -377,7 +436,7 @@ local minuteMinusButton = button("MinuteMinus", "- 1", 16, 178, 65, 38)
 local intervalInput = make("TextBox", panel, {
     Name = "IntervalMinutes", Position = UDim2.fromOffset(89, 178),
     Size = UDim2.fromOffset(330, 38), BackgroundColor3 = palette.panel,
-    BorderSizePixel = 0, Text = "5", ClearTextOnFocus = false,
+    BorderSizePixel = 0, Text = tostring(controller.cycleMinutes), ClearTextOnFocus = false,
     Font = Enum.Font.GothamBold, TextSize = 17, TextColor3 = palette.text,
     PlaceholderText = "Minutes (1-180)",
 })
@@ -450,6 +509,11 @@ end)
 connect(UserInputService.InputEnded, function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
+        if dragging then
+            preferences.x = math.floor(panel.Position.X.Offset)
+            preferences.y = math.floor(panel.Position.Y.Offset)
+            preferences.save()
+        end
         dragging = false
     end
 end)
@@ -3027,6 +3091,7 @@ connect(mineButton.Activated, function()
         return
     end
     controller.mine = not controller.mine
+    preferences.save("mine")
     writeLog("Auto Mine (rock click) " .. (controller.mine and "ON" or "OFF") ..
         " | characters normally mine rocks without clicking them")
     refreshStatus()
@@ -3037,6 +3102,7 @@ connect(equipButton.Activated, function()
         return
     end
     controller.equip = not controller.equip
+    preferences.save("equip")
     if controller.equip then
         controller.inventoryOpenAttempts = 0
         controller.equipStage = "Looking for Equip Best"
@@ -3054,6 +3120,7 @@ connect(upgradeButton.Activated, function()
         return
     end
     controller.upgrade = not controller.upgrade
+    preferences.save("upgrade")
     if controller.upgrade then
         stopUpgradeWalking()
         controller.upgradeStage = "Finding selected-plot miner Stats"
@@ -3171,6 +3238,7 @@ connect(sellButton.Activated, function()
     else
         armSellRoute(os.clock(),"MANUAL")
     end
+    preferences.save("sell")
     refreshStatus()
 end)
 connect(sellDiagnosticsButton.Activated, function()
@@ -3189,6 +3257,7 @@ connect(manualWatchButton.Activated, function()
         return
     end
     controller.watchManual = not controller.watchManual
+    preferences.save("watchManual")
     controller.manualPending = nil
     if controller.watchManual then
         controller.manualOutcome = "WAITING_FOR_GAME_BUTTON"
@@ -3210,6 +3279,7 @@ connect(collectButton.Activated, function()
         return
     end
     controller.collect = not controller.collect
+    preferences.save("collect")
     controller.walkToChest = controller.collect
     if controller.collect then
         scan(false)
@@ -3267,6 +3337,10 @@ connect(copyButton.Activated, function()
 end)
 
 writeLog("My Anime Mine v0.24 started | Stats GUI discovery without guessed remotes | toggles OFF | PlaceId 79389059854988")
+if preferences.restored then
+    writeLog(("Settings restored: %d min | previously selected: %s"):format(
+        controller.cycleMinutes, preferences.lastModes()))
+end
 writeLog("AUTO PLOT and AUTO WALK are built into Auto Collect; no manual Set Plot or Walk toggle.")
 writeLog("No undocumented remotes fired. Dispatch OK does not prove a reward.")
 scan(true)
@@ -3285,6 +3359,7 @@ local function updateCycleMinutes(value)
     local minutes=math.floor(number+0.5)
     if minutes<1 then minutes=1 elseif minutes>180 then minutes=180 end
     controller.cycleMinutes=minutes
+    preferences.save()
     intervalInput.Text=tostring(minutes)
     if controller.cycleEnabled and controller.cycleCollectionAt>0 then
         controller.cycleNextAt=controller.cycleCollectionAt+collectIntervalSeconds()
@@ -3434,6 +3509,7 @@ end
 
 connect(farmCycleButton.Activated,function()
     setFarmCycleEnabled(not controller.cycleEnabled,os.clock())
+    preferences.save("cycleEnabled")
 end)
 connect(minuteMinusButton.Activated,function()
     updateCycleMinutes(controller.cycleMinutes-1)
