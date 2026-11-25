@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.24 (native Stats UI discovery with manual panel capture)
+-- My Roblox Hub | My Anime Mine v0.25 (verified settings persistence)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -224,12 +224,12 @@ do
     local key = "MyAnimeMine_" .. tostring(player.UserId or 0) .. "_settings_v1"
     local path = key .. ".txt"
     local modes = {"cycleEnabled", "mine", "collect", "sell", "equip", "upgrade", "watchManual"}
-    local raw = environment[key]
-    if type(raw) ~= "string" and type(readfile) == "function" then
-        local ok, data = pcall(readfile, path)
-        if ok then raw = data end
-    end
-    if type(raw) == "string" and #raw < 100 then
+    local read = type(readfile) == "function" and readfile or environment.readfile
+    local write = type(writefile) == "function" and writefile or environment.writefile
+    local pendingKey = key .. "_pending"
+    local verified
+    local function restore(raw)
+        if type(raw) ~= "string" or #raw >= 100 then return false end
         local minutes, minimized, x, y, bits = raw:match("^v1 (%d+) ([01]) (%-?%d+) (%-?%d+) ([01]+)$")
         minutes, x, y = tonumber(minutes), tonumber(x), tonumber(y)
         if minutes and minutes >= 1 and minutes <= 180 and x and y
@@ -239,7 +239,23 @@ do
             preferences.x, preferences.y = x, y
             for i, mode in ipairs(modes) do preferences.modes[mode] = bits:sub(i,i) == "1" end
             preferences.restored = true
+            return true
         end
+        return false
+    end
+
+    local ok, disk
+    if type(read) == "function" then ok, disk = pcall(read, path) end
+    if environment[pendingKey] == true and restore(environment[key]) then
+        preferences.status = "SESSION ONLY"
+    elseif ok and restore(disk) then
+        environment[key], environment[pendingKey], verified = disk, nil, disk
+        preferences.status = "LOADED FROM FILE"
+    elseif restore(environment[key]) then
+        environment[pendingKey] = true
+        preferences.status = "SESSION ONLY"
+    else
+        preferences.status = "DEFAULTS"
     end
 
     function preferences.save(mode)
@@ -248,12 +264,24 @@ do
         for i, name in ipairs(modes) do bits[i] = preferences.modes[name] and "1" or "0" end
         local data = ("v1 %d %d %d %d %s"):format(controller.cycleMinutes,
             controller.minimized and 1 or 0, preferences.x, preferences.y, table.concat(bits))
-        if data == environment[key] then return end
         environment[key] = data
-        if type(writefile) == "function" and type(readfile) == "function" then
-            local ok = pcall(writefile, path, data)
-            if not ok then writeLog("Settings saved for this session only (file write failed).") end
+        if data ~= verified then
+            verified = nil
+            environment[pendingKey] = true
+            preferences.status = "SESSION ONLY"
+            if type(write) == "function" and type(read) == "function" then
+                local wrote, result = pcall(write, path, data)
+                if wrote and result ~= false then
+                    local checked, saved = pcall(read, path)
+                    if checked and saved == data then
+                        verified, environment[pendingKey] = data, nil
+                        preferences.status = "FILE VERIFIED"
+                    end
+                end
+            end
+            writeLog("Settings: " .. preferences.status .. " | " .. path)
         end
+        if preferences.refresh then preferences.refresh() end
     end
 
     function preferences.lastModes()
@@ -268,6 +296,10 @@ end
 
 function controller:Stop()
     if not self.running then return end
+    if preferences.flush then
+        local ok, err = pcall(preferences.flush)
+        if not ok then warn("[My Anime Mine] Settings flush failed: " .. tostring(err)) end
+    end
     self.running = false
     self.mine = false
     self.collect = false
@@ -413,16 +445,19 @@ local close = make("TextButton", header, {
 make("UICorner", close, { CornerRadius = UDim.new(0, 7) })
 connect(close.Activated, function() controller:Stop() end)
 
-make("TextLabel", panel, {
+preferences.label = make("TextLabel", panel, {
     Name = "Description", Position = UDim2.fromOffset(16, 58),
     Size = UDim2.fromOffset(478, 36),
     BackgroundTransparency = 1, Font = Enum.Font.Gotham, TextSize = 12,
     TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.subtle,
-    Text = preferences.restored and ("V0.24 | Previously selected: " .. preferences.lastModes()
-        .. " | Start desired actions below.") or
-        "V0.24 | Auto Upgrade: open a placed miner > Stats if panel is not loaded.",
+    Text = "",
 })
+function preferences.refresh()
+    preferences.label.Text = "V0.25 | Settings: " .. preferences.status
+        .. "\nPreviously selected: " .. preferences.lastModes() .. " | Start desired actions below."
+end
+preferences.refresh()
 local farmCycleButton = button("FarmCycle", "AUTO FARM CYCLE: OFF", 16, 103, 478, 43)
 farmCycleButton.TextSize = 14
 make("TextLabel", panel, {
@@ -2645,7 +2680,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.24 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.25 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -2826,7 +2861,7 @@ end
 
 local function sellRouteDiagnosticReport()
     local lines={
-        "MY ANIME MINE V0.24 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.25 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
         "PlaceId="..tostring(game.PlaceId)..
             " | autoSell="..tostring(controller.sell)..
             " | autoCollect="..tostring(controller.collect)..
@@ -2942,7 +2977,7 @@ end
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.24 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.25 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
@@ -3336,7 +3371,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.24 started | Stats GUI discovery without guessed remotes | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.25 started | Settings: " .. preferences.status .. " | toggles OFF | PlaceId 79389059854988")
 if preferences.restored then
     writeLog(("Settings restored: %d min | previously selected: %s"):format(
         controller.cycleMinutes, preferences.lastModes()))
@@ -3517,6 +3552,11 @@ end)
 connect(minutePlusButton.Activated,function()
     updateCycleMinutes(controller.cycleMinutes+1)
 end)
+function preferences.flush()
+    if intervalInput.Text ~= tostring(controller.cycleMinutes)
+        and updateCycleMinutes(intervalInput.Text) then return end
+    if preferences.status == "SESSION ONLY" then preferences.save() end
+end
 connect(intervalInput.FocusLost,function()
     if not updateCycleMinutes(intervalInput.Text) then
         intervalInput.Text=tostring(controller.cycleMinutes)
