@@ -1,4 +1,4 @@
--- My Roblox Hub | My Anime Mine v0.25 (verified settings persistence)
+-- My Roblox Hub | My Anime Mine v0.26 (verified settings persistence)
 -- PlaceId: 79389059854988
 -- This module does not guess or fire undocumented server remotes.
 -- Auto Mine uses nearby rock ClickDetectors where provided by the game.
@@ -284,11 +284,12 @@ do
         if preferences.refresh then preferences.refresh() end
     end
 
+    preferences.order = modes
+    preferences.labels = {"Farm", "Mine", "Collect", "Sell", "Equip", "Upgrade", "Watch"}
     function preferences.lastModes()
-        local labels = {"Farm", "Mine", "Collect", "Sell", "Equip", "Upgrade", "Watch"}
         local enabled = {}
         for i, name in ipairs(modes) do
-            if preferences.modes[name] then enabled[#enabled+1] = labels[i] end
+            if preferences.modes[name] then enabled[#enabled+1] = preferences.labels[i] end
         end
         return #enabled > 0 and table.concat(enabled, ", ") or "none"
     end
@@ -420,12 +421,12 @@ local header = make("Frame", panel, {
 make("UICorner", header, { CornerRadius = UDim.new(0, 12) })
 make("TextLabel", header, {
     Name = "Title", BackgroundTransparency = 1,
-    Position = UDim2.fromOffset(16, 5), Size = UDim2.fromOffset(410, 40),
+    Position = UDim2.fromOffset(16, 5), Size = UDim2.fromOffset(315, 40),
     Font = Enum.Font.GothamBold, TextSize = 17, TextXAlignment = Enum.TextXAlignment.Left,
     TextColor3 = palette.text, Text = "MY ROBLOX HUB  |  My Anime Mine",
 })
-local function button(name, text, x, y, width, height)
-    local b = make("TextButton", panel, {
+local function button(name, text, x, y, width, height, parent)
+    local b = make("TextButton", parent or panel, {
         Name = name, Text = text,
         Position = UDim2.fromOffset(x, y), Size = UDim2.fromOffset(width, height),
         BackgroundColor3 = palette.button, TextColor3 = palette.text,
@@ -453,9 +454,43 @@ preferences.label = make("TextLabel", panel, {
     TextColor3 = palette.subtle,
     Text = "",
 })
+do
+    local open = button("SavedModes", "SETTINGS", 345, 9, 107, 32, header)
+    local sheet = make("Frame", panel, {
+        Name = "ModeSettings", Position = UDim2.fromOffset(0, 51),
+        Size = UDim2.new(1, 0, 1, -51), ZIndex = 10, Visible = false,
+        Active = true, BackgroundColor3 = palette.background, BorderSizePixel = 0,
+    })
+    make("TextLabel", sheet, {
+        Name = "Heading", Position = UDim2.fromOffset(16, 8), Size = UDim2.fromOffset(478, 38),
+        BackgroundTransparency = 1, TextColor3 = palette.text, Font = Enum.Font.Gotham,
+        TextSize = 14, Text = "Saved choices for the next run",
+    })
+    local rows = {}
+    for i, mode in ipairs(preferences.order) do
+        local row = button("Saved_" .. mode, "", 16, 48 + (i - 1) * 43, 478, 37, sheet)
+        rows[mode] = row
+        connect(row.Activated, function()
+            preferences.modes[mode] = not preferences.modes[mode]
+            preferences.save()
+        end)
+    end
+    connect(open.Activated, function()
+        sheet.Visible = not sheet.Visible
+        open.Text = sheet.Visible and "BACK" or "SETTINGS"
+    end)
+    function preferences.refreshRows()
+        for i, mode in ipairs(preferences.order) do
+            local selected = preferences.modes[mode]
+            rows[mode].Text = preferences.labels[i] .. (selected and "  ON" or "  OFF")
+            rows[mode].BackgroundColor3 = selected and palette.accent or palette.button
+        end
+    end
+end
 function preferences.refresh()
-    preferences.label.Text = "V0.25 | Settings: " .. preferences.status
-        .. "\nPreviously selected: " .. preferences.lastModes() .. " | Start desired actions below."
+    preferences.refreshRows()
+    preferences.label.Text = "V0.26 | Settings: " .. preferences.status
+        .. "\nSaved ON: " .. preferences.lastModes() .. " | Start desired actions below."
 end
 preferences.refresh()
 local farmCycleButton = button("FarmCycle", "AUTO FARM CYCLE: OFF", 16, 103, 478, 43)
@@ -2680,7 +2715,7 @@ end
 local function actionDiagnosticReport()
     scanActionButtons()
     local lines = {
-        "MY ANIME MINE V0.25 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.26 EQUIP / UPGRADE TARGETS + SHOP SELL | " .. os.date("%H:%M:%S"),
         "PlaceId=" .. tostring(game.PlaceId) ..
             " | plot=" .. tostring(controller.selectedPlot) ..
             " | equip=" .. tostring(controller.equip) ..
@@ -2861,7 +2896,7 @@ end
 
 local function sellRouteDiagnosticReport()
     local lines={
-        "MY ANIME MINE V0.25 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
+        "MY ANIME MINE V0.26 SHOP SELL ROUTE | "..os.date("%H:%M:%S"),
         "PlaceId="..tostring(game.PlaceId)..
             " | autoSell="..tostring(controller.sell)..
             " | autoCollect="..tostring(controller.collect)..
@@ -2977,7 +3012,7 @@ end
 local function diagnosticReport()
     local out = {}
     local function append(v) out[#out + 1] = v end
-    append("MY ANIME MINE | V0.25 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
+    append("MY ANIME MINE | V0.26 TARGET DIAGNOSTICS | " .. os.date("%H:%M:%S"))
     append("PlaceId=" .. tostring(game.PlaceId) .. " | autoMine=" ..
         tostring(controller.mine) .. " autoCollect=" .. tostring(controller.collect) ..
         " autoSell=" .. tostring(controller.sell) ..
@@ -3088,6 +3123,9 @@ local function refreshStatus()
     farmCycleButton.Text = "AUTO FARM: " .. (controller.cycleEnabled
         and (controller.cyclePhase=="PAUSED" and "PAUSED" or "ON / "..timerInfo)
         or "OFF")
+    if preferences.modes.cycleEnabled and not controller.cycleEnabled then
+        farmCycleButton.Text = "AUTO FARM: SAVED ON / IDLE"
+    end
     farmCycleButton.BackgroundColor3 = controller.cycleEnabled
         and palette.accent or palette.button
     mineButton.Text = "AUTO MINE (CLICK): " .. (controller.mine and "ON" or "OFF")
@@ -3110,6 +3148,9 @@ local function refreshStatus()
     local upgradeLabel = controller.upgradeStage:find("PAUSED",1,true) and "PAUSED"
         or controller.upgrade and "ON" or "OFF"
     upgradeButton.Text = "AUTO UPGRADE STATS: " .. upgradeLabel
+    if preferences.modes.mine and not controller.mine then mineButton.Text = "AUTO MINE: SAVED ON / IDLE" end
+    if preferences.modes.equip and not controller.equip then equipButton.Text = "AUTO EQUIP: SAVED ON / IDLE" end
+    if preferences.modes.upgrade and upgradeLabel == "OFF" then upgradeButton.Text = "AUTO UPGRADE STATS: SAVED ON / IDLE" end
     equipButton.BackgroundColor3 = controller.equip and palette.accent or palette.button
     upgradeButton.BackgroundColor3 = controller.upgrade and palette.accent or palette.button
     statusLabel.Text = ("Cycle #%d | %s | Take All %d | Sell clicks %d\nCollect: %s\nSell/Base: %s\nUpgrade: %s"):format(
@@ -3371,7 +3412,7 @@ connect(copyButton.Activated, function()
     end
 end)
 
-writeLog("My Anime Mine v0.25 started | Settings: " .. preferences.status .. " | toggles OFF | PlaceId 79389059854988")
+writeLog("My Anime Mine v0.26 started | Settings: " .. preferences.status .. " | toggles OFF | PlaceId 79389059854988")
 if preferences.restored then
     writeLog(("Settings restored: %d min | previously selected: %s"):format(
         controller.cycleMinutes, preferences.lastModes()))
